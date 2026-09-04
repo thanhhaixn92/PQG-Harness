@@ -41,5 +41,8 @@ test('release docs preserve blocked live gates and deployment safety', async () 
   assert.match(combined, /Preview[^\n]*BLOCKED/i)
   assert.match(combined, /Auto Deploy[^\n]*DISCONNECTED/i)
   assert.match(combined, /Foundation Freeze[^\n]*(BLOCKED|not complete|not declared)/i)
-  assert.doesNotMatch(combined, /Foundation Freeze[^\n]*(COMPLETE|GREEN|PASS)/i)
+  assert.doesNotMatch(
+    combined,
+    /Foundation Freeze\s*(?:is|:|=)\s*\*{0,2}(?:COMPLETE|GREEN|PASS)\b/i,
+  )
 })
