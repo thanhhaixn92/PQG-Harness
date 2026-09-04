@@ -6,16 +6,16 @@ PQG Harness is a single-owner Foundation Core built on the published DeepSeek Ha
 
 ## Release status
 
-Source-side Foundation hardening is nearing completion, but **Foundation Freeze is BLOCKED / not complete** until required live EdgeOne evidence is collected or explicitly owner-accepted.
+WP0–WP7 source-side contracts are implemented and have GREEN evidence, but **Foundation Freeze is BLOCKED / not complete** until required live EdgeOne and repository-enforcement gates are closed or explicitly owner-accepted.
 
-Current live blockers include:
+Current blockers include:
 
 - EdgeOne access/auth policy — NOT VERIFIED;
 - controlled Preview workspace recycle/recovery — BLOCKED;
 - live Stop/command cancellation — BLOCKED;
 - deployed `/build-meta.json` parity and Production/Preview topology — NOT VERIFIED/BLOCKED;
 - environment scope, native observability, rollback rehearsal, representative browser smoke — BLOCKED;
-- required `quality` enforcement on `main` before any Git Auto Deploy reconnect — not independently confirmed.
+- `main` required-quality enforcement — confirmed absent (`protected:false`, required checks off, no rulesets); must be configured before any Git Auto Deploy reconnect.
 
 The repository records Production Git Auto Deploy as **DISCONNECTED** by the owner. Repository changes do not imply a Production deployment.
 
@@ -141,6 +141,7 @@ CI success proves source/build contracts only. It does not replace controlled Ed
 - Operating/recovery/rollback procedures: [`RUNBOOK.md`](RUNBOOK.md)
 - Release decision matrix: [`docs/release/RELEASE_CHECKLIST.md`](docs/release/RELEASE_CHECKLIST.md)
 - Known limitations: [`docs/release/KNOWN_LIMITATIONS.md`](docs/release/KNOWN_LIMITATIONS.md)
+- Main guardrail verification: [`docs/verification/2026-09-04-main-guardrail.md`](docs/verification/2026-09-04-main-guardrail.md)
 - Vietnamese locale decision: [`docs/localization/vi-status.md`](docs/localization/vi-status.md)
 - Upstream provenance/sync policy: [`UPSTREAM.md`](UPSTREAM.md)
 
