@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { registerActiveWorkspaceSandbox } from '../agents/_active-sandbox.ts'
 import {
   __setSidecarStarterForTests,
   acquireDshWebSidecar,
@@ -22,11 +21,10 @@ function fakeSidecar(conversationId: string, close: () => Promise<void>): any {
   }
 }
 
-test('platform abort and sandbox kill start even while sidecar shutdown is waiting for startup', async () => {
+test('platform abort starts without waiting for sidecar startup or shutdown', async () => {
   let releaseStart!: () => void
   const startGate = new Promise<void>(resolve => { releaseStart = resolve })
   let abortCalls = 0
-  let killCalls = 0
   let closeCalls = 0
 
   __setSidecarStarterForTests(async (_context: any, conversationId: string) => {
@@ -49,7 +47,7 @@ test('platform abort and sandbox kill start even while sidecar shutdown is waiti
     },
     sandbox: {
       async kill() {
-        killCalls += 1
+        assert.fail('Stop request must never kill its own sandbox')
       },
     },
   })
@@ -57,140 +55,24 @@ test('platform abort and sandbox kill start even while sidecar shutdown is waiti
   try {
     await new Promise(resolve => setTimeout(resolve, 0))
     assert.equal(abortCalls, 1, 'platform abort must start without waiting for sidecar close')
-    assert.equal(killCalls, 1, 'sandbox kill must start without waiting for sidecar close')
   } finally {
     releaseStart()
   }
 
-  await firstAcquire
+  const acquired = await firstAcquire as any
+  acquired?.release?.()
   const response = await responsePending
   const body = await response.json() as any
   assert.equal(response.status, 200)
   assert.equal(body.ok, true)
   assert.deepEqual(body.sidecar, { found: true, closed: true })
   assert.deepEqual(body.platform, { aborted: true })
-  assert.deepEqual(body.sandbox, { killed: true })
+  assert.deepEqual(body.sandbox, { delegated: true })
   assert.equal(closeCalls, 1)
   __setSidecarStarterForTests(undefined)
 })
 
-test('Stop kills the sandbox registered by an active workspace command instead of a different request sandbox', async () => {
-  let activeSandboxKills = 0
-  let stopRequestSandboxKills = 0
-  const releaseActiveSandbox = registerActiveWorkspaceSandbox('conv-stop-active-sandbox', {
-    async kill() {
-      activeSandboxKills += 1
-    },
-  })
-
-  try {
-    const response = await onRequestPost({
-      request: { body: { conversation_id: 'conv-stop-active-sandbox' } },
-      utils: {
-        async abortActiveRun() {
-          return { aborted: true }
-        },
-      },
-      sandbox: {
-        async kill() {
-          stopRequestSandboxKills += 1
-        },
-      },
-    })
-    const body = await response.json() as any
-
-    assert.equal(body.ok, true)
-    assert.deepEqual(body.sandbox, { killed: true })
-    assert.equal(activeSandboxKills, 1, 'the in-flight workspace command sandbox must be terminated')
-    assert.equal(stopRequestSandboxKills, 0, 'a different Stop request sandbox must not be mistaken for the active command sandbox')
-  } finally {
-    releaseActiveSandbox()
-  }
-})
-
-test('Stop kills every distinct sandbox registered by overlapping workspace commands', async () => {
-  let firstSandboxKills = 0
-  let secondSandboxKills = 0
-  let stopRequestSandboxKills = 0
-  const releaseFirst = registerActiveWorkspaceSandbox('conv-stop-overlap', {
-    async kill() {
-      firstSandboxKills += 1
-    },
-  })
-  const releaseSecond = registerActiveWorkspaceSandbox('conv-stop-overlap', {
-    async kill() {
-      secondSandboxKills += 1
-    },
-  })
-
-  try {
-    const response = await onRequestPost({
-      request: { body: { conversation_id: 'conv-stop-overlap' } },
-      utils: {
-        async abortActiveRun() {
-          return { aborted: true }
-        },
-      },
-      sandbox: {
-        async kill() {
-          stopRequestSandboxKills += 1
-        },
-      },
-    })
-    const body = await response.json() as any
-
-    assert.equal(body.ok, true)
-    assert.deepEqual(body.sandbox, { killed: true })
-    assert.equal(firstSandboxKills, 1, 'the first overlapping command sandbox must be terminated')
-    assert.equal(secondSandboxKills, 1, 'the second overlapping command sandbox must be terminated')
-    assert.equal(stopRequestSandboxKills, 0, 'the Stop request sandbox is only a fallback when no command sandbox is active')
-  } finally {
-    releaseSecond()
-    releaseFirst()
-  }
-})
-
-test('Stop attempts every active sandbox when one kill throws synchronously', async () => {
-  let secondSandboxKills = 0
-  let stopRequestSandboxKills = 0
-  const releaseFirst = registerActiveWorkspaceSandbox('conv-stop-sync-kill-failure', {
-    kill() {
-      throw new Error('synchronous sandbox kill failure')
-    },
-  })
-  const releaseSecond = registerActiveWorkspaceSandbox('conv-stop-sync-kill-failure', {
-    kill() {
-      secondSandboxKills += 1
-    },
-  })
-
-  try {
-    const response = await onRequestPost({
-      request: { body: { conversation_id: 'conv-stop-sync-kill-failure' } },
-      utils: {
-        async abortActiveRun() {
-          return { aborted: true }
-        },
-      },
-      sandbox: {
-        async kill() {
-          stopRequestSandboxKills += 1
-        },
-      },
-    })
-    const body = await response.json() as any
-
-    assert.equal(body.ok, false)
-    assert.deepEqual(body.sandbox, { killed: false, error: 'SANDBOX_KILL_FAILED' })
-    assert.equal(secondSandboxKills, 1, 'a later active sandbox must still be terminated after a synchronous kill failure')
-    assert.equal(stopRequestSandboxKills, 0, 'the Stop request sandbox remains only a fallback')
-  } finally {
-    releaseSecond()
-    releaseFirst()
-  }
-})
-
-test('Stop returns stable non-secret outcomes when sidecar, platform abort, and sandbox kill fail', async () => {
+test('Stop returns stable non-secret outcomes when sidecar and platform abort fail', async () => {
   __setSidecarStarterForTests(async (_context: any, conversationId: string) =>
     fakeSidecar(conversationId, async () => {
       throw new Error('sensitive sidecar close detail')
@@ -209,7 +91,7 @@ test('Stop returns stable non-secret outcomes when sidecar, platform abort, and 
       },
       sandbox: {
         async kill() {
-          throw new Error('sensitive sandbox kill detail')
+          assert.fail('Stop request sandbox must not participate in cancellation')
         },
       },
     })
@@ -227,34 +109,34 @@ test('Stop returns stable non-secret outcomes when sidecar, platform abort, and 
       aborted: false,
       error: 'PLATFORM_ABORT_FAILED',
     })
-    assert.deepEqual(body.sandbox, {
-      killed: false,
-      error: 'SANDBOX_KILL_FAILED',
-    })
+    assert.deepEqual(body.sandbox, { delegated: true })
     assert.equal(serialized.includes('sensitive sidecar close detail'), false)
     assert.equal(serialized.includes('sensitive platform abort detail'), false)
-    assert.equal(serialized.includes('sensitive sandbox kill detail'), false)
   } finally {
     __setSidecarStarterForTests(undefined)
     await stopDshWebSidecar('conv-stop-errors')
   }
 })
 
-test('Stop fails closed when sandbox kill is unavailable', async () => {
+test('Stop treats an idle target as a successful delegated no-op', async () => {
   const response = await onRequestPost({
-    request: { body: { conversation_id: 'conv-stop-no-kill' } },
+    request: { body: { conversation_id: 'conv-stop-idle-delegated' } },
     utils: {
       async abortActiveRun() {
-        return { aborted: true }
+        return { aborted: false }
+      },
+    },
+    sandbox: {
+      async kill() {
+        assert.fail('Stop request sandbox must not be used as fallback')
       },
     },
   })
   const body = await response.json() as any
 
   assert.equal(response.status, 200)
-  assert.equal(body.ok, false)
-  assert.deepEqual(body.sandbox, {
-    killed: false,
-    error: 'SANDBOX_KILL_UNAVAILABLE',
-  })
+  assert.equal(body.ok, true)
+  assert.deepEqual(body.sidecar, { found: false, closed: false })
+  assert.deepEqual(body.platform, { aborted: false })
+  assert.deepEqual(body.sandbox, { delegated: true })
 })

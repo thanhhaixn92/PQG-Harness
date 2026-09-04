@@ -30,7 +30,7 @@ test('MCP request diagnostics retain only bounded metadata', () => {
 })
 
 test('workspace command MCP result treats durability failure as a tool error', async () => {
-  const source = await readFile(new URL('../agents/_mcp-bridge.ts', import.meta.url), 'utf8')
+  const source = await readFile(new URL('../agents/_mcp-bridge-base.ts', import.meta.url), 'utf8')
   assert.match(
     source,
     /result\.exitCode\s*!==\s*0\s*\|\|\s*result\.persistence\.persisted\s*!==\s*true/,
@@ -38,11 +38,14 @@ test('workspace command MCP result treats durability failure as a tool error', a
 })
 
 test('workspace command MCP wrapper delegates cancellation scope to the workspace execution layer', async () => {
-  const source = await readFile(new URL('../agents/_mcp-bridge.ts', import.meta.url), 'utf8')
+  const source = await readFile(new URL('../agents/_mcp-bridge-base.ts', import.meta.url), 'utf8')
   const start = source.indexOf("register('workspace_run_command'")
   const end = source.indexOf("register('publish_preview'", start)
   assert.ok(start >= 0 && end > start)
   const block = source.slice(start, end)
-  assert.doesNotMatch(block, /registerActiveWorkspaceSandbox/)
   assert.match(block, /runWorkspaceCommand\(context,\s*conversationId,\s*command,\s*timeout\)/)
+
+  const adapter = await readFile(new URL('../agents/_mcp-bridge.ts', import.meta.url), 'utf8')
+  assert.match(adapter, /withRunnerOwnedSandboxCancellation\(getContext\(\)\)/)
+  assert.doesNotMatch(adapter, /registerActiveWorkspaceSandbox/)
 })

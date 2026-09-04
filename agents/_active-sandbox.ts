@@ -2,53 +2,27 @@ type SandboxHandle = {
   kill?: () => Promise<unknown> | unknown
 }
 
-type ActiveSandboxEntry = {
-  token: symbol
-  sandbox: SandboxHandle
-}
-
-const activeWorkspaceSandboxes = new Map<string, ActiveSandboxEntry[]>()
-const stoppingWorkspaceConversations = new Set<string>()
-
+/**
+ * Compatibility shim for the PR #57 workspace implementation now vendored as
+ * `_workspace-base.ts` / `_mcp-bridge-base.ts`.
+ *
+ * Runner-owned cancellation no longer coordinates sandbox handles through
+ * process-local state. These functions intentionally retain the old call
+ * signatures while holding no Map/Set and performing no cross-request work.
+ */
 export function registerActiveWorkspaceSandbox(
-  conversationId: string,
-  sandbox: SandboxHandle | undefined,
+  _conversationId: string,
+  _sandbox: SandboxHandle | undefined,
 ): () => void {
-  if (!conversationId || !sandbox) return () => {}
-  if (stoppingWorkspaceConversations.has(conversationId)) {
-    throw new Error('WORKSPACE_STOPPING')
-  }
-
-  const entry: ActiveSandboxEntry = { token: Symbol(conversationId), sandbox }
-  const entries = activeWorkspaceSandboxes.get(conversationId) ?? []
-  entries.push(entry)
-  activeWorkspaceSandboxes.set(conversationId, entries)
-
-  let released = false
-  return () => {
-    if (released) return
-    released = true
-    const current = activeWorkspaceSandboxes.get(conversationId)
-    if (!current) return
-    const next = current.filter(candidate => candidate.token !== entry.token)
-    if (next.length === 0) activeWorkspaceSandboxes.delete(conversationId)
-    else activeWorkspaceSandboxes.set(conversationId, next)
-  }
+  return () => {}
 }
 
-export function activeWorkspaceSandboxHandles(conversationId: string): SandboxHandle[] {
-  const entries = activeWorkspaceSandboxes.get(conversationId)
-  if (!entries?.length) return []
-  return [...new Set(entries.map(entry => entry.sandbox))]
+export function activeWorkspaceSandboxHandles(_conversationId: string): SandboxHandle[] {
+  return []
 }
 
-export function beginWorkspaceStop(conversationId: string): SandboxHandle[] {
-  if (!conversationId) return []
-  stoppingWorkspaceConversations.add(conversationId)
-  return activeWorkspaceSandboxHandles(conversationId)
+export function beginWorkspaceStop(_conversationId: string): SandboxHandle[] {
+  return []
 }
 
-export function resetWorkspaceStop(conversationId: string): void {
-  if (!conversationId) return
-  stoppingWorkspaceConversations.delete(conversationId)
-}
+export function resetWorkspaceStop(_conversationId: string): void {}
