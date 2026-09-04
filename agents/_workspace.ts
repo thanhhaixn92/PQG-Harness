@@ -33,6 +33,46 @@ export interface WorkspaceItem {
   mtime?: number
 }
 
+export interface WorkspaceCheckpoint {
+  size: number
+  sha256: string
+  etag: string
+  persistedAt: string
+}
+
+export interface WorkspacePersistenceStatus {
+  persisted: boolean
+  checkpoint?: WorkspaceCheckpoint
+  error?: string
+}
+
+const workspacePersistQueues = new Map<string, Promise<WorkspaceCheckpoint>>()
+
+export async function persistWorkspaceCheckpoint(
+  context: any,
+  conversationId: string,
+  root: string,
+): Promise<WorkspaceCheckpoint> {
+  const previous = workspacePersistQueues.get(conversationId)
+  const next = (previous ? previous.catch(() => undefined) : Promise.resolve())
+    .then(() => context.sandbox.persist({ path: root, timeout: 180 }))
+    .then((result: any) => ({
+      size: Number(result.size),
+      sha256: String(result.sha256 || ''),
+      etag: String(result.etag || ''),
+      persistedAt: String(result.persistedAt || ''),
+    }))
+
+  workspacePersistQueues.set(conversationId, next)
+  try {
+    return await next
+  } finally {
+    if (workspacePersistQueues.get(conversationId) === next) {
+      workspacePersistQueues.delete(conversationId)
+    }
+  }
+}
+
 function safeSegment(value: string): string {
   return value.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80) || 'workspace'
 }
