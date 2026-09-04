@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "DeepSeek Harness",
-  "short_name": "DSH",
+  "name": "PQG Harness",
+  "short_name": "PQG",
   "start_url": "/",
   "scope": "/",
   "display": "fullscreen",
