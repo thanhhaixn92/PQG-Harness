@@ -6,6 +6,11 @@ function workspaceAbortError(): Error {
   return error
 }
 
+function runtimeMember(target: any, property: PropertyKey): any {
+  const value = Reflect.get(target, property, target)
+  return typeof value === 'function' ? value.bind(target) : value
+}
+
 /**
  * Run one sandbox operation under the active EdgeOne runner's AbortSignal.
  * The runner owns the sandbox handle, so cancellation never depends on
@@ -64,8 +69,9 @@ export async function runWithSandboxAbort<T>(
 
 /**
  * Return a view of the current runner context whose sandbox command executor
- * is cancellation-aware. Proxies preserve runtime-injected prototype/getter
- * behavior while changing only commands.run.
+ * is cancellation-aware. Only commands.run changes behavior. All other
+ * runtime methods/getters retain the original EdgeOne object as their receiver
+ * so class/private-field implementations are not broken by the adapter proxy.
  */
 export function withRunnerOwnedSandboxCancellation(context: any): any {
   if (!context || context[RUNNER_ABORT_WRAPPED] === true) return context
@@ -75,25 +81,25 @@ export function withRunnerOwnedSandboxCancellation(context: any): any {
 
   const originalRun = commands.run.bind(commands)
   const wrappedCommands = new Proxy(commands, {
-    get(target, property, receiver) {
+    get(target, property) {
       if (property === 'run') {
         return (...args: any[]) => runWithSandboxAbort(context, () => originalRun(...args))
       }
-      return Reflect.get(target, property, receiver)
+      return runtimeMember(target, property)
     },
   })
   const wrappedSandbox = new Proxy(sandbox, {
-    get(target, property, receiver) {
+    get(target, property) {
       if (property === 'commands') return wrappedCommands
-      return Reflect.get(target, property, receiver)
+      return runtimeMember(target, property)
     },
   })
 
   return new Proxy(context, {
-    get(target, property, receiver) {
+    get(target, property) {
       if (property === RUNNER_ABORT_WRAPPED) return true
       if (property === 'sandbox') return wrappedSandbox
-      return Reflect.get(target, property, receiver)
+      return runtimeMember(target, property)
     },
   })
 }
