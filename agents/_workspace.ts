@@ -16,6 +16,7 @@ const SENSITIVE_KEY_EXTENSIONS = ['.key', '.pem', '.p12', '.pfx']
 const TEXT_PREVIEW_LIMIT = 512 * 1024
 const SNAPSHOT_FILE_LIMIT = 80
 const SNAPSHOT_BYTE_LIMIT = 2 * 1024 * 1024
+const WORKSPACE_READY_MARKER = '.pqg-workspace-ready'
 
 interface WorkspaceSnapshotFile {
   content: string
@@ -23,6 +24,9 @@ interface WorkspaceSnapshotFile {
 }
 
 type WorkspaceSnapshot = Record<string, WorkspaceSnapshotFile>
+type LegacySnapshotLoad =
+  | { kind: 'found'; snapshot: WorkspaceSnapshot }
+  | { kind: 'missing' }
 
 export interface WorkspaceItem {
   path: string
@@ -182,17 +186,37 @@ async function loadWorkspaceSnapshot(context: any, conversationId: string): Prom
   }
 }
 
-async function workspaceHasFiles(context: any, root: string): Promise<boolean> {
-  const result = await context.sandbox.commands.run(
-    "find . -mindepth 1 -maxdepth 1 ! -name preview -print -quit",
-    { cwd: root, timeout: 10 },
-  )
-  return result.exitCode === 0 && Boolean(String(result.stdout || '').trim())
+async function loadLegacyWorkspaceSnapshot(
+  context: any,
+  conversationId: string,
+): Promise<LegacySnapshotLoad> {
+  if (!context?.store) return { kind: 'missing' }
+  try {
+    const conversation = await getConversation(context, conversationId)
+    const snapshot = conversation?.metadata?.workspaceSnapshot
+    if (!snapshot || typeof snapshot !== 'object' || Object.keys(snapshot).length === 0) {
+      return { kind: 'missing' }
+    }
+    return { kind: 'found', snapshot: snapshot as WorkspaceSnapshot }
+  } catch (error) {
+    if (isMissingConversation(error)) return { kind: 'missing' }
+    throw error
+  }
 }
 
-async function restoreWorkspaceSnapshot(context: any, conversationId: string, root: string): Promise<void> {
-  if (await workspaceHasFiles(context, root)) return
-  const snapshot = await loadWorkspaceSnapshot(context, conversationId)
+async function workspaceReady(context: any, root: string): Promise<boolean> {
+  return Boolean(await context.sandbox.files.exists(`${root}/${WORKSPACE_READY_MARKER}`))
+}
+
+async function markWorkspaceReady(context: any, root: string): Promise<void> {
+  await context.sandbox.files.write(`${root}/${WORKSPACE_READY_MARKER}`, 'v1\n')
+}
+
+async function restoreLegacySnapshotFiles(
+  context: any,
+  root: string,
+  snapshot: WorkspaceSnapshot,
+): Promise<void> {
   for (const [path, file] of Object.entries(snapshot).slice(0, SNAPSHOT_FILE_LIMIT)) {
     const normalized = normalizeWorkspacePath(path)
     if (!normalized || typeof file?.content !== 'string') continue
@@ -200,6 +224,34 @@ async function restoreWorkspaceSnapshot(context: any, conversationId: string, ro
     if (parent) await context.sandbox.files.makeDir(`${root}/${parent}`)
     await context.sandbox.files.write(`${root}/${normalized}`, file.content)
   }
+}
+
+async function initializeWorkspace(context: any, conversationId: string, root: string): Promise<void> {
+  if (await workspaceReady(context, root)) return
+
+  const restored = await context.sandbox.restore({ path: root, timeout: 180 })
+  if (restored?.restored === true) {
+    await markWorkspaceReady(context, root)
+    return
+  }
+  if (restored?.reason !== 'not_found') {
+    throw new Error(`Workspace restore failed: ${String(restored?.reason || 'unknown')}`)
+  }
+
+  const legacy = await loadLegacyWorkspaceSnapshot(context, conversationId)
+  if (legacy.kind === 'found') {
+    await restoreLegacySnapshotFiles(context, root, legacy.snapshot)
+    await persistWorkspaceCheckpoint(context, conversationId, root)
+    await updateConversationMetadata(context, conversationId, {
+      workspaceSnapshot: {},
+      workspaceSnapshotMigratedAt: Date.now(),
+    })
+    await markWorkspaceReady(context, root)
+    return
+  }
+
+  await persistWorkspaceCheckpoint(context, conversationId, root)
+  await markWorkspaceReady(context, root)
 }
 
 async function saveWorkspaceSnapshotFile(
@@ -230,7 +282,7 @@ async function saveWorkspaceSnapshotFile(
 export async function ensureWorkspace(context: any, conversationId: string): Promise<string> {
   const root = workspaceRoot(conversationId)
   await context.sandbox.files.makeDir(root)
-  await restoreWorkspaceSnapshot(context, conversationId, root)
+  await initializeWorkspace(context, conversationId, root)
   return root
 }
 
