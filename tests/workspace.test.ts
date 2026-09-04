@@ -4,6 +4,7 @@ import {
   isSensitiveWorkspacePath,
   listWorkspace,
   normalizeWorkspacePath,
+  persistWorkspaceCheckpoint,
   publishWorkspacePreview,
   readWorkspaceFile,
   workspaceRoot,
@@ -56,6 +57,49 @@ function createSandbox(written = new Map<string, string>()) {
     },
   }
 }
+
+test('native workspace checkpoints serialize per conversation', async () => {
+  let active = 0
+  let maxActive = 0
+  let calls = 0
+  let releaseFirst!: () => void
+  const firstGate = new Promise<void>(resolve => { releaseFirst = resolve })
+
+  const context = {
+    sandbox: {
+      async persist({ path, timeout }: { path: string; timeout: number }) {
+        assert.equal(path, 'projects/conv-1/workspace')
+        assert.equal(timeout, 180)
+        calls += 1
+        const call = calls
+        active += 1
+        maxActive = Math.max(maxActive, active)
+        if (call === 1) await firstGate
+        active -= 1
+        return {
+          size: call,
+          sha256: `sha-${call}`,
+          etag: `etag-${call}`,
+          persistedAt: `2026-09-04T00:00:0${call}Z`,
+        }
+      },
+    },
+  }
+
+  const first = persistWorkspaceCheckpoint(context, 'conv-1', 'projects/conv-1/workspace')
+  const second = persistWorkspaceCheckpoint(context, 'conv-1', 'projects/conv-1/workspace')
+
+  await new Promise(resolve => setTimeout(resolve, 0))
+  assert.equal(calls, 1)
+  assert.equal(maxActive, 1)
+
+  releaseFirst()
+  const [firstCheckpoint, secondCheckpoint] = await Promise.all([first, second])
+  assert.equal(calls, 2)
+  assert.equal(maxActive, 1)
+  assert.equal(firstCheckpoint.sha256, 'sha-1')
+  assert.equal(secondCheckpoint.sha256, 'sha-2')
+})
 
 test('automatic workspace read and write tools reject sensitive paths before file I/O', async () => {
   let reads = 0
