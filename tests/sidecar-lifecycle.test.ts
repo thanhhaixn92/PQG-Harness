@@ -142,3 +142,72 @@ test('startup retries are bounded to three attempts', async () => {
     setStarter(undefined)
   }
 })
+
+test('an active lease prevents idle reap until the lease is released', async () => {
+  const acquire = requiredFunction('acquireDshWebSidecar')
+  const stop = requiredFunction('stopDshWebSidecar')
+  const setStarter = requiredFunction('__setSidecarStarterForTests')
+  const originalNow = Date.now
+  let now = 1_000
+  let activeCloseCalls = 0
+
+  ;(Date as any).now = () => now
+  setStarter(async (_ctx: any, conversationId: string) =>
+    fakeSidecar(conversationId, () => {
+      if (conversationId === 'conv-active-lease') activeCloseCalls += 1
+    }))
+
+  try {
+    const active = await acquire(context('conv-active-lease'))
+    now += 26 * 60_000
+    const trigger = await acquire(context('conv-sweep-trigger'))
+    trigger.release()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    assert.equal(activeCloseCalls, 0)
+
+    active.release()
+    now += 26 * 60_000
+    const secondTrigger = await acquire(context('conv-sweep-trigger-2'))
+    secondTrigger.release()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    assert.equal(activeCloseCalls, 1)
+
+    await Promise.all([
+      stop('conv-sweep-trigger'),
+      stop('conv-sweep-trigger-2'),
+    ])
+  } finally {
+    ;(Date as any).now = originalNow
+    setStarter(undefined)
+  }
+})
+
+test('later acquire refreshes the sidecar to the latest Makers context', async () => {
+  const acquire = requiredFunction('acquireDshWebSidecar')
+  const stop = requiredFunction('stopDshWebSidecar')
+  const setStarter = requiredFunction('__setSidecarStarterForTests')
+  let starts = 0
+
+  setStarter(async (_ctx: any, conversationId: string) => {
+    starts += 1
+    return fakeSidecar(conversationId, () => {})
+  })
+
+  const contextA = { conversation_id: 'conv-context-refresh', env: { marker: 'A' } }
+  const contextB = { conversation_id: 'conv-context-refresh', env: { marker: 'B' } }
+
+  try {
+    const first = await acquire(contextA)
+    assert.equal(first.sidecar.context, contextA)
+    first.release()
+
+    const second = await acquire(contextB)
+    assert.equal(second.sidecar, first.sidecar)
+    assert.equal(second.sidecar.context, contextB)
+    assert.equal(starts, 1)
+    second.release()
+    await stop('conv-context-refresh')
+  } finally {
+    setStarter(undefined)
+  }
+})
