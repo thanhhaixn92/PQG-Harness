@@ -3,6 +3,7 @@ import type { AddressInfo } from 'node:net'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { z } from 'zod'
+import { registerActiveWorkspaceSandbox } from './_active-sandbox.ts'
 import {
   listWorkspace,
   publishWorkspacePreview,
@@ -182,6 +183,7 @@ async function createMcpServer(
     },
   }, async ({ command, timeout }) => {
     const context = getContext()
+    const releaseActiveSandbox = registerActiveWorkspaceSandbox(conversationId, context.sandbox)
     try {
       const result = await runWorkspaceCommand(context, conversationId, command, timeout)
       return {
@@ -190,6 +192,8 @@ async function createMcpServer(
       }
     } catch (error) {
       return { content: [{ type: 'text', text: error instanceof Error ? error.message : String(error) }], isError: true }
+    } finally {
+      releaseActiveSandbox()
     }
   })
 
