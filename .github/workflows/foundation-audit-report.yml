@@ -36,3 +36,10 @@ jobs:
             console.log(`AUDIT_VULN name=${name} severity=${item.severity} direct=${item.isDirect} range=${item.range} via=${via} effects=${effects} fix=${fix}`)
           }
           NODE
+      - name: Explain vulnerable dependency paths
+        shell: bash
+        run: |
+          for pkg in fast-uri qs @opentelemetry/core @opentelemetry/propagator-jaeger @opentelemetry/sdk-trace-node; do
+            echo "===== NPM_EXPLAIN $pkg ====="
+            npm explain "$pkg" || true
+          done
