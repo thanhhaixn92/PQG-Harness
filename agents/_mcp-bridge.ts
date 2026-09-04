@@ -44,6 +44,7 @@ export interface LocalMcpBridge {
   close(): Promise<void>
 }
 
+export type MakersContextProvider = () => any
 export type MakersPermissionMode = 'read-only' | 'workspace-write' | 'danger-full-access'
 
 function toolName(tool: unknown): string {
@@ -57,7 +58,10 @@ function toolName(tool: unknown): string {
   return 'unknown'
 }
 
-async function createMcpServer(context: any, conversationId: string): Promise<McpServer> {
+async function createMcpServer(
+  getContext: MakersContextProvider,
+  conversationId: string,
+): Promise<McpServer> {
   const server = new McpServer(
     { name: 'edgeone-makers-bridge', version: '0.1.0' },
     { capabilities: { tools: {} } },
@@ -75,6 +79,7 @@ async function createMcpServer(context: any, conversationId: string): Promise<Mc
     description: 'Report which EdgeOne Makers capabilities were injected into this run.',
     inputSchema: {},
   }, async () => {
+    const context = getContext()
     const platformTools = typeof context.tools?.all === 'function'
       ? context.tools.all().map(toolName).filter((name: string) => name !== 'unknown')
       : []
@@ -97,6 +102,7 @@ async function createMcpServer(context: any, conversationId: string): Promise<Mc
     description: 'Execute a deterministic command in the EdgeOne Makers sandbox and return the result.',
     inputSchema: {},
   }, async () => {
+    const context = getContext()
     const result = await context.sandbox.commands.run(
       "printf 'DSH_MAKERS_SANDBOX_OK'",
       { timeout: 10 },
@@ -119,6 +125,7 @@ async function createMcpServer(context: any, conversationId: string): Promise<Mc
     description: 'Wait in the EdgeOne Makers sandbox. Used only to validate cancellation.',
     inputSchema: { seconds: z.number().int().min(1).max(30) },
   }, async ({ seconds }) => {
+    const context = getContext()
     const result = await context.sandbox.commands.run(
       `sleep ${String(seconds)}; printf 'WAIT_FINISHED'`,
       { timeout: seconds + 5 },
@@ -133,6 +140,7 @@ async function createMcpServer(context: any, conversationId: string): Promise<Mc
     description: 'List the current coding workspace. Paths are relative to the workspace root.',
     inputSchema: {},
   }, async () => {
+    const context = getContext()
     const listing = await listWorkspace(context, conversationId)
     return {
       content: [{
@@ -146,6 +154,7 @@ async function createMcpServer(context: any, conversationId: string): Promise<Mc
     description: 'Read one UTF-8 source file from the coding workspace using a relative path.',
     inputSchema: { path: z.string().min(1) },
   }, async ({ path }) => {
+    const context = getContext()
     try {
       return { content: [{ type: 'text', text: JSON.stringify(await readWorkspaceFile(context, conversationId, path)) }] }
     } catch (error) {
@@ -157,6 +166,7 @@ async function createMcpServer(context: any, conversationId: string): Promise<Mc
     description: 'Create or replace one complete UTF-8 source file in the coding workspace. Use one call per file. Read Only mode asks the user before this runs.',
     inputSchema: { path: z.string().min(1), content: z.string() },
   }, async ({ path, content }) => {
+    const context = getContext()
     try {
       return { content: [{ type: 'text', text: JSON.stringify(await writeWorkspaceFile(context, conversationId, path, content)) }] }
     } catch (error) {
@@ -171,6 +181,7 @@ async function createMcpServer(context: any, conversationId: string): Promise<Mc
       timeout: z.number().int().min(1).max(300).optional(),
     },
   }, async ({ command, timeout }) => {
+    const context = getContext()
     try {
       const result = await runWorkspaceCommand(context, conversationId, command, timeout)
       return {
@@ -186,6 +197,7 @@ async function createMcpServer(context: any, conversationId: string): Promise<Mc
     description: 'Start the generated project and publish its preview. Call this after implementation and verification. Below Full access, the user is asked to confirm.',
     inputSchema: {},
   }, async () => {
+    const context = getContext()
     try {
       return { content: [{ type: 'text', text: JSON.stringify(await publishWorkspacePreview(context, conversationId)) }] }
     } catch (error) {
@@ -197,7 +209,7 @@ async function createMcpServer(context: any, conversationId: string): Promise<Mc
 }
 
 async function handleMcpRequest(
-  context: any,
+  getContext: MakersContextProvider,
   conversationId: string,
   request: IncomingMessage,
   response: ServerResponse,
@@ -207,7 +219,7 @@ async function handleMcpRequest(
     response.writeHead(404).end('not found')
     return
   }
-  const server = await createMcpServer(context, conversationId)
+  const server = await createMcpServer(getContext, conversationId)
   const transport = new StreamableHTTPServerTransport({})
   response.on('close', () => {
     void transport.close()
@@ -218,7 +230,7 @@ async function handleMcpRequest(
 }
 
 export async function startLocalMcpBridge(
-  context: any,
+  getContext: MakersContextProvider,
   conversationId: string,
 ): Promise<LocalMcpBridge> {
   let requests = 0
@@ -240,7 +252,7 @@ export async function startLocalMcpBridge(
         url: request.url || '',
         bodyBytes,
       })
-      await handleMcpRequest(context, conversationId, request, response, parsedBody)
+      await handleMcpRequest(getContext, conversationId, request, response, parsedBody)
     })().catch(error => {
       if (!response.headersSent) response.writeHead(500)
       response.end(error instanceof Error ? error.message : String(error))
