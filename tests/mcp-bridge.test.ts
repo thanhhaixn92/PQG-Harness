@@ -36,3 +36,9 @@ test('workspace command MCP result treats durability failure as a tool error', a
     /result\.exitCode\s*!==\s*0\s*\|\|\s*result\.persistence\.persisted\s*!==\s*true/,
   )
 })
+
+test('workspace command registers its sandbox for Stop for the full command lifetime', async () => {
+  const source = await readFile(new URL('../agents/_mcp-bridge.ts', import.meta.url), 'utf8')
+  assert.match(source, /registerActiveWorkspaceSandbox\(conversationId,\s*context\.sandbox\)/)
+  assert.match(source, /finally\s*\{\s*releaseActiveSandbox\(\)\s*\}/)
+})
