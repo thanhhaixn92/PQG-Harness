@@ -52,18 +52,27 @@ final quality: 33895275632 — SUCCESS
 
 The temporary write-enabled reconcile workflow was deleted before final quality. The final PR changed only the root dependency manifest, semantic lock deletions, one permanent dependency contract, Known Limitations, and the verification record.
 
-The reviewed dependency cleanup was merged only into `integration/foundation-core` as:
+The reviewed Foundation source state immediately before the docs-only checkpoint merge was:
 
 ```text
-current integration commit: f24f69f2368c0c36241f646e39b5ca06114a44a8
-current integration tree: 43125c8dc47dfa1519c226ad0818397f47be42e7
+reviewed source commit: f24f69f2368c0c36241f646e39b5ca06114a44a8
+reviewed source tree:   43125c8dc47dfa1519c226ad0818397f47be42e7
 ```
 
-Point-in-time npm audit evidence is now zero known vulnerabilities for 563 audited packages. This is not a permanent supply-chain guarantee; future advisories and DSH/telemetry compatibility changes still require review.
+The subsequent verified docs-only checkpoint merge was:
+
+```text
+checkpoint merge: b3f9fec1e127ae3a410e445840c456f77935a37e
+checkpoint tree:  99cc554cc334b9c4058120b5af3f11b6a6a390cf
+```
+
+That merge tree exactly matched the quality-tested checkpoint candidate tree `466daf6563c1554a59c99b9ce1a3dcdad7e70030`. These are immutable evidence points; the moving `integration/foundation-core` head must be read from GitHub rather than embedded here as a "current" SHA.
+
+Point-in-time npm audit evidence is zero known vulnerabilities for 563 audited packages. This is not a permanent supply-chain guarantee; future advisories and DSH/telemetry compatibility changes still require review.
 
 ## Main branch guardrail
 
-Fresh GitHub verification after the dependency cleanup integration merge:
+Fresh GitHub verification after the owner reported EdgeOne reconnect:
 
 ```text
 main commit: 70119cfdae992a203a5e29eb24e91c7200222a7c
@@ -74,7 +83,11 @@ required contexts/checks: []
 repository rulesets: []
 ```
 
-No Foundation work has been merged to `main`. Required `quality` enforcement remains a blocker before any Git Auto Deploy reconnect.
+No Foundation work has been merged to `main`.
+
+EdgeOne Git integration is now **OWNER-REPORTED RECONNECTED**. Because reconnect occurred before required `quality` enforcement was configured, the safety rule changes from "do not reconnect" to **"do not merge/promote through `main` until the actual deployment branch is verified and required quality enforcement is configured"**.
+
+See `docs/verification/2026-09-04-edgeone-reconnect-status.md`.
 
 ## Known EdgeOne deployment probe
 
@@ -84,14 +97,22 @@ Known deployment URL recorded by the project:
 https://pqg-harness-dp0dukyw6bfl.edgeone.cool/
 ```
 
-A fresh network probe from the current execution environment on 2026-09-04 could not resolve the hostname (`Temporary failure in name resolution`). The same limitation prevented a request to `/build-meta.json`.
+After reconnect was reported, a fresh network probe from the current execution runtime still failed before HTTP because DNS resolution was unavailable:
+
+```text
+curl: (6) Could not resolve host: pqg-harness-dp0dukyw6bfl.edgeone.cool
+```
+
+The same limitation prevented a request to `/build-meta.json`.
 
 Interpretation:
 
 - this is **BLOCKED by the execution environment**, not an application FAIL;
+- reconnect itself is owner-reported and not independently Console-verified from this session;
 - deployed SHA/parity remains NOT VERIFIED;
+- Production/Preview branch mapping remains NOT VERIFIED;
 - root/API access/auth, runtime smoke, Preview durability/cancellation, native observability and rollback remain unresolved live gates;
-- Production Git Auto Deploy remains owner-recorded DISCONNECTED and was not reconnected by this checkpoint.
+- no Foundation change has been merged to `main` by this work.
 
 ## Source status
 
