@@ -73,6 +73,49 @@ test('platform abort and sandbox kill start even while sidecar shutdown is waiti
   __setSidecarStarterForTests(undefined)
 })
 
+test('Stop kills the sandbox owned by the active sidecar context instead of a different request sandbox', async () => {
+  let activeSandboxKills = 0
+  let stopRequestSandboxKills = 0
+
+  __setSidecarStarterForTests(async (_context: any, conversationId: string) =>
+    fakeSidecar(conversationId, async () => {}))
+
+  const lease = await acquireDshWebSidecar({
+    conversation_id: 'conv-stop-active-sandbox',
+    sandbox: {
+      async kill() {
+        activeSandboxKills += 1
+      },
+    },
+  })
+  lease.release()
+
+  try {
+    const response = await onRequestPost({
+      request: { body: { conversation_id: 'conv-stop-active-sandbox' } },
+      utils: {
+        async abortActiveRun() {
+          return { aborted: true }
+        },
+      },
+      sandbox: {
+        async kill() {
+          stopRequestSandboxKills += 1
+        },
+      },
+    })
+    const body = await response.json() as any
+
+    assert.equal(body.ok, true)
+    assert.deepEqual(body.sandbox, { killed: true })
+    assert.equal(activeSandboxKills, 1, 'the in-flight sidecar sandbox must be terminated')
+    assert.equal(stopRequestSandboxKills, 0, 'a different request sandbox must not be mistaken for the active sandbox')
+  } finally {
+    __setSidecarStarterForTests(undefined)
+    await stopDshWebSidecar('conv-stop-active-sandbox')
+  }
+})
+
 test('Stop returns stable non-secret outcomes when sidecar, platform abort, and sandbox kill fail', async () => {
   __setSidecarStarterForTests(async (_context: any, conversationId: string) =>
     fakeSidecar(conversationId, async () => {
