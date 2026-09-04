@@ -15,8 +15,16 @@
 - Deployed commit parity: NOT VERIFIED; the existing deployment may remain on an earlier source revision until a controlled redeploy is performed.
 - Required `AI_GATEWAY_*` environment variable presence/scope: NOT VERIFIED in EdgeOne Console; values must never be copied into repository evidence.
 
+## GitHub deployment guardrail
+- `main` commit remains `70119cfdae992a203a5e29eb24e91c7200222a7c`.
+- Direct branch metadata on 2026-09-04: `protected: false`.
+- Required-status-check enforcement: `off`; contexts/checks empty.
+- Repository rulesets endpoint returned an empty list.
+- The current connector exposes read-only branch-protection/ruleset access, so this setting cannot be applied from the current session.
+- Required action before reconnecting Git Auto Deploy: protect the deployment branch and require the `quality` check. See `docs/verification/2026-09-04-main-guardrail.md`.
+
 ## Foundation Core status
-- WP0 quality/governance: source-side GREEN.
+- WP0 quality/governance: source-side GREEN; repository-level required-check enforcement remains a release blocker as above.
 - WP1 security/permissions: source-side GREEN.
 - WP2 workspace durability: source-side GREEN; controlled Preview recycle/recovery remains **BLOCKED**.
 - WP3 sidecar lifecycle/Stop: source-side GREEN; controlled Preview command-cancellation proof remains **BLOCKED**.
@@ -28,7 +36,7 @@
 - WP6 product/locale/accessibility: source-side GREEN. Final WP6 evidence head `2f1573d6f43588805671f3667454524e7ba92fad`, quality run `33889812234` — SUCCESS.
 - WP6 full Vietnamese: DEFERRED because pinned DSH `0.1.0-rc.6` exposes namespace dictionary registration but no clean external locale-descriptor registration path. `vi-VN` falls back to complete shipped English. See `docs/localization/vi-status.md`.
 - WP6 controlled phone/tablet/desktop and real-browser accessibility smoke: **BLOCKED**. See `docs/verification/2026-09-04-wp6-preview-ui.md`.
-- WP7 release-readiness docs: candidate content complete on `impl/wp7-release-readiness-core`; final fresh quality evidence is pending on this branch before source-side GREEN can be recorded.
+- WP7 operational/release-readiness docs: source-side GREEN on implementation head `f444f4361603cb17d6283d3caa0c2c255bcf3252`, quality run `33891006816` — SUCCESS. This status update is evidence-only; a final fresh run on the resulting WP7 head is required before integration.
 
 ## Release evidence documents
 - Security boundary: `SECURITY.md`
@@ -42,4 +50,4 @@
 Do not reconnect Git Auto Deploy until Foundation Core changes have passed the quality gate and a controlled deployment/reconnect plan has been reviewed. Reconnection must re-verify Production/Preview branch mapping, environment scope, access policy, required `quality` enforcement on `main`, rollback mechanism, and deployed commit parity before enabling automatic promotion.
 
 ## Release status
-**Foundation Freeze is BLOCKED / not complete.** Source-side WP0–WP7 may be GREEN after final WP7 quality, but the required live EdgeOne gates in `docs/release/RELEASE_CHECKLIST.md` remain unresolved. Stable/public Production release is not approved.
+**Foundation Freeze is BLOCKED / not complete.** WP0–WP7 are source-side GREEN, but the mandatory live EdgeOne and repository-enforcement gates in `docs/release/RELEASE_CHECKLIST.md` remain unresolved. Stable/public Production release is not approved.
