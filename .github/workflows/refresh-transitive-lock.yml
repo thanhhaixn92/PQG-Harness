@@ -1,0 +1,54 @@
+name: refresh-transitive-lock
+
+on:
+  push:
+    branches:
+      - impl/foundation-transitive-security-refresh
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Refresh compatible transitive resolutions only
+        run: npm update fast-uri qs --package-lock-only --ignore-scripts
+      - name: Verify security floors
+        run: |
+          node <<'NODE'
+          const lock = require('./package-lock.json')
+          const compare = (a, b) => {
+            const aa = a.split('.').map(Number), bb = b.split('.').map(Number)
+            for (let i = 0; i < Math.max(aa.length, bb.length); i++) {
+              const d = (aa[i] || 0) - (bb[i] || 0)
+              if (d) return d
+            }
+            return 0
+          }
+          const fast = lock.packages['node_modules/fast-uri']?.version || ''
+          const qs = lock.packages['node_modules/qs']?.version || ''
+          console.log(`resolved fast-uri=${fast} qs=${qs}`)
+          if (compare(fast, '3.1.7') < 0) throw new Error(`fast-uri floor not met: ${fast}`)
+          if (compare(qs, '6.16.0') < 0) throw new Error(`qs floor not met: ${qs}`)
+          NODE
+      - name: Commit lock refresh
+        run: |
+          if git diff --quiet -- package-lock.json; then
+            echo 'package-lock already satisfies reviewed floors.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add package-lock.json
+          git commit -m 'fix: refresh vulnerable transitive parsers'
+          git push origin HEAD:impl/foundation-transitive-security-refresh
