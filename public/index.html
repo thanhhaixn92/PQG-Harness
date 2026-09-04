@@ -273,20 +273,76 @@ window.__DSH_BOOT__ = {"rev":"eefa04507a5c","entries":[{"id":"@deepseek-ai/dsh-a
     };
     applyCopy();
     new MutationObserver(applyCopy).observe(document.documentElement, { attributes: true, attributeFilter: ["lang"] });
+    const appRoot = document.getElementById("root");
+    const focusable = () => [...dialog.querySelectorAll('button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])')]
+      .filter((node) => node instanceof HTMLElement && !node.hidden && node.getAttribute("aria-hidden") !== "true");
+    let activeOpener = null;
+    let lastDialogFocus = null;
+    const setBackgroundInert = (value) => {
+      if (!appRoot) return;
+      if ("inert" in appRoot) appRoot.inert = value;
+      else if (value) appRoot.setAttribute("aria-hidden", "true");
+      else appRoot.removeAttribute("aria-hidden");
+    };
     const close = () => {
+      if (dialog.hidden) return;
       dialog.hidden = true;
-      more.focus();
+      setBackgroundInert(false);
+      const opener = activeOpener;
+      activeOpener = null;
+      lastDialogFocus = null;
+      if (opener?.isConnected) opener.focus();
     };
     const open = () => {
+      const opener = document.activeElement;
+      activeOpener = opener instanceof HTMLElement ? opener : more;
       dialog.hidden = false;
-      dialog.querySelector(".dsh-makers-contact-later")?.focus();
+      setBackgroundInert(true);
+      const first = focusable()[0];
+      first?.focus();
     };
     more.addEventListener("click", open);
     dialog.addEventListener("click", (event) => {
       if (event.target.closest("[data-close]")) close();
     });
     document.addEventListener("keydown", (event) => {
-      if (event.key === "Escape" && !dialog.hidden) close();
+      if (dialog.hidden) return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        close();
+        return;
+      }
+      if (event.key === "Tab") {
+        const items = focusable();
+        if (items.length === 0) {
+          event.preventDefault();
+          return;
+        }
+        const current = document.activeElement;
+        const index = items.indexOf(current);
+        const nextIndex = event.shiftKey
+          ? index <= 0 ? items.length - 1 : index - 1
+          : index < 0 || index === items.length - 1 ? 0 : index + 1;
+        event.preventDefault();
+        items[nextIndex]?.focus();
+      }
+    });
+    document.addEventListener('focusin', (event) => {
+      if (dialog.hidden) return;
+      if (dialog.contains(event.target)) {
+        lastDialogFocus = event.target instanceof HTMLElement ? event.target : lastDialogFocus;
+        return;
+      }
+      const target = lastDialogFocus?.isConnected ? lastDialogFocus : focusable()[0];
+      target?.focus();
+    });
+    document.addEventListener('focusout', () => {
+      if (dialog.hidden) return;
+      queueMicrotask(() => {
+        if (dialog.hidden || dialog.contains(document.activeElement)) return;
+        const target = lastDialogFocus?.isConnected ? lastDialogFocus : focusable()[0];
+        target?.focus();
+      });
     });
     document.body.append(dialog);
     adopt();
