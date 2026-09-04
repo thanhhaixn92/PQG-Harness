@@ -13,5 +13,8 @@
 - Access/auth policy: NOT VERIFIED — confirm in EdgeOne Console before public/stable use.
 - Deployed commit parity: NOT VERIFIED; the existing deployment may remain on an earlier source revision until a controlled redeploy is performed.
 
+## Deployment safety rule
+Do not reconnect Git Auto Deploy until Phase 2 changes have passed the quality gate and a controlled deployment/reconnect plan has been reviewed. Reconnection must re-verify Production/Preview branch mapping, access policy and deployed commit parity before enabling automatic promotion.
+
 ## Release status
 Developer/MVP hardening. Not approved as stable/public production until Phase 2 release gates are closed.
