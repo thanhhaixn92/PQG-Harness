@@ -10,6 +10,7 @@ import { startLocalGatewayProxy } from '../agents/_gateway-proxy.ts'
 import { startLocalMcpBridge } from '../agents/_mcp-bridge.ts'
 import {
   __setSidecarStarterForTests,
+  acquireDshWebSidecar,
   stopDshWebSidecar,
 } from '../agents/_dsh-web-sidecar.ts'
 import { onRequest } from '../agents/api/_proxy.ts'
@@ -169,5 +170,66 @@ test('SSE abort before sidecar readiness never opens a late WebSocket', async ()
     await stopDshWebSidecar('conv-sse-early-abort')
     __setSidecarStarterForTests(undefined)
     await new Promise<void>(resolve => wss.close(() => resolve()))
+  }
+})
+
+test('unary streaming response holds its lease until the body finishes', async () => {
+  let releaseBody!: () => void
+  const bodyGate = new Promise<void>(resolve => { releaseBody = resolve })
+  const sidecarServer = createServer(async (_request, response) => {
+    response.writeHead(200, { 'content-type': 'application/json' })
+    response.write('{"part":1')
+    await bodyGate
+    response.end(',"done":true}')
+  })
+  await new Promise<void>((resolve, reject) => {
+    sidecarServer.once('error', reject)
+    sidecarServer.listen(0, '127.0.0.1', resolve)
+  })
+  const address = sidecarServer.address() as AddressInfo
+  let streamedCloseCalls = 0
+  const realNow = Date.now
+
+  __setSidecarStarterForTests(async (_context: any, conversationId: string) => ({
+    conversationId,
+    home: `/tmp/${conversationId}`,
+    port: address.port,
+    child: {} as any,
+    gateway: { baseUrl: '', close: async () => {} },
+    mcp: { url: '', requestCount: () => 0, requestLog: () => [], close: async () => {} },
+    lastUsedAt: Date.now(),
+    context: {},
+    close: async () => { if (conversationId === 'conv-unary-stream') streamedCloseCalls += 1 },
+  }))
+
+  let response: Response | undefined
+  let sweepLease: Awaited<ReturnType<typeof acquireDshWebSidecar>> | undefined
+  try {
+    response = await onRequest({
+      conversation_id: 'conv-unary-stream',
+      request: {
+        url: '/api/ping',
+        method: 'GET',
+        headers: {},
+      },
+    })
+    assert.equal(response.status, 200)
+
+    Date.now = () => realNow() + 60 * 60_000
+    sweepLease = await acquireDshWebSidecar({ conversation_id: 'conv-sweep-trigger' })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    assert.equal(streamedCloseCalls, 0, 'active response body must prevent idle reap')
+
+    releaseBody()
+    assert.equal(await response.text(), '{"part":1,"done":true}')
+  } finally {
+    Date.now = realNow
+    releaseBody()
+    sweepLease?.release()
+    try { await response?.body?.cancel() } catch { /* body may already be consumed */ }
+    await stopDshWebSidecar('conv-unary-stream')
+    await stopDshWebSidecar('conv-sweep-trigger')
+    __setSidecarStarterForTests(undefined)
+    await closeHttpServer(sidecarServer)
   }
 })
