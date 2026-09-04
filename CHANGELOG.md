@@ -41,6 +41,8 @@ All notable PQG Harness project-level changes are recorded here. The project is 
 - Pinned `ws` to `8.21.3`.
 - Added package-lock SRI verification before exceptional native-package extraction.
 - Added `dist/build-meta.json` containing exact Git commit/tree/package version and made invalid Git identity a build failure.
+- Refreshed compatible transitive `fast-uri` and `qs` resolutions to reviewed security floors (`3.1.7` and `6.16.0`) and added lockfile regression coverage.
+- Reduced `npm audit` from 14 findings (11 moderate, 3 high) to 12 findings (10 moderate, 2 high); all residual entries are in the inherited direct OpenTelemetry wave and require a coordinated semver-major compatibility review rather than a forced lockfile fix.
 
 ### Product layer
 
@@ -54,6 +56,7 @@ All notable PQG Harness project-level changes are recorded here. The project is 
 - Added `SECURITY.md`, `ARCHITECTURE.md`, `RUNBOOK.md`, release checklist and known-limitations documentation.
 - Added a release-doc contract test requiring all Phase 1B P1 findings to be accounted for.
 - Explicitly separated source-side GREEN state from live EdgeOne release evidence.
+- Added post-merge Foundation source checkpoint and dependency-security verification records.
 
 ## Current release status
 

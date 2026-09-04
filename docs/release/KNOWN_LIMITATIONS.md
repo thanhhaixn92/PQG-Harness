@@ -65,11 +65,22 @@ All direct DSH packages are intentionally frozen at `0.1.0-rc.6`. This avoids a 
 
 Do not opportunistically upgrade individual DSH packages. A later DSH migration should be isolated, reviewed as one compatibility wave, and validated through generated drift, tests, Preview smoke, and rollback.
 
-## 8. Current dependency audit findings are not fully modernized
+## 8. Residual dependency audit findings require an OpenTelemetry compatibility wave
 
-Current `npm ci` quality logs report dependency audit findings. WP4 fixed the reviewed `ws` issue, froze the DSH wave, and added native-package integrity verification; it did not perform a broad forced dependency upgrade.
+The safe transitive parser findings identified during Foundation review have been remediated without changing the direct dependency manifest:
 
-Before a stable/public release, triage remaining high/moderate findings for exploitability in this runtime rather than automatically running a breaking `npm audit fix --force`.
+```text
+fast-uri: 3.1.5 -> 3.1.7
+qs:       6.15.3 -> 6.16.0
+```
+
+A regression contract now enforces `fast-uri >= 3.1.7` and `qs >= 6.16.0`. After this refresh, `npm audit --json` reports **12 residual findings: 10 moderate, 2 high, 0 critical**. All remaining entries belong to the inherited direct OpenTelemetry dependency wave.
+
+`npm audit` proposes only semver-major OpenTelemetry remediation (`2.x` / `0.222.x`). The imported TencentEdgeOne baseline intentionally carries this OpenTelemetry family, so a forced or piecemeal upgrade is not treated as a safe lockfile fix.
+
+A PQG-owned source scan found no OpenTelemetry import and no explicit Jaeger activation (`JaegerPropagator`, `OTEL_PROPAGATORS`, `setGlobalPropagator`). That reduces the demonstrated PQG activation surface for the Jaeger-specific issue, but it does not prove every DSH/runtime telemetry path is unaffected.
+
+Before a stable/public release, review the residual OpenTelemetry advisories against the actual DSH/Makers telemetry activation path. If remediation is required, perform one coordinated OpenTelemetry/DSH compatibility wave with full quality, controlled Preview telemetry/smoke checks, and rollback rehearsal. See `docs/verification/2026-09-04-dependency-security-refresh.md`.
 
 ## 9. Full Vietnamese localization is deferred
 

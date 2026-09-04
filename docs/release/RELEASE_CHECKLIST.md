@@ -7,7 +7,8 @@ This checklist separates **source-side closure** from **live EdgeOne release evi
 ## Release state
 
 - WP0–WP7 source-side implementation/documentation: **GREEN** at recorded evidence heads.
-- WP7 implementation head `f444f4361603cb17d6283d3caa0c2c255bcf3252`: quality run `33891006816` — SUCCESS. A final fresh quality run is still required on the evidence-aligned WP7 head before integration.
+- Post-WP7 Foundation source checkpoint was merged only into `integration/foundation-core`; quality run `33892152391` — SUCCESS on the checkpoint candidate.
+- A narrow dependency-security refresh has removed the compatible `fast-uri` / `qs` findings and is verified separately in `docs/verification/2026-09-04-dependency-security-refresh.md`.
 - Foundation Freeze: **BLOCKED / not complete** because required live Preview, access/auth, deployed-identity, deployment-topology, and `main` enforcement evidence are unresolved.
 - Stable/public Production release: **NOT APPROVED**.
 
@@ -30,7 +31,7 @@ No P1 is silently omitted. A row may be changed from BLOCKED only when its requi
 
 ## Source-side Foundation checks
 
-- [x] WP7 implementation candidate has a GREEN full `quality` workflow: run `33891006816` on `f444f4361603cb17d6283d3caa0c2c255bcf3252`; final evidence-aligned head will receive one additional fresh run before integration.
+- [x] Post-WP7 source checkpoint has a GREEN full `quality` workflow: run `33892152391`.
 - [x] WP1 permission fallback is fail-closed.
 - [x] Automatic sensitive file paths are hidden/rejected before file I/O.
 - [x] Preview credentials are absent from model-visible tool results.
@@ -45,6 +46,8 @@ No P1 is silently omitted. A row may be changed from BLOCKED only when its requi
 - [x] Stop attempts sidecar shutdown and platform abort independently.
 - [x] Direct DSH dependencies are pinned to the reviewed `0.1.0-rc.6` wave.
 - [x] `ws` is pinned to `8.21.3`.
+- [x] `fast-uri` lock resolution is at least `3.1.7` and enforced by regression test.
+- [x] `qs` lock resolution is at least `6.16.0` and enforced by regression test.
 - [x] Exceptional native tarballs are SRI-verified before destructive extraction.
 - [x] Gateway response headers use the reviewed allowlist and public proxy errors are code-only.
 - [x] `build:prepared` emits exact Git commit/tree/package version in `dist/build-meta.json`.
@@ -72,7 +75,8 @@ These rows are **BLOCKED** until the required environment or administration capa
 
 ## Dependency/release limitations to review
 
-- [ ] Review current `npm audit` findings before any public/stable release. Current quality logs still report audit findings; Foundation Core did not perform a broad dependency modernization wave.
+- [x] Compatible transitive parser findings reviewed and remediated: `fast-uri 3.1.7`, `qs 6.16.0`; post-refresh audit no longer lists either package.
+- [ ] Before stable/public release, review the **12 residual OpenTelemetry findings (10 moderate, 2 high)** against the actual DSH/Makers telemetry activation path. `npm audit` proposes only semver-major fixes; do not apply a forced piecemeal migration. See `docs/verification/2026-09-04-dependency-security-refresh.md`.
 - [ ] Re-evaluate `x-prompt-log` and `x-gateway-quota-bypass` when authoritative semantics become available.
 - [ ] Re-evaluate symlink/canonical-path policy if the platform exposes a safe canonical-path primitive or project requirements include untrusted filesystem layouts.
 - [ ] Re-evaluate full Vietnamese only when a stable external locale-descriptor registration path exists or the project deliberately accepts a complete frontend locale fork.
