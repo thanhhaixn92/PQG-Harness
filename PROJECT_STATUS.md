@@ -16,10 +16,10 @@
 - A tokenized access URL was supplied by the owner for verification; credential/query parameters are intentionally not stored in repository evidence.
 - Production branch mapping after reconnect: **NOT VERIFIED**; do not infer that `main` is or is not the active Production source until Console/deployment identity is checked.
 - Preview branch behavior after reconnect: **NOT VERIFIED**; a controlled Preview URL/identity is still required before live gates can close.
-- Access/auth policy: **NOT VERIFIED — Foundation Freeze blocker**; confirm in EdgeOne Console and logged-out/direct API behavior before public/stable use.
-- Deployed commit parity: NOT VERIFIED; reconnect alone does not prove that the known deployment runs the Foundation integration source.
-- Required `AI_GATEWAY_*` environment variable presence/scope: NOT VERIFIED in EdgeOne Console; values must never be copied into repository evidence.
-- Fresh probes from the current execution environment after reconnect still could not obtain application content from the canonical origin; direct runtime HTTP failed DNS resolution and the web fetch path returned no application response. `/` and `/build-meta.json` therefore remain **BLOCKED by execution environment**, not recorded as application FAIL. See `docs/verification/2026-09-04-edgeone-reconnect-status.md`.
+- Independent anonymous probe from a GitHub-hosted runner: `GET / -> 200`, `GET /build-meta.json -> 404` (workflow `33898408637`). This confirms the currently reachable origin does not block anonymous root access and does not expose the reviewed Foundation build identity.
+- Access/auth: **LIVE OUTER BOUNDARY FAIL CONFIRMED; source mitigation GREEN, live candidate proof pending**. A minimal all-route single-user middleware gate is implemented on the Foundation auth branch; see `docs/verification/2026-09-04-foundation-single-user-auth.md`.
+- Deployed Foundation commit parity: **NOT VERIFIED / NOT PARITY** because `/build-meta.json` returned 404 anonymously on the known origin. A controlled authenticated candidate must be checked before promotion.
+- Required `AI_GATEWAY_*` and `PQG_ACCESS_SECRET` environment-variable presence/scope: NOT VERIFIED in EdgeOne Console; values must never be copied into repository evidence.
 
 ## GitHub deployment guardrail
 - `main` commit remains `70119cfdae992a203a5e29eb24e91c7200222a7c`.
@@ -40,7 +40,8 @@
 - Dependency audit status is point-in-time evidence only. DSH rc.6 retains its required nested newer telemetry graph; future advisories or DSH/telemetry migration still require review.
 - `x-prompt-log` / `x-gateway-quota-bypass`: NOT VERIFIED from authoritative public EdgeOne documentation; preserved only as inherited compatibility behavior. See `docs/verification/2026-09-04-wp4-gateway-header-status.md`.
 - WP5 build identity: source-side GREEN. `build:prepared` emits `dist/build-meta.json` from exact git commit/tree and package version; recorded WP5 quality evidence is GREEN.
-- WP5 controlled Preview smoke, deployed `/build-meta.json` parity, topology, access/auth, native observability and rollback: **BLOCKED / NOT VERIFIED**. EdgeOne reconnect makes these checks operationally relevant again but does not satisfy them by itself. See `docs/verification/2026-09-04-foundation-preview-smoke.md`.
+- WP5 access contingency: source-side GREEN for the minimal Personal v1 single-user middleware after anonymous root access was proven open. RED quality `33898779107`; GREEN quality `33899050826`; review-follow-up quality `33899283052`.
+- WP5 controlled Preview smoke, authenticated `/build-meta.json` parity, topology, environment scope, native observability and rollback: **BLOCKED / NOT VERIFIED**. See `docs/verification/2026-09-04-foundation-preview-smoke.md` and `docs/verification/2026-09-04-foundation-single-user-auth.md`.
 - WP6 product/locale/accessibility: source-side GREEN. Final WP6 evidence head `2f1573d6f43588805671f3667454524e7ba92fad`, quality run `33889812234` — SUCCESS.
 - WP6 full Vietnamese: DEFERRED because pinned DSH `0.1.0-rc.6` exposes namespace dictionary registration but no clean external locale-descriptor registration path. `vi-VN` falls back to complete shipped English. See `docs/localization/vi-status.md`.
 - WP6 controlled phone/tablet/desktop and real-browser accessibility smoke: **BLOCKED**. See `docs/verification/2026-09-04-wp6-preview-ui.md`.
@@ -55,6 +56,7 @@
 - Change history: `CHANGELOG.md`
 - Foundation source checkpoint: `docs/verification/2026-09-04-foundation-source-checkpoint.md`
 - EdgeOne reconnect status: `docs/verification/2026-09-04-edgeone-reconnect-status.md`
+- Single-user auth remediation: `docs/verification/2026-09-04-foundation-single-user-auth.md`
 - Transitive dependency security refresh: `docs/verification/2026-09-04-dependency-security-refresh.md`
 - Root OpenTelemetry cleanup: `docs/verification/2026-09-04-foundation-otel-root-cleanup.md`
 
@@ -62,4 +64,4 @@
 EdgeOne Git integration is owner-reported reconnected. Until Production/Preview mapping and deployed identity are verified, **do not merge Foundation changes to `main` or intentionally promote Production**. Configure required `quality` enforcement on the actual deployment branch before using Git push/merge as a release mechanism. A controlled non-Production Preview may be used to close the remaining live gates once its exact URL and build identity are available.
 
 ## Release status
-**Foundation Freeze is BLOCKED / not complete.** WP0–WP7 and the reviewed dependency cleanup are source-side GREEN, but the mandatory live EdgeOne and repository-enforcement gates in `docs/release/RELEASE_CHECKLIST.md` remain unresolved. Stable/public Production release is not approved.
+**Foundation Freeze is BLOCKED / not complete.** WP0–WP7, the reviewed dependency cleanup, and the single-user auth source mitigation are source-side GREEN, but mandatory live EdgeOne and repository-enforcement gates remain unresolved. Stable/public Production release is not approved.
