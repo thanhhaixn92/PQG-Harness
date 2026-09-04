@@ -36,6 +36,12 @@ export interface WorkspaceItem {
   mtime?: number
 }
 
+export interface WorkspaceListing {
+  items: WorkspaceItem[]
+  truncated: boolean
+  limit: number
+}
+
 export interface WorkspaceCheckpoint {
   size: number
   sha256: string
@@ -250,7 +256,7 @@ export async function ensureWorkspace(context: any, conversationId: string): Pro
   return root
 }
 
-export async function listWorkspace(context: any, conversationId: string): Promise<WorkspaceItem[]> {
+export async function listWorkspace(context: any, conversationId: string): Promise<WorkspaceListing> {
   const root = await ensureWorkspace(context, conversationId)
   const ignored = [...IGNORED_DIRECTORIES]
     .map(directory => `-path './${directory}'`)
@@ -267,7 +273,7 @@ export async function listWorkspace(context: any, conversationId: string): Promi
     throw new Error(result.stderr || result.stdout || 'Failed to list workspace files.')
   }
 
-  return String(result.stdout || '')
+  const parsed = String(result.stdout || '')
     .split('\n')
     .map((line: string) => line.trimEnd())
     .filter(Boolean)
@@ -279,7 +285,6 @@ export async function listWorkspace(context: any, conversationId: string): Promi
     .filter(item => !item.rawPath.split('/').some(segment => IGNORED_DIRECTORIES.has(segment)))
     .filter(item => !IGNORED_FILES.has(item.rawPath.split('/').pop() || ''))
     .filter(item => !isSensitiveWorkspacePath(item.rawPath))
-    .slice(0, 400)
     .map(item => {
       const name = item.rawPath.split('/').pop() || item.rawPath
       const mtime = Number.parseFloat(item.mtimeRaw)
@@ -293,6 +298,13 @@ export async function listWorkspace(context: any, conversationId: string): Promi
         ...(Number.isFinite(mtime) && mtime > 0 ? { mtime: Math.round(mtime * 1000) } : {}),
       }
     })
+
+  const limit = 400
+  return {
+    items: parsed.slice(0, limit),
+    truncated: parsed.length > limit,
+    limit,
+  }
 }
 
 export async function readWorkspaceFile(
@@ -475,6 +487,22 @@ export async function currentPreview(
     const conversation = await getConversation(context, conversationId)
     const published = conversation?.metadata?.preview?.published === true
     if (!published) return { published: false }
+
+    const health = await context.sandbox.commands.run(
+      "curl -fsS http://127.0.0.1:3000/preview/ >/dev/null 2>&1 || curl -fsS http://127.0.0.1:3000/ >/dev/null 2>&1",
+      { timeout: 5 },
+    )
+    if (health.exitCode !== 0) {
+      try {
+        await updateConversationMetadata(context, conversationId, {
+          preview: { published: false, updatedAt: Date.now() },
+        })
+      } catch (error) {
+        console.warn('[workspace] stale preview metadata cleanup failed:', error)
+      }
+      return { published: false }
+    }
+
     try {
       const host = normalizePublicUrl(context.sandbox.getHost(9000))
       const token = String(context.sandbox.envdAccessToken || '')
