@@ -14,7 +14,7 @@
   "type": "module",
   "scripts": {
     "prepare:makers-runtime": "npm ci --ignore-scripts --os=linux --cpu=x64 --include=optional && node scripts/restore-host-frontend-natives.mjs",
-    "prepare:dsh-web": "node scripts/prepare-dsh-web.mjs && node scripts/generate-dsh-api-routes.mjs",
+    "prepare:dsh-web": "node scripts/prepare-dsh-web.mjs && node scripts/apply-product-layer.mjs && node scripts/generate-dsh-api-routes.mjs",
     "dev": "vite",
     "build": "npm run prepare:dsh-web && npm run build:prepared",
     "build:prepared": "vite build && node scripts/write-build-meta.mjs",
