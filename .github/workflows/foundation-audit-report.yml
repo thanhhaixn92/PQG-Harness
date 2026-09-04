@@ -43,3 +43,8 @@ jobs:
             echo "===== NPM_EXPLAIN $pkg ====="
             npm explain "$pkg" || true
           done
+      - name: Inspect OpenTelemetry and Jaeger source usage
+        shell: bash
+        run: |
+          echo '===== SOURCE_OPENTELEMETRY_REFERENCES ====='
+          grep -RInE --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=public --exclude=index.html --exclude=package-lock.json '(@opentelemetry/|JaegerPropagator|OTEL_PROPAGATORS|setGlobalPropagator)' . || true
