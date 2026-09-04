@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { registerActiveWorkspaceSandbox } from '../agents/_active-sandbox.ts'
 import {
   __setSidecarStarterForTests,
   acquireDshWebSidecar,
@@ -71,6 +72,122 @@ test('platform abort and sandbox kill start even while sidecar shutdown is waiti
   assert.deepEqual(body.sandbox, { killed: true })
   assert.equal(closeCalls, 1)
   __setSidecarStarterForTests(undefined)
+})
+
+test('Stop kills the sandbox registered by an active workspace command instead of a different request sandbox', async () => {
+  let activeSandboxKills = 0
+  let stopRequestSandboxKills = 0
+  const releaseActiveSandbox = registerActiveWorkspaceSandbox('conv-stop-active-sandbox', {
+    async kill() {
+      activeSandboxKills += 1
+    },
+  })
+
+  try {
+    const response = await onRequestPost({
+      request: { body: { conversation_id: 'conv-stop-active-sandbox' } },
+      utils: {
+        async abortActiveRun() {
+          return { aborted: true }
+        },
+      },
+      sandbox: {
+        async kill() {
+          stopRequestSandboxKills += 1
+        },
+      },
+    })
+    const body = await response.json() as any
+
+    assert.equal(body.ok, true)
+    assert.deepEqual(body.sandbox, { killed: true })
+    assert.equal(activeSandboxKills, 1, 'the in-flight workspace command sandbox must be terminated')
+    assert.equal(stopRequestSandboxKills, 0, 'a different Stop request sandbox must not be mistaken for the active command sandbox')
+  } finally {
+    releaseActiveSandbox()
+  }
+})
+
+test('Stop kills every distinct sandbox registered by overlapping workspace commands', async () => {
+  let firstSandboxKills = 0
+  let secondSandboxKills = 0
+  let stopRequestSandboxKills = 0
+  const releaseFirst = registerActiveWorkspaceSandbox('conv-stop-overlap', {
+    async kill() {
+      firstSandboxKills += 1
+    },
+  })
+  const releaseSecond = registerActiveWorkspaceSandbox('conv-stop-overlap', {
+    async kill() {
+      secondSandboxKills += 1
+    },
+  })
+
+  try {
+    const response = await onRequestPost({
+      request: { body: { conversation_id: 'conv-stop-overlap' } },
+      utils: {
+        async abortActiveRun() {
+          return { aborted: true }
+        },
+      },
+      sandbox: {
+        async kill() {
+          stopRequestSandboxKills += 1
+        },
+      },
+    })
+    const body = await response.json() as any
+
+    assert.equal(body.ok, true)
+    assert.deepEqual(body.sandbox, { killed: true })
+    assert.equal(firstSandboxKills, 1, 'the first overlapping command sandbox must be terminated')
+    assert.equal(secondSandboxKills, 1, 'the second overlapping command sandbox must be terminated')
+    assert.equal(stopRequestSandboxKills, 0, 'the Stop request sandbox is only a fallback when no command sandbox is active')
+  } finally {
+    releaseSecond()
+    releaseFirst()
+  }
+})
+
+test('Stop attempts every active sandbox when one kill throws synchronously', async () => {
+  let secondSandboxKills = 0
+  let stopRequestSandboxKills = 0
+  const releaseFirst = registerActiveWorkspaceSandbox('conv-stop-sync-kill-failure', {
+    kill() {
+      throw new Error('synchronous sandbox kill failure')
+    },
+  })
+  const releaseSecond = registerActiveWorkspaceSandbox('conv-stop-sync-kill-failure', {
+    kill() {
+      secondSandboxKills += 1
+    },
+  })
+
+  try {
+    const response = await onRequestPost({
+      request: { body: { conversation_id: 'conv-stop-sync-kill-failure' } },
+      utils: {
+        async abortActiveRun() {
+          return { aborted: true }
+        },
+      },
+      sandbox: {
+        async kill() {
+          stopRequestSandboxKills += 1
+        },
+      },
+    })
+    const body = await response.json() as any
+
+    assert.equal(body.ok, false)
+    assert.deepEqual(body.sandbox, { killed: false, error: 'SANDBOX_KILL_FAILED' })
+    assert.equal(secondSandboxKills, 1, 'a later active sandbox must still be terminated after a synchronous kill failure')
+    assert.equal(stopRequestSandboxKills, 0, 'the Stop request sandbox remains only a fallback')
+  } finally {
+    releaseSecond()
+    releaseFirst()
+  }
 })
 
 test('Stop returns stable non-secret outcomes when sidecar, platform abort, and sandbox kill fail', async () => {
