@@ -1,0 +1,38 @@
+name: foundation-audit-report
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Capture npm audit JSON
+        shell: bash
+        run: |
+          npm audit --json > audit.json || true
+          node <<'NODE'
+          const fs = require('fs')
+          const report = JSON.parse(fs.readFileSync('audit.json', 'utf8'))
+          const meta = report.metadata?.vulnerabilities || {}
+          console.log('AUDIT_COUNTS', JSON.stringify(meta))
+          const vulnerabilities = report.vulnerabilities || {}
+          for (const [name, item] of Object.entries(vulnerabilities)) {
+            const via = (item.via || []).map((entry) => typeof entry === 'string' ? entry : `${entry.source}:${entry.title}`).join(' | ')
+            const effects = (item.effects || []).join(',')
+            const fix = item.fixAvailable === false ? 'false' : JSON.stringify(item.fixAvailable)
+            console.log(`AUDIT_VULN name=${name} severity=${item.severity} direct=${item.isDirect} range=${item.range} via=${via} effects=${effects} fix=${fix}`)
+          }
+          NODE
