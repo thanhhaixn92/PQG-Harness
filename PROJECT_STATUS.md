@@ -11,14 +11,15 @@
 - Upstream provenance: see `UPSTREAM.md`
 
 ## Known deployment
-- Known URL: `https://pqg-harness-dp0dukyw6bfl.edgeone.cool/`
+- Canonical non-secret origin supplied by the owner: `https://pqg-harness.edgeone.cool/`
 - EdgeOne Git connection: **RECONNECTED — OWNER-REPORTED on 2026-09-04**. Direct EdgeOne Console state is not independently available to this session; see `docs/verification/2026-09-04-edgeone-reconnect-status.md`.
+- A tokenized access URL was supplied by the owner for verification; credential/query parameters are intentionally not stored in repository evidence.
 - Production branch mapping after reconnect: **NOT VERIFIED**; do not infer that `main` is or is not the active Production source until Console/deployment identity is checked.
 - Preview branch behavior after reconnect: **NOT VERIFIED**; a controlled Preview URL/identity is still required before live gates can close.
 - Access/auth policy: **NOT VERIFIED — Foundation Freeze blocker**; confirm in EdgeOne Console and logged-out/direct API behavior before public/stable use.
 - Deployed commit parity: NOT VERIFIED; reconnect alone does not prove that the known deployment runs the Foundation integration source.
 - Required `AI_GATEWAY_*` environment variable presence/scope: NOT VERIFIED in EdgeOne Console; values must never be copied into repository evidence.
-- Fresh probe from the current execution environment after reconnect on 2026-09-04 still could not resolve the known deployment hostname; `/` and `/build-meta.json` remain **BLOCKED by execution environment**, not recorded as application FAIL. See `docs/verification/2026-09-04-edgeone-reconnect-status.md`.
+- Fresh probes from the current execution environment after reconnect still could not obtain application content from the canonical origin; direct runtime HTTP failed DNS resolution and the web fetch path returned no application response. `/` and `/build-meta.json` therefore remain **BLOCKED by execution environment**, not recorded as application FAIL. See `docs/verification/2026-09-04-edgeone-reconnect-status.md`.
 
 ## GitHub deployment guardrail
 - `main` commit remains `70119cfdae992a203a5e29eb24e91c7200222a7c`.
