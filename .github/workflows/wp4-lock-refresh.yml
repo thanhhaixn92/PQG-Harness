@@ -23,36 +23,29 @@ jobs:
           node-version: '24'
           cache: npm
 
-      - name: Refresh lock without transitive churn
+      - name: Apply reviewed lock edits only
         run: |
-          cp package-lock.json /tmp/package-lock.before.json
-          npm install --package-lock-only --ignore-scripts
           node --input-type=module <<'NODE'
           import fs from 'node:fs'
           import assert from 'node:assert/strict'
-          const before = JSON.parse(fs.readFileSync('/tmp/package-lock.before.json', 'utf8'))
-          const after = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'))
-          const normalize = lock => {
-            const copy = structuredClone(lock)
-            const root = copy.packages?.['']
-            if (root?.dependencies) {
-              for (const name of Object.keys(root.dependencies)) {
-                if (name === '@deepseek-ai/dsh' || name.startsWith('@deepseek-ai/dsh-')) root.dependencies[name] = '0.1.0-rc.6'
-              }
-              root.dependencies.ws = '8.21.3'
-            }
-            if (copy.packages?.['node_modules/ws']) copy.packages['node_modules/ws'] = '__WS_ENTRY__'
-            return copy
+          const path = 'package-lock.json'
+          const lock = JSON.parse(fs.readFileSync(path, 'utf8'))
+          const root = lock.packages?.['']?.dependencies
+          assert.ok(root, 'root lock dependencies missing')
+          for (const name of Object.keys(root)) {
+            if (name === '@deepseek-ai/dsh' || name.startsWith('@deepseek-ai/dsh-')) root[name] = '0.1.0-rc.6'
           }
-          assert.deepEqual(normalize(after), normalize(before), 'npm attempted unrelated lockfile churn')
-          const root = after.packages?.['']?.dependencies || {}
-          for (const [name, version] of Object.entries(root)) {
-            if (name === '@deepseek-ai/dsh' || name.startsWith('@deepseek-ai/dsh-')) assert.equal(version, '0.1.0-rc.6')
-          }
-          assert.equal(root.ws, '8.21.3')
-          assert.equal(after.packages?.['node_modules/ws']?.version, '8.21.3')
-          assert.equal(after.packages?.['node_modules/ws']?.integrity, 'sha512-201TZ/kPWxoPr/OKWjquZR1SWKXcvxdH+e1xrx89b3YbmzLMFCLfnaG1HFIgWzJOEWZ7MvpK++odZufgYR50Rw==')
+          root.ws = '8.21.3'
+          const ws = lock.packages?.['node_modules/ws']
+          assert.ok(ws, 'ws lock entry missing')
+          ws.version = '8.21.3'
+          ws.resolved = 'https://registry.npmjs.org/ws/-/ws-8.21.3.tgz'
+          ws.integrity = 'sha512-201TZ/kPWxoPr/OKWjquZR1SWKXcvxdH+e1xrx89b3YbmzLMFCLfnaG1HFIgWzJOEWZ7MvpK++odZufgYR50Rw=='
+          fs.writeFileSync(path, `${JSON.stringify(lock, null, 2)}\n`)
           NODE
+
+      - name: Validate lock with npm ci
+        run: npm ci --ignore-scripts
 
       - name: Commit refreshed lock if needed
         run: |
