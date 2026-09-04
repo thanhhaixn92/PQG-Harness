@@ -24,6 +24,9 @@
 - `x-prompt-log` / `x-gateway-quota-bypass`: NOT VERIFIED from authoritative public EdgeOne documentation; preserved only as inherited compatibility behavior. See `docs/verification/2026-09-04-wp4-gateway-header-status.md`.
 - WP5 build identity: source-side GREEN. `build:prepared` emits `dist/build-meta.json` from exact git commit/tree and package version; Task 10 quality run `33887353859` passed.
 - WP5 controlled Preview smoke, deployed `/build-meta.json` parity, topology, access/auth, native observability and rollback: BLOCKED / NOT VERIFIED. See `docs/verification/2026-09-04-foundation-preview-smoke.md`.
+- WP6 product/locale/accessibility: source-side GREEN. PQG owns product identity, browser language selects the shipped locale, and the PQG contact dialog has Escape/focus-return/Tab containment/inert behavior. Quality run `33889681166` passed on the reviewed candidate before this status-only evidence commit.
+- WP6 full Vietnamese: DEFERRED because pinned DSH `0.1.0-rc.6` exposes namespace dictionary registration but no clean external locale-descriptor registration path. `vi-VN` falls back to complete shipped English. See `docs/localization/vi-status.md`.
+- WP6 controlled phone/tablet/desktop and real-browser accessibility smoke: BLOCKED. See `docs/verification/2026-09-04-wp6-preview-ui.md`.
 
 ## Deployment safety rule
 Do not reconnect Git Auto Deploy until Foundation Core changes have passed the quality gate and a controlled deployment/reconnect plan has been reviewed. Reconnection must re-verify Production/Preview branch mapping, environment scope, access policy and deployed commit parity before enabling automatic promotion.
