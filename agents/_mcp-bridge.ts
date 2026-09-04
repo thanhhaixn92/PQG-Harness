@@ -22,10 +22,25 @@ export {
   makersToolGate,
 } from './_makers-mcp-permission.mjs'
 
+export interface McpRequestMetadata {
+  method: string
+  url: string
+  bodyBytes: number
+}
+
+const MCP_REQUEST_LOG_LIMIT = 64
+
+export function appendMcpRequestMetadata(
+  log: readonly McpRequestMetadata[],
+  meta: McpRequestMetadata,
+): McpRequestMetadata[] {
+  return [...log, meta].slice(-MCP_REQUEST_LOG_LIMIT)
+}
+
 export interface LocalMcpBridge {
   url: string
   requestCount(): number
-  requestLog(): unknown[]
+  requestLog(): McpRequestMetadata[]
   close(): Promise<void>
 }
 
@@ -198,18 +213,24 @@ export async function startLocalMcpBridge(
   conversationId: string,
 ): Promise<LocalMcpBridge> {
   let requests = 0
-  const requestBodies: unknown[] = []
+  let requestMetadata: McpRequestMetadata[] = []
   const httpServer = createServer((request, response) => {
     requests += 1
     void (async () => {
       let parsedBody: unknown
+      let bodyBytes = 0
       if (request.method === 'POST') {
         const chunks: Buffer[] = []
         for await (const chunk of request) chunks.push(chunk as Buffer)
         const text = Buffer.concat(chunks).toString('utf8')
+        bodyBytes = Buffer.byteLength(text)
         parsedBody = text ? JSON.parse(text) : undefined
-        requestBodies.push(parsedBody)
       }
+      requestMetadata = appendMcpRequestMetadata(requestMetadata, {
+        method: request.method || 'UNKNOWN',
+        url: request.url || '',
+        bodyBytes,
+      })
       await handleMcpRequest(context, conversationId, request, response, parsedBody)
     })().catch(error => {
       if (!response.headersSent) response.writeHead(500)
@@ -229,7 +250,7 @@ export async function startLocalMcpBridge(
   return {
     url: `http://127.0.0.1:${(address as AddressInfo).port}/mcp`,
     requestCount: () => requests,
-    requestLog: () => [...requestBodies],
+    requestLog: () => requestMetadata.map(entry => ({ ...entry })),
     close: () => new Promise<void>((resolve, reject) => {
       httpServer.close(error => error ? reject(error) : resolve())
       httpServer.closeAllConnections?.()
