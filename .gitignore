@@ -1,0 +1,8 @@
+node_modules
+dist
+.edgeone
+.env
+!.env.example
+.DS_Store
+*.log
+deepseek-harness.zip

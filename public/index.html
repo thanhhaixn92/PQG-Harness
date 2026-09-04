@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" /><style>
+.dsh-makers-tip[data-tip]{position:relative;display:inline-flex;max-width:100%;vertical-align:middle;cursor:not-allowed}
+.dsh-makers-tip[data-tip]>:disabled{pointer-events:none}
+.dsh-makers-locked{opacity:.45;cursor:not-allowed}
+#dsh-makers-hover-tip{position:fixed;z-index:2147483647;pointer-events:none;background:var(--dsw-alias-label-primary,#1a1a1a);color:var(--dsw-alias-bg-layer-3,#fff);white-space:nowrap;border-radius:6px;padding:4px 8px;font-size:11px;line-height:17px;font-weight:400;max-width:min(320px,calc(100vw - 16px));box-shadow:0 4px 12px rgba(0,0,0,.18)}
+#dsh-makers-hover-tip[hidden]{display:none!important}
+</style><script>
+window.__DSH_BOOT__ = {"rev":"eefa04507a5c","entries":[{"id":"@deepseek-ai/dsh-api-gateway","url":"/plugins/@deepseek-ai/dsh-api-gateway/client.js?rev=cdcb59a584ac","rev":"cdcb59a584ac","inject":["@deepseek-ai/dsh-typert-registry","@deepseek-ai/dsh-client-connection"],"immediately":true},{"id":"@deepseek-ai/dsh-api-remotes","url":"/plugins/@deepseek-ai/dsh-api-remotes/client.js?rev=bcfb9edbb825","rev":"bcfb9edbb825","inject":["@deepseek-ai/dsh-api-gateway"],"immediately":true},{"id":"@deepseek-ai/dsh-client-connection","url":"/plugins/@deepseek-ai/dsh-client-connection/client.js?rev=8e2ea96f6eba","rev":"8e2ea96f6eba","inject":[],"immediately":true},{"id":"@deepseek-ai/dsh-client-locale","url":"/plugins/@deepseek-ai/dsh-client-locale/client.js?rev=64388660f485","rev":"64388660f485","inject":["@deepseek-ai/dsh-client-connection","@deepseek-ai/dsh-client-runtime","@deepseek-ai/dsh-client-ui-settings","@deepseek-ai/dsh-api-remotes"],"immediately":true},{"id":"@deepseek-ai/dsh-client-modules","url":"/plugins/@deepseek-ai/dsh-client-modules/client.js?rev=48908e43ade0","rev":"48908e43ade0","inject":[],"immediately":true},{"id":"@deepseek-ai/dsh-client-runtime","url":"/plugins/@deepseek-ai/dsh-client-runtime/client.js?rev=c3303226b83b","rev":"c3303226b83b","inject":["@deepseek-ai/dsh-client-connection","@deepseek-ai/dsh-typert-registry","@deepseek-ai/dsh-api-remotes"],"immediately":true},{"id":"@deepseek-ai/dsh-client-ui-agent-preset","url":"/plugins/@deepseek-ai/dsh-client-ui-agent-preset/client.js?rev=4c5aee76b189","rev":"4c5aee76b189","inject":["@deepseek-ai/dsh-client-connection","@deepseek-ai/dsh-client-locale","@deepseek-ai/dsh-client-runtime","@deepseek-ai/dsh-client-ui-conversation","@deepseek-ai/dsh-client-ui-settings","@deepseek-ai/dsh-api-remotes"]},{"id":"@deepseek-ai/dsh-client-ui-commands","url":"/plugins/@deepseek-ai/dsh-client-ui-commands/client.js?rev=1270e347eb54","rev":"1270e347eb54","inject":["@deepseek-ai/dsh-api-remotes","@deepseek-ai/dsh-client-runtime","@deepseek-ai/dsh-client-locale","@deepseek-ai/dsh-client-ui-input-trigger","@deepseek-ai/dsh-client-ui-conversation"]},{"id":"@deepseek-ai/dsh-client-ui-conversation","url":"/plugins/@deepseek-ai/dsh-client-ui-conversation/client.js?rev=506160553732","rev":"506160553732","inject":["@deepseek-ai/dsh-client-connection","@deepseek-ai/dsh-client-locale","@deepseek-ai/dsh-client-runtime","@deepseek-ai/dsh-client-ui-settings","@deepseek-ai/dsh-api-remotes","@deepseek-ai/dsh-client-ui-layout"]},{"id":"@deepseek-ai/dsh-client-ui-deliverables","url":"/plugins/@deepseek-ai/dsh-client-ui-deliverables/client.js?rev=cdc1db73caa3","rev":"cdc1db73caa3","inject":["@deepseek-ai/dsh-client-connection","@deepseek-ai/dsh-client-locale","@deepseek-ai/dsh-client-runtime","@deepseek-ai/dsh-client-ui-conversation"]},{"id":"@deepseek-ai/dsh-client-ui-directory-picker-native","url":"/plugins/@deepseek-ai/dsh-client-ui-directory-picker-native/client.js?rev=5eacf9770d3e","rev":"5eacf9770d3e","inject":["@deepseek-ai/dsh-client-runtime","@deepseek-ai/dsh-client-ui-workspace"]},{"id":"@deepseek-ai/dsh-client-ui-goal","url":"/plugins/@deepseek-ai/dsh-client-ui-goal/client.js?rev=9fbdab0a940d","rev":"9fbdab0a940d","inject":["@deepseek-ai/dsh-client-runtime","@deepseek-ai/dsh-api-remotes","@deepseek-ai/dsh-client-locale","@deepseek-ai/dsh-client-ui-conversation"]},{"id":"@deepseek-ai/dsh-client-ui-input-trigger","url":"/plugins/@deepseek-ai/dsh-client-ui-input-trigger/client.js?rev=6a8392daa51e","rev":"6a8392daa51e","inject":["@deepseek-ai/dsh-client-runtime","@deepseek-ai/dsh-client-locale"]},{"id":"@deepseek-ai/dsh-client-ui-jobs","url":"/plugins/@deepseek-ai/dsh-client-ui-jobs/client.js?rev=8a3ae4417b51","rev":"8a3ae4417b51","inject":["@deepseek-ai/dsh-client-locale","@deepseek-ai/dsh-client-runtime","@deepseek-ai/dsh-client-ui-conversation","@deepseek-ai/dsh-client-ui-primitives"]},{"id":"@deepseek-ai/dsh-client-ui-layout","url":"/plugins/@deepseek-ai/dsh-client-ui-layout/client.js?rev=8807ee56f56f","rev":"8807ee56f56f","inject":["@deepseek-ai/dsh-client-runtime","@deepseek-ai/dsh-client-ui-theme"]},{"id":"@deepseek-ai/dsh-client-ui-message-feedback","url":"/plugins/@deepseek-ai/dsh-client-ui-message-feedback/client.js?rev=b71af11b9629","rev":"b71af11b9629","inject":["@deepseek-ai/dsh-client-runtime","@deepseek-ai/dsh-api-remotes","@deepseek-ai/dsh-client-locale","@deepseek-ai/dsh-client-ui-conversation"]},{"id":"@deepseek-ai/dsh-client-ui-model-selection","url":"/plugins/@deepseek-ai/dsh-client-ui-model-selection/client.js?rev=1735eec16556","rev":"1735eec16556","inject":["@deepseek-ai/dsh-client-locale","@deepseek-ai/dsh-client-runtime","@deepseek-ai/dsh-client-ui-commands","@deepseek-ai/dsh-api-remotes"]},{"id":"@deepseek-ai/dsh-client-ui-permission-presets","url":"/plugins/@deepseek-ai/dsh-client-ui-permission-presets/client.js?rev=29cf8f5ab25f","rev":"29cf8f5ab25f","inject":["@deepseek-ai/dsh-client-connection","@deepseek-ai/dsh-client-locale","@deepseek-ai/dsh-client-runtime","@deepseek-ai/dsh-client-ui-commands","@deepseek-ai/dsh-api-remotes","@deepseek-ai/dsh-client-ui-settings"]},{"id":"@deepseek-ai/dsh-client-ui-plan","url":"/plugins/@deepseek-ai/dsh-client-ui-plan/client.js?rev=814d7c319382","rev":"814d7c319382","inject":["@deepseek-ai/dsh-api-remotes","@deepseek-ai/dsh-client-locale","@deepseek-ai/dsh-client-ui-conversation"]},{"id":"@deepseek-ai/dsh-client-ui-settings","url":"/plugins/@deepseek-ai/dsh-client-ui-settings/client.js?rev=0995b95e08aa","rev":"0995b95e08aa","inject":["@deepseek-ai/dsh-client-connection","@deepseek-ai/dsh-client-runtime","@deepseek-ai/dsh-api-remotes"]},{"id":"@deepseek-ai/dsh-client-ui-settings-general","url":"/plugins/@deepseek-ai/dsh-client-ui-settings-general/client.js?rev=ffd5b564493b","rev":"ffd5b564493b","inject":["@deepseek-ai/dsh-client-runtime","@deepseek-ai/dsh-client-ui-settings","@deepseek-ai/dsh-client-locale","@deepseek-ai/dsh-client-connection","@deepseek-ai/dsh-api-remotes","@deepseek-ai/dsh-client-ui-sidebar"]},{"id":"@deepseek-ai/dsh-client-ui-settings-models","url":"/plugins/@deepseek-ai/dsh-client-ui-settings-models/client.js?rev=ebb781218b25","rev":"ebb781218b25","inject":["@deepseek-ai/dsh-client-runtime","@deepseek-ai/dsh-client-ui-settings","@deepseek-ai/dsh-client-locale","@deepseek-ai/dsh-api-remotes"]},{"id":"@deepseek-ai/dsh-client-ui-settings-plugin-inventory","url":"/plugins/@deepseek-ai/dsh-client-ui-settings-plugin-inventory/client.js?rev=e5e5db1fdbb0","rev":"e5e5db1fdbb0","inject":["@deepseek-ai/dsh-api-remotes","@deepseek-ai/dsh-client-runtime","@deepseek-ai/dsh-client-ui-settings","@deepseek-ai/dsh-client-locale"]},{"id":"@deepseek-ai/dsh-client-ui-settings-plugins","url":"/plugins/@deepseek-ai/dsh-client-ui-settings-plugins/client.js?rev=b8886bcccc1a","rev":"b8886bcccc1a","inject":["@deepseek-ai/dsh-client-connection","@deepseek-ai/dsh-client-locale","@deepseek-ai/dsh-client-runtime","@deepseek-ai/dsh-client-ui-settings","@deepseek-ai/dsh-api-remotes"]},{"id":"@deepseek-ai/dsh-client-ui-sidebar","url":"/plugins/@deepseek-ai/dsh-client-ui-sidebar/client.js?rev=b8f03724988d","rev":"b8f03724988d","inject":["@deepseek-ai/dsh-client-runtime","@deepseek-ai/dsh-client-ui-layout","@deepseek-ai/dsh-client-locale"]},{"id":"@deepseek-ai/dsh-client-ui-skill","url":"/plugins/@deepseek-ai/dsh-client-ui-skill/client.js?rev=ae2c4c8bb023","rev":"ae2c4c8bb023","inject":["@deepseek-ai/dsh-client-runtime","@deepseek-ai/dsh-client-locale","@deepseek-ai/dsh-client-ui-tool","@deepseek-ai/dsh-client-ui-input-trigger","@deepseek-ai/dsh-api-remotes"]},{"id":"@deepseek-ai/dsh-client-ui-subagent","url":"/plugins/@deepseek-ai/dsh-client-ui-subagent/client.js?rev=4f840be262cb","rev":"4f840be262cb","inject":["@deepseek-ai/dsh-client-locale","@deepseek-ai/dsh-client-runtime","@deepseek-ai/dsh-client-ui-conversation","@deepseek-ai/dsh-client-ui-primitives","@deepseek-ai/dsh-client-ui-input-trigger"]},{"id":"@deepseek-ai/dsh-client-ui-theme","url":"/plugins/@deepseek-ai/dsh-client-ui-theme/client.js?rev=240449265bbc","rev":"240449265bbc","inject":["@deepseek-ai/dsh-client-connection","@deepseek-ai/dsh-client-runtime","@deepseek-ai/dsh-client-locale","@deepseek-ai/dsh-client-ui-settings","@deepseek-ai/dsh-api-remotes"],"immediately":true},{"id":"@deepseek-ai/dsh-client-ui-tool","url":"/plugins/@deepseek-ai/dsh-client-ui-tool/client.js?rev=854069ecfd30","rev":"854069ecfd30","inject":["@deepseek-ai/dsh-client-runtime","@deepseek-ai/dsh-client-locale","@deepseek-ai/dsh-client-ui-conversation"]},{"id":"@deepseek-ai/dsh-client-ui-trajectory","url":"/plugins/@deepseek-ai/dsh-client-ui-trajectory/client.js?rev=f46b23483530","rev":"f46b23483530","inject":["@deepseek-ai/dsh-client-locale","@deepseek-ai/dsh-client-runtime","@deepseek-ai/dsh-client-ui-conversation"]},{"id":"@deepseek-ai/dsh-client-ui-user-questions","url":"/plugins/@deepseek-ai/dsh-client-ui-user-questions/client.js?rev=d497c77f1a0e","rev":"d497c77f1a0e","inject":["@deepseek-ai/dsh-client-locale","@deepseek-ai/dsh-client-ui-conversation"]},{"id":"@deepseek-ai/dsh-client-ui-workflow-run","url":"/plugins/@deepseek-ai/dsh-client-ui-workflow-run/client.js?rev=c8efd1f79632","rev":"c8efd1f79632","inject":["@deepseek-ai/dsh-client-locale","@deepseek-ai/dsh-client-runtime","@deepseek-ai/dsh-client-ui-conversation"]},{"id":"@deepseek-ai/dsh-client-ui-workspace","url":"/plugins/@deepseek-ai/dsh-client-ui-workspace/client.js?rev=d647145f6243","rev":"d647145f6243","inject":["@deepseek-ai/dsh-client-locale","@deepseek-ai/dsh-client-runtime","@deepseek-ai/dsh-client-ui-conversation","@deepseek-ai/dsh-client-ui-sidebar"]},{"id":"@deepseek-ai/dsh-session-log-export","url":"/plugins/@deepseek-ai/dsh-session-log-export/client.js?rev=7c27787733da","rev":"7c27787733da","inject":["@deepseek-ai/dsh-client-locale","@deepseek-ai/dsh-client-runtime","@deepseek-ai/dsh-client-ui-commands","@deepseek-ai/dsh-client-ui-conversation"]},{"id":"@deepseek-ai/dsh-typert-registry","url":"/plugins/@deepseek-ai/dsh-typert-registry/client.js?rev=e316e02b09bd","rev":"e316e02b09bd","inject":[],"immediately":true}]};
+(() => {
+  const key = 'dsh-makers-web-conversation-id';
+  let conversationId = localStorage.getItem(key);
+  if (!conversationId) {
+    conversationId = crypto.randomUUID();
+    localStorage.setItem(key, conversationId);
+  }
+  window.__DSH_MAKERS_CONVERSATION_ID__ = conversationId;
+  const nativeFetch = window.fetch.bind(window);
+  window.fetch = (input, init = {}) => {
+    const target = new URL(typeof input === 'string' || input instanceof URL ? input : input.url, location.href);
+    if (target.origin !== location.origin || (!target.pathname.startsWith('/api') && !target.pathname.startsWith('/rpc'))) {
+      return nativeFetch(input, init);
+    }
+    const headers = new Headers(input instanceof Request ? input.headers : init.headers);
+    headers.set('makers-conversation-id', conversationId);
+    if (input instanceof Request) return nativeFetch(new Request(input, { ...init, headers }));
+    return nativeFetch(input, { ...init, headers });
+  };
+})();
+(() => {
+  const id = 'dsh-makers-hover-tip';
+  const hostOf = (node) => {
+    if (!(node instanceof Element)) return null;
+    const tip = (el) => el && el.getAttribute('data-tip') ? el : null;
+    const from = (el) => el ? tip(el) || tip(el.querySelector('[data-tip]')) : null;
+    return tip(node.closest('[data-tip]'))
+      || from(node.closest('[role="menuitem"]'))
+      || from([...node.children].find((child) => child.getAttribute('role') === 'menuitem'));
+  };
+  const bubble = () => {
+    let el = document.getElementById(id);
+    if (el) return el;
+    el = document.createElement('div');
+    el.id = id;
+    el.setAttribute('role', 'tooltip');
+    el.hidden = true;
+    document.body.appendChild(el);
+    return el;
+  };
+  const hide = () => {
+    const el = document.getElementById(id);
+    if (el) el.hidden = true;
+  };
+  const show = (host) => {
+    const text = host.getAttribute('data-tip');
+    if (!text) return hide();
+    const el = bubble();
+    el.textContent = text;
+    el.hidden = false;
+    const r = host.closest('[role="menuitem"]')?.getBoundingClientRect() ?? host.getBoundingClientRect();
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    let left = r.left + r.width / 2 - w / 2;
+    left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
+    let top = r.top - h - 8;
+    if (top < 8) top = r.bottom + 8;
+    el.style.left = left + 'px';
+    el.style.top = top + 'px';
+  };
+  document.addEventListener('pointerover', (event) => {
+    const host = hostOf(event.target);
+    if (host) show(host);
+    else hide();
+  });
+  document.addEventListener('pointerdown', hide);
+  window.addEventListener('scroll', hide, true);
+})();
+</script>
+<!-- dsh-makers-actions -->
+<style>
+[class*="_centerCol"]{position:relative;container:dsh-center / inline-size}
+[class*="_titleRow"]{position:relative}
+[class*="_composerHero"]{z-index:5}
+#dsh-makers-chrome{position:absolute;top:0;right:0;left:0;z-index:0;display:flex;align-items:center;justify-content:flex-end;box-sizing:border-box;height:50px;padding:8px 16px;pointer-events:none}
+#dsh-makers-chrome>*{pointer-events:auto}
+#dsh-makers-actions{position:relative;z-index:0;display:flex;align-items:center;gap:2px;margin:0;padding:0;border:none;background:transparent;font-family:inherit;flex:none}
+#dsh-makers-actions[data-docked=true]{position:static}
+#dsh-makers-actions a{display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 12px;border:none;border-radius:9px;color:#57606a;background:transparent;text-decoration:none;font:inherit;font-size:14px;font-weight:500;line-height:20px;white-space:nowrap;cursor:pointer;transition:background .16s,color .16s}
+#dsh-makers-actions a:hover{background:#f2f4f7;color:#1f2328}
+#dsh-makers-actions a:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#3964fe);outline-offset:1px}
+#dsh-makers-actions svg{flex:none}
+#dsh-makers-powered{position:absolute;top:10px;left:50%;z-index:0;display:inline-flex;align-items:center;gap:8px;height:28px;max-width:calc(100% - 2 * var(--dsh-makers-actions-width, 0px));padding:0 8px;border:none;border-radius:8px;background:transparent;color:#8b949e;font:inherit;font-size:12.5px;line-height:18px;white-space:nowrap;box-sizing:border-box;overflow:hidden;transform:translateX(-50%);pointer-events:auto}
+#dsh-makers-powered b{color:#5b6470;font-weight:600}
+#dsh-makers-powered[data-docked=true]{top:50%;transform:translate(-50%,-50%)}
+.dsh-makers-powered-divider{width:1px;height:12px;flex:none;background:#e8eaed}
+.dsh-makers-powered-more{display:inline-flex;align-items:center;gap:3px;flex:none;height:22px;padding:0 6px;border:none;border-radius:6px;background:transparent;color:#3b63f6;font:inherit;font-size:12.5px;font-weight:600;line-height:18px;white-space:nowrap;cursor:pointer;transition:background .16s}
+.dsh-makers-powered-more svg{flex:none;transition:transform .16s}
+.dsh-makers-powered-more:hover{background:rgba(59,99,246,.1)}
+.dsh-makers-powered-more:hover svg{transform:translateX(2px)}
+.dsh-makers-powered-more:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#3964fe);outline-offset:1px}
+#dsh-makers-powered[data-compact=true] .dsh-makers-powered-label,#dsh-makers-powered[data-compact=true] .dsh-makers-powered-divider,#dsh-makers-actions[data-compact=true] .dsh-makers-action-label{display:none}
+#dsh-makers-actions[data-compact=true] a{padding:0 8px}
+#dsh-makers-powered[data-compact=true]{padding:0 6px;gap:0}
+#dsh-makers-powered[data-hidden=true]{visibility:hidden;pointer-events:none}
+#dsh-makers-contact{position:fixed;inset:0;z-index:2147483646;display:grid;place-items:center;padding:20px}
+#dsh-makers-contact[hidden]{display:none!important}
+#dsh-makers-contact .dsh-makers-contact-overlay{position:absolute;inset:0;background:rgba(15,17,23,.42);backdrop-filter:blur(2px)}
+#dsh-makers-contact .dsh-makers-contact-card{position:relative;z-index:1;width:min(520px,calc(100vw - 40px));overflow:hidden;border-radius:16px;background:#fff;box-shadow:0 26px 70px rgba(17,18,22,.3);font-family:system-ui,-apple-system,sans-serif}
+#dsh-makers-contact .dsh-makers-contact-body{padding:22px 24px 24px}
+#dsh-makers-contact .dsh-makers-contact-icon{display:grid;width:42px;height:42px;place-items:center;margin-bottom:18px;border:1px solid #e8eaee;border-radius:10px;color:#17181c}
+#dsh-makers-contact .dsh-makers-contact-icon svg{width:22px;height:22px}
+#dsh-makers-contact h2{margin:0 0 8px;color:#17181c;font-size:20px;font-weight:700;letter-spacing:-.3px;line-height:1.35}
+#dsh-makers-contact p{margin:0;color:#6b7280;font-size:14px;line-height:1.7}
+#dsh-makers-contact .dsh-makers-contact-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;box-sizing:border-box;padding:16px 24px;border-top:1px solid #e8eaee;background:#fafbfc}
+#dsh-makers-contact .dsh-makers-contact-footer button,#dsh-makers-contact .dsh-makers-contact-footer a{display:inline-flex;align-items:center;justify-content:center;height:40px;padding:0 18px;border-radius:9px;font-size:14px;font-weight:500;text-decoration:none;cursor:pointer}
+#dsh-makers-contact .dsh-makers-contact-later{border:1px solid #d6dae1;background:#fff;color:#17181c}
+#dsh-makers-contact .dsh-makers-contact-later:hover{border-color:#6b7280;background:#f7f8fa}
+#dsh-makers-contact .dsh-makers-contact-go{border:none;background:#3b5cff;color:#fff;font-weight:600}
+#dsh-makers-contact .dsh-makers-contact-go:hover{background:#2f4fe6}
+@container dsh-center (max-width:880px){#dsh-makers-actions .dsh-makers-action-label,#dsh-makers-powered .dsh-makers-powered-label,#dsh-makers-powered .dsh-makers-powered-divider{display:none}#dsh-makers-actions a{padding:0 8px}#dsh-makers-powered{padding:0 6px;gap:0}}
+@container dsh-center (max-width:360px){#dsh-makers-powered{visibility:hidden;pointer-events:none}}
+</style><script>
+(() => {
+  const intl = location.hostname.endsWith(".edgeone.dev");
+  document.documentElement.lang = intl ? "en" : "zh-CN";
+  const deployParams = "?template=deepseek-harness&from=within&fromAgent=1&agentLang=typescript";
+  const deployHref = intl ? "https://edgeone.ai/makers/new" + deployParams : "https://console.cloud.tencent.com/edgeone/makers/new" + deployParams;
+  const contactHref = intl ? "https://pages.edgeone.ai/contact?source=deepseek-harness" : "https://cloud.tencent.com/online-service?from=connect-us";
+  const copy = {
+    zh: { github: "GitHub 源码", deploy: "模版部署", powered: "基于 <b>EdgeOne Makers Agents</b> 部署", more: "了解更多", poweredTitle: "集成到我的产品", title: "从 DeepSeek Harness 到你的云端 Agent", body: "DeepSeek Harness 已接入 EdgeOne Makers Agents。部署后，你可以自由扩展模型、工具、技能与界面，打造适用于 Vibe Coding、任务自动化和内容生产的云端 Agent，并将生成的应用与内容发布至全球边缘网络。Makers 提供 Agent 托管、安全沙箱与应用交付的一体化方案。", later: "以后再说", go: "联系我们" },
+    en: { github: "GitHub", deploy: "Deploy", powered: "Powered by <b>EdgeOne Makers Agents</b>", more: "Learn more", poweredTitle: "Integrate with my product", title: "From DeepSeek Harness to Your Cloud Agent", body: "DeepSeek Harness now runs on EdgeOne Makers Agents. After you deploy, you can extend models, tools, skills, and the UI to build a cloud Agent for Vibe Coding, task automation, and content production, then publish generated apps and content to the global edge network. Makers provides an integrated solution for Agent hosting, a secure sandbox, and app delivery.", later: "Maybe later", go: "Contact us" }
+  };
+  const localeOf = () => {
+    const lang = (document.documentElement.lang || "").toLowerCase();
+    if (lang.startsWith("en")) return "en";
+    if (lang.startsWith("zh")) return "zh";
+    return intl ? "en" : "zh";
+  };
+  const githubIcon = '<svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8"/></svg>';
+  const deployIcon = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 15c-1 2-1 4-1 4s2 0 4-1"/><path d="M9 18c-1.5-.6-2.4-1.5-3-3 3.2-7 7.6-9.5 14-9-.5 6.4-3 10.8-10 14z"/><path d="M13.5 10.5a1.5 1.5 0 1 0 2.1-2.1 1.5 1.5 0 0 0-2.1 2.1z"/></svg>';
+  const moreIcon = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>';
+  const bubbleIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
+  const mount = () => {
+    if (document.getElementById("dsh-makers-actions")) return;
+    const nav = document.createElement("nav");
+    nav.id = "dsh-makers-actions";
+    nav.setAttribute("aria-label", "EdgeOne Makers");
+    nav.dataset.docked = "false";
+    const github = document.createElement("a");
+    github.href = "https://github.com/TencentEdgeOne/deepseek-harness";
+    github.target = "_blank";
+    github.rel = "noopener noreferrer";
+    github.innerHTML = githubIcon + '<span class="dsh-makers-action-label"></span>';
+    const deploy = document.createElement("a");
+    deploy.target = "_blank";
+    deploy.rel = "noopener noreferrer";
+    deploy.innerHTML = deployIcon + '<span class="dsh-makers-action-label"></span>';
+    nav.append(github, deploy);
+    const powered = document.createElement("div");
+    powered.id = "dsh-makers-powered";
+    powered.dataset.docked = "false";
+    powered.innerHTML = '<span class="dsh-makers-powered-label"></span><span class="dsh-makers-powered-divider" aria-hidden="true"></span><button type="button" class="dsh-makers-powered-more"><span class="dsh-makers-powered-more-label"></span>' + moreIcon + "</button>";
+    const more = powered.querySelector(".dsh-makers-powered-more");
+    const chrome = document.createElement("div");
+    chrome.id = "dsh-makers-chrome";
+    const dialog = document.createElement("div");
+    dialog.id = "dsh-makers-contact";
+    dialog.hidden = true;
+    dialog.innerHTML = '<div class="dsh-makers-contact-overlay" data-close="true"></div><div class="dsh-makers-contact-card" role="dialog" aria-modal="true" aria-labelledby="dsh-makers-contact-title"><div class="dsh-makers-contact-body"><div class="dsh-makers-contact-icon">' + bubbleIcon + '</div><h2 id="dsh-makers-contact-title"></h2><p></p></div><div class="dsh-makers-contact-footer"><button type="button" class="dsh-makers-contact-later" data-close="true"></button><a class="dsh-makers-contact-go" target="_blank" rel="noopener noreferrer"></a></div></div>';
+    const centerCol = () => document.querySelector("[class*=\"_centerCol\"]");
+    const titleRow = () => document.querySelector("[class*=\"_titleRow\"]");
+    const headerOf = (row) => row?.closest("header") || row?.parentElement || null;
+    const headerVisible = (header) => {
+      if (!header) return false;
+      if ([...header.classList].some((name) => name.includes("headerHidden"))) return false;
+      const style = getComputedStyle(header);
+      return style.display !== "none" && style.visibility !== "hidden";
+    };
+    let adopting = false;
+    let laying = false;
+    let layoutRaf = 0;
+    const overlap = (a, b, gap) => a.left < b.right + gap && a.right + gap > b.left && a.top < b.bottom && a.bottom > b.top;
+    const layout = () => {
+      if (laying || !nav.isConnected || !powered.isConnected) return;
+      laying = true;
+      try {
+        document.documentElement.style.setProperty("--dsh-makers-actions-width", Math.ceil(nav.getBoundingClientRect().width) + 12 + "px");
+        const hit = () => {
+          const a = nav.getBoundingClientRect();
+          const b = powered.getBoundingClientRect();
+          if (!a.width || !b.width) return false;
+          if (overlap(a, b, 8)) return true;
+          if (powered.dataset.docked !== "true") return false;
+          const cluster = titleRow()?.querySelector("[class*=\"_titleCluster\"]");
+          return !!(cluster && overlap(cluster.getBoundingClientRect(), b, 8));
+        };
+        const apply = (level) => {
+          powered.dataset.compact = level >= 1 ? "true" : "false";
+          nav.dataset.compact = level >= 2 ? "true" : "false";
+          powered.dataset.hidden = level >= 3 ? "true" : "false";
+        };
+        const current = powered.dataset.hidden === "true" ? 3 : nav.dataset.compact === "true" ? 2 : powered.dataset.compact === "true" ? 1 : 0;
+        if (hit()) {
+          if (current < 3) apply(current + 1);
+        } else if (current > 0) {
+          apply(current - 1);
+          if (hit()) apply(current);
+        }
+      } finally {
+        laying = false;
+      }
+    };
+    const scheduleLayout = () => {
+      if (layoutRaf) return;
+      layoutRaf = requestAnimationFrame(() => {
+        layoutRaf = 0;
+        layout();
+      });
+    };
+    const adopt = () => {
+      if (adopting) return;
+      adopting = true;
+      try {
+        const host = centerCol();
+        if (!host) return;
+        const row = titleRow();
+        const header = headerOf(row);
+        const utilities = header?.querySelector("[class*=\"_headerUtilities\"]");
+        if (headerVisible(header) && utilities) {
+          if (nav.parentElement !== utilities) utilities.append(nav);
+          if (powered.parentElement !== row) row.append(powered);
+          chrome.remove();
+          nav.dataset.docked = "true";
+          powered.dataset.docked = "true";
+        } else {
+          if (chrome.parentElement !== host) host.append(chrome);
+          if (powered.parentElement !== chrome) chrome.append(powered);
+          if (nav.parentElement !== chrome) chrome.append(nav);
+          nav.dataset.docked = "false";
+          powered.dataset.docked = "false";
+        }
+        if (ro) {
+          ro.observe(nav);
+          ro.observe(powered);
+          ro.observe(host);
+          if (row) ro.observe(row);
+        }
+        scheduleLayout();
+      } finally {
+        adopting = false;
+      }
+    };
+    const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleLayout);
+    const applyCopy = () => {
+      const locale = localeOf();
+      const t = copy[locale];
+      github.title = t.github;
+      github.querySelector(".dsh-makers-action-label").textContent = t.github;
+      deploy.href = deployHref;
+      deploy.title = t.deploy;
+      deploy.querySelector(".dsh-makers-action-label").textContent = t.deploy;
+      more.title = t.poweredTitle;
+      more.querySelector(".dsh-makers-powered-more-label").textContent = t.more;
+      powered.querySelector(".dsh-makers-powered-label").innerHTML = t.powered;
+      dialog.querySelector("#dsh-makers-contact-title").textContent = t.title;
+      dialog.querySelector(".dsh-makers-contact-body p").textContent = t.body;
+      dialog.querySelector(".dsh-makers-contact-later").textContent = t.later;
+      const go = dialog.querySelector(".dsh-makers-contact-go");
+      go.href = contactHref;
+      go.textContent = t.go;
+    };
+    applyCopy();
+    new MutationObserver(applyCopy).observe(document.documentElement, { attributes: true, attributeFilter: ["lang"] });
+    const close = () => {
+      dialog.hidden = true;
+      more.focus();
+    };
+    const open = () => {
+      dialog.hidden = false;
+      dialog.querySelector(".dsh-makers-contact-later")?.focus();
+    };
+    more.addEventListener("click", open);
+    dialog.addEventListener("click", (event) => {
+      if (event.target.closest("[data-close]")) close();
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !dialog.hidden) close();
+    });
+    document.body.append(dialog);
+    adopt();
+    const observer = new MutationObserver(adopt);
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style", "hidden"] });
+    window.addEventListener("resize", scheduleLayout);
+  };
+  if (document.body) mount();
+  else document.addEventListener("DOMContentLoaded", mount);
+})();
+</script>
+<!-- /dsh-makers-actions -->
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>DeepSeek Harness</title>
+    <script type="module" crossorigin src="/assets/index-Dqw48FrP.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/vendor-Cjbwl5VI.js">
+    <link rel="stylesheet" crossorigin href="/assets/vendor-CjyC-hUb.css">
+    <link rel="stylesheet" crossorigin href="/assets/index-CSGf6Qzd.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
