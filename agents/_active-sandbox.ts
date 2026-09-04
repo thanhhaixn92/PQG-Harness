@@ -32,7 +32,8 @@ export function registerActiveWorkspaceSandbox(
   }
 }
 
-export function activeWorkspaceSandbox(conversationId: string): SandboxHandle | undefined {
+export function activeWorkspaceSandboxHandles(conversationId: string): SandboxHandle[] {
   const entries = activeWorkspaceSandboxes.get(conversationId)
-  return entries?.at(-1)?.sandbox
+  if (!entries?.length) return []
+  return [...new Set(entries.map(entry => entry.sandbox))]
 }
