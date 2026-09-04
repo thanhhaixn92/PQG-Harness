@@ -1,21 +1,28 @@
-import { activeWorkspaceSandbox } from './_active-sandbox.ts'
+import { activeWorkspaceSandboxHandles } from './_active-sandbox.ts'
 import { stopDshWebSidecar } from './_dsh-web-sidecar.ts'
 
 type SandboxStopResult =
   | { killed: true }
   | { killed: false; error: 'SANDBOX_KILL_FAILED' | 'SANDBOX_KILL_UNAVAILABLE' }
 
-async function killSandboxForStop(sandbox: any): Promise<SandboxStopResult> {
-  if (typeof sandbox?.kill !== 'function') {
+async function killSandboxesForStop(sandboxes: any[]): Promise<SandboxStopResult> {
+  const killable = sandboxes.filter(sandbox => typeof sandbox?.kill === 'function')
+  const hasUnavailable = killable.length !== sandboxes.length
+
+  const results = await Promise.allSettled(
+    killable.map(sandbox => sandbox.kill()),
+  )
+
+  if (hasUnavailable) {
     return { killed: false, error: 'SANDBOX_KILL_UNAVAILABLE' }
   }
-
-  try {
-    await sandbox.kill()
-    return { killed: true }
-  } catch {
+  if (results.some(result => result.status === 'rejected')) {
     return { killed: false, error: 'SANDBOX_KILL_FAILED' }
   }
+  if (results.length === 0) {
+    return { killed: false, error: 'SANDBOX_KILL_UNAVAILABLE' }
+  }
+  return { killed: true }
 }
 
 export async function onRequestPost(context: any): Promise<Response> {
@@ -24,11 +31,12 @@ export async function onRequestPost(context: any): Promise<Response> {
     return Response.json({ ok: false, error: 'conversation_id is required' }, { status: 400 })
   }
 
-  const sandbox = activeWorkspaceSandbox(conversationId) ?? context.sandbox
+  const activeSandboxes = activeWorkspaceSandboxHandles(conversationId)
+  const sandboxes = activeSandboxes.length > 0 ? activeSandboxes : [context.sandbox]
   const [webResult, platformResult, sandboxResult] = await Promise.allSettled([
     stopDshWebSidecar(conversationId),
     context.utils?.abortActiveRun?.(conversationId),
-    killSandboxForStop(sandbox),
+    killSandboxesForStop(sandboxes),
   ])
 
   const sidecar = webResult.status === 'fulfilled'
