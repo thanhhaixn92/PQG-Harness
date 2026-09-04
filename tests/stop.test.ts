@@ -108,6 +108,48 @@ test('Stop kills the sandbox registered by an active workspace command instead o
   }
 })
 
+test('Stop kills every distinct sandbox registered by overlapping workspace commands', async () => {
+  let firstSandboxKills = 0
+  let secondSandboxKills = 0
+  let stopRequestSandboxKills = 0
+  const releaseFirst = registerActiveWorkspaceSandbox('conv-stop-overlap', {
+    async kill() {
+      firstSandboxKills += 1
+    },
+  })
+  const releaseSecond = registerActiveWorkspaceSandbox('conv-stop-overlap', {
+    async kill() {
+      secondSandboxKills += 1
+    },
+  })
+
+  try {
+    const response = await onRequestPost({
+      request: { body: { conversation_id: 'conv-stop-overlap' } },
+      utils: {
+        async abortActiveRun() {
+          return { aborted: true }
+        },
+      },
+      sandbox: {
+        async kill() {
+          stopRequestSandboxKills += 1
+        },
+      },
+    })
+    const body = await response.json() as any
+
+    assert.equal(body.ok, true)
+    assert.deepEqual(body.sandbox, { killed: true })
+    assert.equal(firstSandboxKills, 1, 'the first overlapping command sandbox must be terminated')
+    assert.equal(secondSandboxKills, 1, 'the second overlapping command sandbox must be terminated')
+    assert.equal(stopRequestSandboxKills, 0, 'the Stop request sandbox is only a fallback when no command sandbox is active')
+  } finally {
+    releaseSecond()
+    releaseFirst()
+  }
+})
+
 test('Stop returns stable non-secret outcomes when sidecar, platform abort, and sandbox kill fail', async () => {
   __setSidecarStarterForTests(async (_context: any, conversationId: string) =>
     fakeSidecar(conversationId, async () => {
