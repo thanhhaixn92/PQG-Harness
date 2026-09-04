@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { registerActiveWorkspaceSandbox } from '../agents/_active-sandbox.ts'
 import {
   __setSidecarStarterForTests,
   acquireDshWebSidecar,
@@ -73,22 +74,14 @@ test('platform abort and sandbox kill start even while sidecar shutdown is waiti
   __setSidecarStarterForTests(undefined)
 })
 
-test('Stop kills the sandbox owned by the active sidecar context instead of a different request sandbox', async () => {
+test('Stop kills the sandbox registered by an active workspace command instead of a different request sandbox', async () => {
   let activeSandboxKills = 0
   let stopRequestSandboxKills = 0
-
-  __setSidecarStarterForTests(async (_context: any, conversationId: string) =>
-    fakeSidecar(conversationId, async () => {}))
-
-  const lease = await acquireDshWebSidecar({
-    conversation_id: 'conv-stop-active-sandbox',
-    sandbox: {
-      async kill() {
-        activeSandboxKills += 1
-      },
+  const releaseActiveSandbox = registerActiveWorkspaceSandbox('conv-stop-active-sandbox', {
+    async kill() {
+      activeSandboxKills += 1
     },
   })
-  lease.release()
 
   try {
     const response = await onRequestPost({
@@ -108,11 +101,10 @@ test('Stop kills the sandbox owned by the active sidecar context instead of a di
 
     assert.equal(body.ok, true)
     assert.deepEqual(body.sandbox, { killed: true })
-    assert.equal(activeSandboxKills, 1, 'the in-flight sidecar sandbox must be terminated')
-    assert.equal(stopRequestSandboxKills, 0, 'a different request sandbox must not be mistaken for the active sandbox')
+    assert.equal(activeSandboxKills, 1, 'the in-flight workspace command sandbox must be terminated')
+    assert.equal(stopRequestSandboxKills, 0, 'a different Stop request sandbox must not be mistaken for the active command sandbox')
   } finally {
-    __setSidecarStarterForTests(undefined)
-    await stopDshWebSidecar('conv-stop-active-sandbox')
+    releaseActiveSandbox()
   }
 })
 
