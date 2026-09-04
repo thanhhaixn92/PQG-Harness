@@ -1150,8 +1150,9 @@ window.__ModuleLoader__.load({
 		* provisional value after plugin activation.
 		*/
 		function resolveInitialLocale() {
-			if (typeof window !== "undefined" && location.hostname.endsWith(".edgeone.dev")) return "en";
-			return "zh";
+			if (typeof window === "undefined") return "en";
+			const tags = [...(navigator.languages ?? []), navigator.language];
+			return tags.some((tag) => String(tag || "").toLowerCase().split("-")[0] === "zh") ? "zh" : "en";
 		}
 		/** Required services: slot registration plus the settings transport. */
 		const inject = [
