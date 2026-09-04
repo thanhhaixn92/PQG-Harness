@@ -1,0 +1,78 @@
+name: otel-lock-reconcile
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  reconcile:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Reconcile only reviewed telemetry lock nodes
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs')
+          const { execFileSync } = require('node:child_process')
+
+          const desiredCommit = '0dd60edef496538e828f16504a513895006387ce'
+          const current = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'))
+          const desired = JSON.parse(execFileSync('git', ['show', `${desiredCommit}:package-lock.json`], { encoding: 'utf8' }))
+          const currentKeys = Object.keys(current.packages || {})
+          const desiredKeys = new Set(Object.keys(desired.packages || {}))
+          const removals = currentKeys.filter((key) => !desiredKeys.has(key))
+          const additions = Object.keys(desired.packages || {}).filter((key) => !(key in current.packages))
+
+          const helperRemovals = new Set([
+            'node_modules/@types/shimmer',
+            'node_modules/acorn',
+            'node_modules/acorn-import-attributes',
+            'node_modules/cjs-module-lexer',
+            'node_modules/import-in-the-middle',
+            'node_modules/is-core-module',
+            'node_modules/module-details-from-path',
+            'node_modules/path-parse',
+            'node_modules/require-in-the-middle',
+            'node_modules/resolve',
+            'node_modules/shimmer',
+            'node_modules/supports-preserve-symlinks-flag',
+          ])
+          const unexpected = removals.filter((key) => !key.includes('/@opentelemetry/') && !key.startsWith('node_modules/@opentelemetry/') && !helperRemovals.has(key))
+
+          console.log('LOCK_REMOVALS', JSON.stringify(removals))
+          console.log('LOCK_ADDITIONS', JSON.stringify(additions))
+          if (additions.length) throw new Error(`unexpected desired lock additions: ${additions.join(', ')}`)
+          if (unexpected.length) throw new Error(`unexpected lock removals: ${unexpected.join(', ')}`)
+
+          current.packages[''].dependencies = desired.packages[''].dependencies
+          for (const key of removals) delete current.packages[key]
+          fs.writeFileSync('package-lock.json', `${JSON.stringify(current, null, 2)}\n`)
+          NODE
+      - name: Verify install and audit
+        run: |
+          npm ci
+          npm audit --json > audit.json || true
+          node -e "const r=require('./audit.json'); const v=r.metadata?.vulnerabilities||{}; console.log('AUDIT_COUNTS',JSON.stringify(v)); if((v.total||0)!==0) process.exit(1)"
+      - name: Commit reconciled lockfile
+        run: |
+          if git diff --quiet -- package-lock.json; then
+            echo 'No lockfile changes required.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add package-lock.json
+          git commit -m 'fix: prune redundant root telemetry lock nodes'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
