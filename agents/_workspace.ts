@@ -1,3 +1,5 @@
+import { registerActiveWorkspaceSandbox } from './_active-sandbox.ts'
+
 const IGNORED_DIRECTORIES = new Set([
   '.git', '.next', '.cache', '.turbo', '.vite',
   'node_modules', 'dist', 'build', 'coverage', '__pycache__',
@@ -381,10 +383,17 @@ export async function runWorkspaceCommand(
 }> {
   if (!command.trim()) throw new Error('Command must not be empty.')
   const root = await ensureWorkspace(context, conversationId)
-  const result = await context.sandbox.commands.run(command, {
-    cwd: root,
-    timeout: Math.min(Math.max(Math.round(timeout), 1), 300),
-  })
+
+  const releaseActiveSandbox = registerActiveWorkspaceSandbox(conversationId, context.sandbox)
+  let result: any
+  try {
+    result = await context.sandbox.commands.run(command, {
+      cwd: root,
+      timeout: Math.min(Math.max(Math.round(timeout), 1), 300),
+    })
+  } finally {
+    releaseActiveSandbox()
+  }
 
   let persistence: WorkspacePersistenceStatus
   try {
