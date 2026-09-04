@@ -5,6 +5,7 @@ export const inject = ['tools']
 export const MCP_SERVER_NAME = 'edgeone'
 export const MCP_TOOL_PREFIX = `mcp__${MCP_SERVER_NAME}__`
 export const DEFAULT_MAKERS_PERMISSION = 'workspace-write'
+export const SAFE_FALLBACK_MAKERS_PERMISSION = 'read-only'
 
 export const ALL_MAKERS_TOOLS = Object.freeze([
   'makers_context_probe',
@@ -28,12 +29,19 @@ const AUTO_ALLOW = Object.freeze({
   'danger-full-access': ALL_MAKERS_TOOLS,
 })
 
+/** @param {unknown} value */
 export function isMakersPermissionMode(value) {
   return value === 'read-only' || value === 'workspace-write' || value === 'danger-full-access'
 }
 
+/** @param {unknown} value */
+export function makersEffectivePermission(value) {
+  return isMakersPermissionMode(value) ? value : SAFE_FALLBACK_MAKERS_PERMISSION
+}
+
+/** @param {unknown} mode */
 export function makersAutoAllowTools(mode) {
-  return AUTO_ALLOW[isMakersPermissionMode(mode) ? mode : DEFAULT_MAKERS_PERMISSION]
+  return AUTO_ALLOW[makersEffectivePermission(mode)]
 }
 
 export function makersToolAllowed(mode, tool) {
@@ -66,8 +74,13 @@ export function apply(ctx) {
     const tool = makersRawToolName(exec.name)
     if (!tool) return next()
     const sandboxPolicy = typeof ctx.get === 'function' ? ctx.get('sandboxPolicy') : ctx.sandboxPolicy
-    const mode = sandboxPolicy?.resolve?.({ session: exec.agent?.session })?.mode
-    const current = isMakersPermissionMode(mode) ? mode : DEFAULT_MAKERS_PERMISSION
+    let mode
+    try {
+      mode = sandboxPolicy?.resolve?.({ session: exec.agent?.session })?.mode
+    } catch {
+      mode = undefined
+    }
+    const current = makersEffectivePermission(mode)
     if (makersToolGate(current, tool) === 'allow') return next()
     return { kind: 'ask', reason: makersAskReason(current, tool) }
   })
@@ -80,11 +93,13 @@ export function makersMcpPermissionSource() {
     `export const MCP_SERVER_NAME = ${JSON.stringify(MCP_SERVER_NAME)}`,
     'export const MCP_TOOL_PREFIX = `mcp__${MCP_SERVER_NAME}__`',
     `export const DEFAULT_MAKERS_PERMISSION = ${JSON.stringify(DEFAULT_MAKERS_PERMISSION)}`,
+    `export const SAFE_FALLBACK_MAKERS_PERMISSION = ${JSON.stringify(SAFE_FALLBACK_MAKERS_PERMISSION)}`,
     `export const ALL_MAKERS_TOOLS = Object.freeze(${JSON.stringify(ALL_MAKERS_TOOLS)})`,
     `const AUTO_ALLOW = Object.freeze(${JSON.stringify(AUTO_ALLOW)})`,
   ]
   const functions = [
     isMakersPermissionMode,
+    makersEffectivePermission,
     makersAutoAllowTools,
     makersToolAllowed,
     makersRequiredMode,
