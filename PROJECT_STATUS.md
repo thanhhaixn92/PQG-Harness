@@ -4,6 +4,8 @@
 - Canonical branch: `main`
 - Audited baseline: `70119cfdae992a203a5e29eb24e91c7200222a7c`
 - Foundation integration branch: `integration/foundation-core`
+- Current Foundation integration commit: `e8a952d159bef610592f43d28ea3cbee6860c701`
+- Current Foundation integration tree: `727854ecc42cb82e227dd85442159d562af7dd67`
 - Upstream provenance: see `UPSTREAM.md`
 
 ## Known deployment
@@ -14,10 +16,11 @@
 - Access/auth policy: **NOT VERIFIED — Foundation Freeze blocker**; confirm in EdgeOne Console and logged-out/direct API behavior before public/stable use.
 - Deployed commit parity: NOT VERIFIED; the existing deployment may remain on an earlier source revision until a controlled redeploy is performed.
 - Required `AI_GATEWAY_*` environment variable presence/scope: NOT VERIFIED in EdgeOne Console; values must never be copied into repository evidence.
+- Fresh probe from the current execution environment on 2026-09-04 could not resolve the known deployment hostname; `/` and `/build-meta.json` remain **BLOCKED by execution environment**, not recorded as application FAIL. See `docs/verification/2026-09-04-foundation-source-checkpoint.md`.
 
 ## GitHub deployment guardrail
 - `main` commit remains `70119cfdae992a203a5e29eb24e91c7200222a7c`.
-- Direct branch metadata on 2026-09-04: `protected: false`.
+- Direct branch metadata re-verified after WP7 merge on 2026-09-04: `protected: false`.
 - Required-status-check enforcement: `off`; contexts/checks empty.
 - Repository rulesets endpoint returned an empty list.
 - The current connector exposes read-only branch-protection/ruleset access, so this setting cannot be applied from the current session.
@@ -36,7 +39,7 @@
 - WP6 product/locale/accessibility: source-side GREEN. Final WP6 evidence head `2f1573d6f43588805671f3667454524e7ba92fad`, quality run `33889812234` — SUCCESS.
 - WP6 full Vietnamese: DEFERRED because pinned DSH `0.1.0-rc.6` exposes namespace dictionary registration but no clean external locale-descriptor registration path. `vi-VN` falls back to complete shipped English. See `docs/localization/vi-status.md`.
 - WP6 controlled phone/tablet/desktop and real-browser accessibility smoke: **BLOCKED**. See `docs/verification/2026-09-04-wp6-preview-ui.md`.
-- WP7 operational/release-readiness docs: source-side GREEN on implementation head `f444f4361603cb17d6283d3caa0c2c255bcf3252`, quality run `33891006816` — SUCCESS. This status update is evidence-only; a final fresh run on the resulting WP7 head is required before integration.
+- WP7 operational/release-readiness docs: source-side GREEN. Final WP7 candidate `1a410d1742b86ba0981b55036c4598bbbf4bd10b`, quality run `33891360316` — SUCCESS. It was merged into `integration/foundation-core` as `e8a952d159bef610592f43d28ea3cbee6860c701`; merge tree `727854ecc42cb82e227dd85442159d562af7dd67` exactly equals the final WP7 candidate tree.
 
 ## Release evidence documents
 - Security boundary: `SECURITY.md`
@@ -45,6 +48,7 @@
 - Release decision matrix: `docs/release/RELEASE_CHECKLIST.md`
 - Known limitations: `docs/release/KNOWN_LIMITATIONS.md`
 - Change history: `CHANGELOG.md`
+- Post-merge source checkpoint: `docs/verification/2026-09-04-foundation-source-checkpoint.md`
 
 ## Deployment safety rule
 Do not reconnect Git Auto Deploy until Foundation Core changes have passed the quality gate and a controlled deployment/reconnect plan has been reviewed. Reconnection must re-verify Production/Preview branch mapping, environment scope, access policy, required `quality` enforcement on `main`, rollback mechanism, and deployed commit parity before enabling automatic promotion.
