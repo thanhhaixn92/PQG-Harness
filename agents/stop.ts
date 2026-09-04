@@ -10,7 +10,7 @@ async function killSandboxesForStop(sandboxes: any[]): Promise<SandboxStopResult
   const hasUnavailable = killable.length !== sandboxes.length
 
   const results = await Promise.allSettled(
-    killable.map(sandbox => sandbox.kill()),
+    killable.map(sandbox => Promise.resolve().then(() => sandbox.kill())),
   )
 
   if (hasUnavailable) {
