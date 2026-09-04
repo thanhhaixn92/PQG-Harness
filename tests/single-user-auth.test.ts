@@ -59,6 +59,17 @@ test('missing access secret fails closed before the application', async () => {
   assert.match(await response.text(), /PQG_ACCESS_NOT_CONFIGURED/)
 })
 
+test('short access secret also fails closed', async () => {
+  const { middleware } = await loadMiddleware()
+  const probe = makeContext(
+    new Request(`${origin}/`, { headers: { accept: 'text/html' } }),
+    { PQG_ACCESS_SECRET: 'too-short' },
+  )
+  const response = await middleware(probe.context)
+  assert.equal(response.status, 503)
+  assert.equal(probe.nextCalls(), 0)
+})
+
 test('anonymous browser navigation is redirected to the login page', async () => {
   const { middleware } = await loadMiddleware()
   const probe = makeContext(new Request(`${origin}/`, { headers: { accept: 'text/html' } }))
@@ -139,6 +150,24 @@ test('a valid session cookie passes through while a tampered cookie is rejected'
   const rejectedResponse = await middleware(tampered.context)
   assert.equal(rejectedResponse.status, 401)
   assert.equal(tampered.nextCalls(), 0)
+})
+
+test('session cookie expires after the seven-day window', async () => {
+  const { middleware } = await loadMiddleware()
+  const cookie = await issueSessionCookie(middleware)
+  const realNow = Date.now
+  try {
+    const issuedAt = realNow()
+    Date.now = () => issuedAt + 8 * 24 * 60 * 60 * 1000
+    const probe = makeContext(new Request(`${origin}/api/agentPreset.list`, {
+      headers: { cookie, accept: 'application/json' },
+    }))
+    const response = await middleware(probe.context)
+    assert.equal(response.status, 401)
+    assert.equal(probe.nextCalls(), 0)
+  } finally {
+    Date.now = realNow
+  }
 })
 
 test('logout clears the session cookie without touching application routes', async () => {
