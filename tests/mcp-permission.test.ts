@@ -6,6 +6,7 @@ import {
   apply as applyMakersMcpPermission,
   makersAskReason,
   makersAutoAllowTools,
+  makersEffectivePermission,
   makersMcpPermissionSource,
   makersRawToolName,
   makersToolAllowed,
@@ -57,6 +58,15 @@ test('full access auto-allows commands and preview without asking', () => {
   assert.deepEqual([...makersAutoAllowTools('danger-full-access')], [...ALL_MAKERS_TOOLS])
 })
 
+test('invalid or missing runtime permission fails closed to read-only', () => {
+  assert.equal(makersEffectivePermission(undefined), 'read-only')
+  assert.equal(makersEffectivePermission('broken-mode'), 'read-only')
+  assert.equal(makersEffectivePermission('workspace-write'), 'workspace-write')
+  assert.equal(makersToolGate(undefined, 'workspace_write_file'), 'ask')
+  assert.equal(makersToolGate(undefined, 'workspace_read_file'), 'allow')
+  assert.ok(!makersAutoAllowTools(undefined).includes('workspace_write_file'))
+})
+
 test('ask copy tells the user which mode the call needs', () => {
   assert.match(makersAskReason('read-only', 'workspace_write_file'), /Workspace Write/)
   assert.match(makersAskReason('workspace-write', 'publish_preview'), /Full access/)
@@ -79,6 +89,26 @@ test('pre-execute asks the user instead of hiding the tool', () => {
   assert.equal((decisions[0] as { kind: string }).kind, 'ask')
   assert.equal((decisions[1] as { kind: string }).kind, 'allow')
   assert.equal((decisions[2] as { kind: string }).kind, 'allow')
+})
+
+test('pre-execute fails closed when sandbox policy is missing or throws', () => {
+  const decisionKinds: string[] = []
+  const run = (get: () => unknown) => {
+    const ctx = {
+      get,
+      on(_event: string, handler: (exec: { name: string; agent?: { session?: object } }, next: () => { kind: 'allow' }) => unknown) {
+        const result = handler({ name: 'mcp__edgeone__workspace_write_file', agent: { session: {} } }, () => ({ kind: 'allow' as const })) as { kind: string }
+        decisionKinds.push(result.kind)
+      },
+    }
+    applyMakersMcpPermission(ctx)
+  }
+
+  run(() => undefined)
+  run(() => ({ resolve: () => { throw new Error('policy unavailable') } }))
+  run(() => ({ resolve: () => ({ mode: 'broken-mode' }) }))
+
+  assert.deepEqual(decisionKinds, ['ask', 'ask', 'ask'])
 })
 
 test('MCP bridge registers every tool instead of filtering by mode', async () => {
