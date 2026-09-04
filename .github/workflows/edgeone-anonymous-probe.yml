@@ -1,0 +1,25 @@
+name: edgeone-anonymous-probe
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    if: github.head_ref == 'verify/edgeone-anonymous-access'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe anonymous static access
+        shell: bash
+        run: |
+          set -u
+          origin='https://pqg-harness.edgeone.cool'
+          for path in / /build-meta.json; do
+            code="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 20 "${origin}${path}" || true)"
+            if [ -z "$code" ]; then code='curl_error'; fi
+            printf 'PATH=%s STATUS=%s\n' "$path" "$code"
+          done
