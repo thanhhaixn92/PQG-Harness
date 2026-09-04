@@ -324,7 +324,7 @@ function appendAccessToken(url: string, token: string): string {
 export async function publishWorkspacePreview(
   context: any,
   conversationId: string,
-): Promise<{ previewUrl: string; framework: string }> {
+): Promise<{ published: true; framework: string }> {
   const root = await ensureWorkspace(context, conversationId)
   const packageJsonExists = await context.sandbox.files.exists(`${root}/package.json`)
   const release = [
@@ -370,10 +370,6 @@ export async function publishWorkspacePreview(
     throw new Error(ready.stdout || ready.stderr || 'Preview server did not become ready.')
   }
 
-  const host = normalizePublicUrl(context.sandbox.getHost(9000))
-  const token = String(context.sandbox.envdAccessToken || '')
-  if (!host || !token) throw new Error('Sandbox preview credentials are unavailable.')
-  const previewUrl = appendAccessToken(host, token)
   try {
     await updateConversationMetadata(context, conversationId, {
       preview: { published: true, framework, updatedAt: Date.now() },
@@ -381,7 +377,7 @@ export async function publishWorkspacePreview(
   } catch (error) {
     console.warn('[workspace] preview metadata persistence failed:', error)
   }
-  return { previewUrl, framework }
+  return { published: true, framework }
 }
 
 export async function currentPreview(
