@@ -1,4 +1,5 @@
 import WebSocket from 'ws'
+import { publicError } from '../_gateway-proxy.ts'
 import {
   acquireDshWebSidecar,
   snapshotDshSettingsYaml,
@@ -58,6 +59,7 @@ function eventStream(context: any, kind: 'mux' | 'host'): Response {
       }
       const streamError = (error: unknown): void => {
         cleanup()
+        console.warn('[dsh-web] event stream failed:', error instanceof Error ? error.name : 'unknown')
         try {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({
             type: 'server-request',
@@ -65,7 +67,7 @@ function eventStream(context: any, kind: 'mux' | 'host'): Response {
             method: 'stream/error',
             payload: {
               type: 'stream/error',
-              error: { code: 'internal', message: error instanceof Error ? error.message : String(error), details: {} },
+              error: { code: 'internal', message: 'DSH_WEB_STREAM_FAILED', details: {} },
             },
           })}\n\n`))
         } catch {
@@ -211,7 +213,7 @@ async function snapshotSettingsAfterWrite(
     try {
       await snapshotDshSettingsYaml(context, sidecar.conversationId, sidecar.home)
     } catch (error) {
-      console.warn('[dsh-web] settings snapshot failed:', error)
+      console.warn('[dsh-web] settings snapshot failed:', error instanceof Error ? error.name : 'unknown')
     }
   }
   return new Response(bytes, { status: upstream.status, headers })
@@ -308,9 +310,7 @@ export async function onRequest(context: any): Promise<Response> {
   try {
     return await proxy(context)
   } catch (error) {
-    return Response.json({
-      error: 'DSH_WEB_PROXY_FAILED',
-      message: error instanceof Error ? error.message : String(error),
-    }, { status: 502 })
+    console.warn('[dsh-web] proxy failed:', error instanceof Error ? error.name : 'unknown')
+    return Response.json(publicError('DSH_WEB_PROXY_FAILED'), { status: 502 })
   }
 }

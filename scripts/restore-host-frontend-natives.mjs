@@ -3,6 +3,7 @@ import { access, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { lockPackageEntry, verifySubresourceIntegrity } from './lib/lock-integrity.mjs'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const lock = JSON.parse(await readFile(join(root, 'package-lock.json'), 'utf8'))
@@ -38,14 +39,6 @@ function hostNatives() {
   ]
 }
 
-function packageVersion(name) {
-  const entry = lock.packages?.[`node_modules/${name}`]
-  if (typeof entry?.version !== 'string' || !entry.version) {
-    throw new Error(`Could not resolve ${name} from package-lock.json.`)
-  }
-  return entry.version
-}
-
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
     cwd: root,
@@ -61,7 +54,8 @@ function run(command, args, options = {}) {
 }
 
 async function unpackPackage(name, scratch) {
-  const spec = `${name}@${packageVersion(name)}`
+  const entry = lockPackageEntry(lock, name)
+  const spec = `${name}@${entry.version}`
   const packed = run('npm', [
     'pack',
     '--json',
@@ -80,11 +74,15 @@ async function unpackPackage(name, scratch) {
     throw new Error(`npm pack did not return a tarball for ${spec}.`)
   }
 
+  const tarball = join(scratch, filename)
+  const bytes = await readFile(tarball)
+  verifySubresourceIntegrity(bytes, entry.integrity)
+
   const destination = join(root, 'node_modules', ...name.split('/'))
   await rm(destination, { recursive: true, force: true })
   await mkdir(destination, { recursive: true })
   run('tar', [
-    '-xzf', join(scratch, filename),
+    '-xzf', tarball,
     '-C', destination,
     '--strip-components=1',
   ], { stdio: 'pipe' })
