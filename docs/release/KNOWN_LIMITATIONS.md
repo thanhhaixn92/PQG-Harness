@@ -65,22 +65,25 @@ All direct DSH packages are intentionally frozen at `0.1.0-rc.6`. This avoids a 
 
 Do not opportunistically upgrade individual DSH packages. A later DSH migration should be isolated, reviewed as one compatibility wave, and validated through generated drift, tests, Preview smoke, and rollback.
 
-## 8. Residual dependency audit findings require an OpenTelemetry compatibility wave
+## 8. Dependency audit is point-in-time evidence
 
-The safe transitive parser findings identified during Foundation review have been remediated without changing the direct dependency manifest:
+The Foundation dependency follow-up first refreshed the compatible transitive parser resolutions to `fast-uri 3.1.7` and `qs 6.16.0`, then removed a redundant root OpenTelemetry dependency wave after a PQG-owned source usage review found no direct OpenTelemetry import or explicit Jaeger/global-propagator activation.
+
+The cleanup does **not** remove the newer telemetry dependencies that remain inside the pinned DSH rc.6 graph. It avoids a semver-major OpenTelemetry/DSH migration and keeps the existing DSH compatibility wave frozen.
+
+A guarded semantic lockfile reconcile preserved the already-reviewed integration lock metadata, added no package node, and removed only the old root OpenTelemetry wave plus helper nodes used exclusively by that wave. The temporary reconcile workflow was deleted before final verification.
+
+Fresh verification on the cleaned candidate reported:
 
 ```text
-fast-uri: 3.1.5 -> 3.1.7
-qs:       6.15.3 -> 6.16.0
+563 packages audited
+0 known vulnerabilities
+quality: install -> prepare -> drift -> typecheck -> tests -> build SUCCESS
 ```
 
-A regression contract now enforces `fast-uri >= 3.1.7` and `qs >= 6.16.0`. After this refresh, `npm audit --json` reports **12 residual findings: 10 moderate, 2 high, 0 critical**. All remaining entries belong to the inherited direct OpenTelemetry dependency wave.
+This is a point-in-time npm advisory result, not a guarantee that the dependency graph is permanently vulnerability-free. New advisories can affect the same locked versions later, and install-script/native-package trust remains a separate supply-chain concern.
 
-`npm audit` proposes only semver-major OpenTelemetry remediation (`2.x` / `0.222.x`). The imported TencentEdgeOne baseline intentionally carries this OpenTelemetry family, so a forced or piecemeal upgrade is not treated as a safe lockfile fix.
-
-A PQG-owned source scan found no OpenTelemetry import and no explicit Jaeger activation (`JaegerPropagator`, `OTEL_PROPAGATORS`, `setGlobalPropagator`). That reduces the demonstrated PQG activation surface for the Jaeger-specific issue, but it does not prove every DSH/runtime telemetry path is unaffected.
-
-Before a stable/public release, review the residual OpenTelemetry advisories against the actual DSH/Makers telemetry activation path. If remediation is required, perform one coordinated OpenTelemetry/DSH compatibility wave with full quality, controlled Preview telemetry/smoke checks, and rollback rehearsal. See `docs/verification/2026-09-04-dependency-security-refresh.md`.
+See `docs/verification/2026-09-04-foundation-otel-root-cleanup.md`. Re-run dependency review before stable/public release and during any DSH compatibility wave rather than applying blind forced upgrades.
 
 ## 9. Full Vietnamese localization is deferred
 

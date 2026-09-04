@@ -52,3 +52,11 @@ test('transitive URL and query parsers stay above reviewed security floors', asy
   assert.ok(versionAtLeast(fastUri, '3.1.7'), `fast-uri ${fastUri || '(missing)'} must be >= 3.1.7`)
   assert.ok(versionAtLeast(qs, '6.16.0'), `qs ${qs || '(missing)'} must be >= 6.16.0`)
 })
+
+test('unused root OpenTelemetry stack is not carried as direct dependencies', async () => {
+  const pkg = await json('package.json')
+  const direct = Object.keys(pkg.dependencies as Record<string, string>)
+    .filter((name) => name.startsWith('@opentelemetry/'))
+
+  assert.deepEqual(direct, [])
+})
