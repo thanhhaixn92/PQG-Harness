@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  currentPreview,
   ensureWorkspace,
   isSensitiveWorkspacePath,
   listWorkspace,
@@ -307,8 +308,28 @@ test('workspace listing hides sensitive files but keeps safe templates', async (
     },
   }
 
-  const items = await listWorkspace({ sandbox }, 'conv-1')
-  assert.deepEqual(items.map(item => item.path), ['.env.example', 'src/app.ts'])
+  const listing = await listWorkspace({ sandbox }, 'conv-1')
+  assert.deepEqual(listing.items.map(item => item.path), ['.env.example', 'src/app.ts'])
+  assert.equal(listing.truncated, false)
+  assert.equal(listing.limit, 400)
+})
+
+test('workspace listing reports truncation after 400 visible entries', async () => {
+  const rows = Array.from({ length: 401 }, (_, index) => `f\t1\t1\t./file-${String(index).padStart(3, '0')}.txt`)
+  const sandbox = {
+    files: {
+      makeDir: async () => {},
+      exists: async () => true,
+    },
+    commands: {
+      run: async () => ({ exitCode: 0, stdout: rows.join('\n'), stderr: '' }),
+    },
+  }
+
+  const listing = await listWorkspace({ sandbox }, 'conv-1')
+  assert.equal(listing.items.length, 400)
+  assert.equal(listing.truncated, true)
+  assert.equal(listing.limit, 400)
 })
 
 test('writeWorkspaceFile checkpoints after writing before reporting durable success', async () => {
@@ -421,6 +442,57 @@ test('runWorkspaceCommand reports checkpoint persistence failure without hiding 
   assert.equal(result.stdout, 'changed files')
   assert.equal(result.persistence.persisted, false)
   assert.equal(result.persistence.error, 'persist failed')
+})
+
+test('currentPreview reports false when metadata is stale and port 3000 is unhealthy', async () => {
+  const metadataUpdates: Record<string, unknown>[] = []
+  const context = {
+    sandbox: {
+      commands: {
+        run: async () => ({ exitCode: 1, stdout: '', stderr: '' }),
+      },
+      getHost: () => 'https://9000-test.sandbox.example.com',
+      envdAccessToken: 'secret-token',
+    },
+    store: {
+      async getConversation() {
+        return { metadata: { preview: { published: true, framework: 'static' } } }
+      },
+      async updateConversation({ metadata }: { metadata: Record<string, unknown> }) {
+        metadataUpdates.push(metadata)
+      },
+    },
+  }
+
+  const result = await currentPreview(context, 'conv-1')
+  assert.deepEqual(result, { published: false })
+  assert.equal((metadataUpdates.at(-1)?.preview as { published?: boolean } | undefined)?.published, false)
+})
+
+test('currentPreview reports live preview only after sandbox health succeeds', async () => {
+  let healthCalls = 0
+  const context = {
+    sandbox: {
+      commands: {
+        run: async () => {
+          healthCalls += 1
+          return { exitCode: 0, stdout: '', stderr: '' }
+        },
+      },
+      getHost: () => 'https://9000-test.sandbox.example.com',
+      envdAccessToken: 'secret-token',
+    },
+    store: {
+      async getConversation() {
+        return { metadata: { preview: { published: true, framework: 'static' } } }
+      },
+    },
+  }
+
+  const result = await currentPreview(context, 'conv-1')
+  assert.equal(healthCalls, 1)
+  assert.equal(result.published, true)
+  assert.match(result.previewUrl || '', /access_token=secret-token/)
 })
 
 test('publishWorkspacePreview keeps sandbox access credentials out of model-visible result', async () => {
