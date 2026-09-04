@@ -63,6 +63,62 @@ test('runner abort kills its own in-flight sandbox command exactly once', async 
   assert.equal(killCalls, 1)
 })
 
+test('abort wins the command race even when sandbox kill settles slowly', async () => {
+  const controller = new AbortController()
+  let resolveRun!: (value: { exitCode: number; stdout: string; stderr: string }) => void
+  let releaseKill!: () => void
+  const killGate = new Promise<void>(resolve => { releaseKill = resolve })
+  let persistCalls = 0
+  let settled = 'pending'
+
+  const sandbox = {
+    files: readyFiles(),
+    commands: {
+      run() {
+        return new Promise<{ exitCode: number; stdout: string; stderr: string }>(resolve => {
+          resolveRun = resolve
+        })
+      },
+    },
+    async kill() {
+      await killGate
+    },
+    async persist() {
+      persistCalls += 1
+      return { size: 1, sha256: 'x', etag: 'x', persistedAt: 'x' }
+    },
+  }
+
+  const pending = runWorkspaceCommand({
+    sandbox,
+    request: { signal: controller.signal },
+  }, 'conv-abort-race', 'sleep 60')
+  pending.then(
+    () => { settled = 'resolved' },
+    error => { settled = error instanceof Error ? error.name : 'rejected' },
+  )
+
+  await new Promise(resolve => setTimeout(resolve, 0))
+  controller.abort()
+  resolveRun({ exitCode: 0, stdout: 'late-success', stderr: '' })
+  await new Promise(resolve => setTimeout(resolve, 0))
+
+  try {
+    assert.notEqual(settled, 'resolved', 'an observed abort must beat a later command settlement')
+    assert.equal(persistCalls, 0, 'checkpointing must not begin after the runner observed abort')
+  } finally {
+    releaseKill()
+  }
+
+  await assert.rejects(
+    () => pending,
+    error => error instanceof Error
+      && error.name === 'AbortError'
+      && error.message === 'WORKSPACE_COMMAND_ABORTED',
+  )
+  assert.equal(persistCalls, 0)
+})
+
 test('pre-aborted runner does not dispatch a sandbox command', async () => {
   const controller = new AbortController()
   controller.abort()
