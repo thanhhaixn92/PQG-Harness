@@ -2,7 +2,9 @@
 
 ## Operating principle
 
-Treat `integration/foundation-core` as the current Foundation consolidation line. `main` remains the stable repository baseline until a controlled release decision is made. The repository records EdgeOne Git Auto Deploy as DISCONNECTED; do not reconnect it as part of routine source work.
+Treat `integration/foundation-core` as the current Foundation consolidation line. `main` remains the stable repository baseline until a controlled release decision is made.
+
+EdgeOne Git integration is **RECONNECTED — OWNER-REPORTED on 2026-09-04**. Direct Console state, actual Production branch mapping, and deployed identity remain NOT VERIFIED from this session. Because reconnect occurred before required-quality enforcement was configured on `main`, routine source work must **not** merge/promote Foundation changes through `main` until the deployment branch and required `quality` gate are verified.
 
 Never convert a blocked live verification into PASS based on unit/CI evidence alone.
 
@@ -27,13 +29,13 @@ Because the current quality workflow is triggered only for PRs targeting `main`,
 
 ## 2. Controlled Preview release procedure
 
-This procedure must be performed only when EdgeOne Git/Preview access is deliberately available.
+This procedure must be performed only when a non-Production EdgeOne Preview is deliberately available and its identity can be distinguished from Production.
 
 1. Select the exact candidate commit from `integration/foundation-core` or a release branch.
 2. Record candidate commit and tree.
 3. Verify the quality workflow is GREEN on that exact candidate.
 4. Verify EdgeOne Console Production/Preview branch mapping and environment-variable scope without copying secret values.
-5. Create a controlled Preview deployment of the candidate.
+5. Create or identify a controlled non-Production Preview deployment of the candidate.
 6. Fetch `/build-meta.json` from Preview and verify commit/tree equal the candidate.
 7. Run the smoke matrix in `docs/verification/2026-09-04-foundation-preview-smoke.md`.
 8. Run the WP6 browser/viewport matrix in `docs/verification/2026-09-04-wp6-preview-ui.md`.
@@ -41,6 +43,8 @@ This procedure must be performed only when EdgeOne Git/Preview access is deliber
 10. Rehearse Preview rollback/redeploy and verify `/build-meta.json` returns to the expected previous commit.
 
 If any required step is unavailable, record BLOCKED. If a step executes and fails, record FAIL. Do not continue promotion on a required FAIL.
+
+Reconnect alone is not Preview evidence. See `docs/verification/2026-09-04-edgeone-reconnect-status.md`.
 
 ## 3. Access/auth verification
 
@@ -117,7 +121,7 @@ Use the supported EdgeOne Preview deployment/redeploy mechanism to select the pr
 
 ### Production rollback
 
-Production rollback is not authorized by this runbook alone. Before promotion, record the actual EdgeOne rollback/redeploy mechanism during the controlled Preview rehearsal. If a Production incident occurs, stop Auto Deploy/promotion first, roll back to a previously verified build identity using that supported mechanism, and run only the safe Production smoke subset.
+Production rollback is not authorized by this runbook alone. Before promotion, record the actual EdgeOne rollback/redeploy mechanism during the controlled Preview rehearsal. If a Production incident occurs, stop further Git promotion first, roll back to a previously verified build identity using the supported mechanism, and run only the safe Production smoke subset.
 
 ## 8. Credential incident
 
@@ -139,5 +143,14 @@ Use a dedicated `sync/upstream-*` branch, compute/apply the vendor delta from th
 ## 10. Promotion decision
 
 A source-side GREEN WP0-WP7 is necessary but insufficient for Foundation Freeze. Promotion remains blocked while required live rows in `docs/release/RELEASE_CHECKLIST.md` are BLOCKED/NOT VERIFIED unless the owner explicitly accepts a listed risk with a dated reason.
+
+Since EdgeOne Git integration is already owner-reported reconnected, the required order is:
+
+1. verify actual Production/Preview branch mapping and reconnect state;
+2. configure required `quality` enforcement on the real deployment branch before any release merge/push;
+3. obtain a controlled non-Production Preview with verified `/build-meta.json`;
+4. close access/auth, durability, cancellation, runtime/UI smoke, observability and rollback gates;
+5. only then approve a release merge/promotion;
+6. verify deployed identity before safe Production smoke.
 
 No product module development should be treated as release evidence for an unresolved Foundation gate.

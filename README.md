@@ -15,11 +15,11 @@ Current blockers include:
 - live Stop/command cancellation — BLOCKED;
 - deployed `/build-meta.json` parity and Production/Preview topology — NOT VERIFIED/BLOCKED;
 - environment scope, native observability, rollback rehearsal, representative browser smoke — BLOCKED;
-- `main` required-quality enforcement — confirmed absent (`protected:false`, required checks off, no rulesets); must be configured before any Git Auto Deploy reconnect.
+- deployment-branch required-quality enforcement — confirmed absent on `main` (`protected:false`, required checks off, no rulesets).
 
-The repository records Production Git Auto Deploy as **DISCONNECTED** by the owner. Repository changes do not imply a Production deployment.
+EdgeOne Git integration is **RECONNECTED — OWNER-REPORTED on 2026-09-04**. Direct Console state, active Production branch mapping, and deployed commit parity remain NOT VERIFIED from this session. Because reconnect occurred before required-quality enforcement was configured, repository changes must not be treated as safe Production promotion evidence; do not merge/promote Foundation changes through `main` until the actual deployment branch and required `quality` gate are verified.
 
-See [`PROJECT_STATUS.md`](PROJECT_STATUS.md), [`docs/release/RELEASE_CHECKLIST.md`](docs/release/RELEASE_CHECKLIST.md), and [`docs/release/KNOWN_LIMITATIONS.md`](docs/release/KNOWN_LIMITATIONS.md).
+See [`PROJECT_STATUS.md`](PROJECT_STATUS.md), [`docs/release/RELEASE_CHECKLIST.md`](docs/release/RELEASE_CHECKLIST.md), [`docs/release/KNOWN_LIMITATIONS.md`](docs/release/KNOWN_LIMITATIONS.md), and [`docs/verification/2026-09-04-edgeone-reconnect-status.md`](docs/verification/2026-09-04-edgeone-reconnect-status.md).
 
 ## Architecture
 
@@ -142,6 +142,7 @@ CI success proves source/build contracts only. It does not replace controlled Ed
 - Release decision matrix: [`docs/release/RELEASE_CHECKLIST.md`](docs/release/RELEASE_CHECKLIST.md)
 - Known limitations: [`docs/release/KNOWN_LIMITATIONS.md`](docs/release/KNOWN_LIMITATIONS.md)
 - Main guardrail verification: [`docs/verification/2026-09-04-main-guardrail.md`](docs/verification/2026-09-04-main-guardrail.md)
+- EdgeOne reconnect status: [`docs/verification/2026-09-04-edgeone-reconnect-status.md`](docs/verification/2026-09-04-edgeone-reconnect-status.md)
 - Vietnamese locale decision: [`docs/localization/vi-status.md`](docs/localization/vi-status.md)
 - Upstream provenance/sync policy: [`UPSTREAM.md`](UPSTREAM.md)
 

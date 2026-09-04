@@ -39,7 +39,9 @@ test('release docs preserve blocked live gates and deployment safety', async () 
 
   assert.match(combined, /access\/auth[^\n]*(NOT VERIFIED|BLOCKED)/i)
   assert.match(combined, /Preview[^\n]*BLOCKED/i)
-  assert.match(combined, /Auto Deploy[^\n]*DISCONNECTED/i)
+  assert.match(combined, /EdgeOne Git[^\n]*RECONNECTED/i)
+  assert.match(combined, /main[^\n]*(?:unprotected|protected:false|required checks off)/i)
+  assert.match(combined, /(?:do not merge|no Foundation change may be merged)[^\n]*main/i)
   assert.match(combined, /Foundation Freeze[^\n]*(BLOCKED|not complete|not declared)/i)
   assert.doesNotMatch(
     combined,

@@ -2,9 +2,11 @@
 
 ## Scope and safety
 
-This evidence is tied to the WP5 source branch and is intentionally conservative. Production Git Auto Deploy was owner-confirmed disconnected on 2026-09-04. No Production deployment was performed for this verification.
+This evidence originated during WP5 when Production Git Auto Deploy was owner-confirmed disconnected. The project owner later reported EdgeOne Git integration **RECONNECTED on 2026-09-04**. That operational change does not retroactively convert any BLOCKED live check into PASS.
 
-A controlled EdgeOne Preview deployment and EdgeOne Console access are not available from the current execution environment. Live cases that require them are therefore recorded as **BLOCKED**, never inferred as PASS.
+The current session still does not have direct EdgeOne Console access or a reachable controlled non-Production Preview that can be independently identified and verified. Live cases that require them therefore remain **BLOCKED**, never inferred as PASS.
+
+A tokenized EdgeOne access URL was later supplied by the owner. The credential/query parameters are intentionally not stored in repository evidence; the non-secret origin is recorded in `docs/verification/2026-09-04-edgeone-reconnect-status.md`. Fetch attempts from the current runtime still could not obtain application content.
 
 ## Source-side evidence
 
@@ -19,8 +21,8 @@ A controlled EdgeOne Preview deployment and EdgeOne Console access are not avail
 
 | Case | Status | Reason / required evidence |
 |---|---|---|
-| DNS / TLS / root | BLOCKED | controlled Preview domain not available |
-| `/build-meta.json` equals deployed branch HEAD | BLOCKED | requires controlled Preview deployment |
+| DNS / TLS / root | BLOCKED | owner-reported reconnect exists, but current execution environment cannot obtain a verified application response from the supplied origin |
+| `/build-meta.json` equals deployed branch HEAD | BLOCKED | requires a reachable controlled Preview deployment with known candidate identity |
 | main shell render | BLOCKED | requires controlled Preview |
 | critical browser console errors | BLOCKED | requires browser against controlled Preview |
 | model selector | BLOCKED | requires controlled Preview |
@@ -39,11 +41,12 @@ A controlled EdgeOne Preview deployment and EdgeOne Console access are not avail
 
 ## Deployment topology and access gate
 
-- Git-connected EdgeOne deployment: **DISCONNECTED**, owner-confirmed 2026-09-04.
-- Production/Preview branch mapping: **NOT VERIFIED for any future reconnect**.
+- EdgeOne Git connection: **RECONNECTED — OWNER-REPORTED on 2026-09-04; Console state not independently verified in this session**.
+- Production/Preview branch mapping after reconnect: **NOT VERIFIED**.
 - Environment variable scope: **NOT VERIFIED in EdgeOne Console**; no values were requested or recorded.
 - Current deployment ID/source SHA: **NOT VERIFIED**.
 - Access/auth protection state: **NOT VERIFIED — Foundation Freeze blocker**.
+- GitHub `main` remains confirmed unprotected with required checks off; do not use a `main` merge/push as a safe promotion path until actual deployment mapping and required-quality enforcement are verified.
 
 The official EdgeOne Makers authentication guidance warns that unauthenticated Agent APIs can be called directly and consume model/tool resources. Therefore absence of a verified outer access boundary cannot be treated as safe-by-default. Application authentication is not added speculatively: first verify the actual EdgeOne outer-access configuration; only if it is insufficient should a separate single-user authentication implementation be reviewed.
 
@@ -55,11 +58,11 @@ No third-party telemetry was added because a missing critical observability boun
 
 ## Rollback rehearsal
 
-**BLOCKED.** A supported Preview deployment/rollback path is not available from the current execution environment. No Production rollback was attempted.
+**BLOCKED.** A supported, independently identified Preview deployment/rollback path is not available from the current execution environment. No Production rollback was attempted.
 
 Required future proof:
 
-1. deploy Preview commit B;
+1. deploy or identify Preview commit B;
 2. verify `/build-meta.json == B`;
 3. rollback/redeploy Preview commit A using the supported EdgeOne mechanism;
 4. verify `/build-meta.json == A`;
@@ -68,4 +71,4 @@ Required future proof:
 
 ## Release interpretation
 
-WP5 source-side build identity is complete. WP5 live topology, auth, Preview smoke, native-observability and rollback gates remain **BLOCKED / NOT VERIFIED** and must not be represented as release-ready until controlled EdgeOne evidence exists.
+WP5 source-side build identity is complete. WP5 live topology, auth, Preview smoke, native-observability and rollback gates remain **BLOCKED / NOT VERIFIED**. Owner-reported reconnect makes these checks actionable again but does not satisfy them by itself.
