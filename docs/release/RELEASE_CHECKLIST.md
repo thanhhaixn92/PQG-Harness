@@ -6,9 +6,9 @@ This checklist separates **source-side closure** from **live EdgeOne release evi
 
 ## Release state
 
-- WP0–WP6 source-side implementation: GREEN at their recorded evidence heads.
-- WP7 documentation/release readiness: in progress on this branch until final quality is GREEN.
-- Foundation Freeze: **BLOCKED / not complete** because required live Preview, access/auth, deployed-identity, and deployment-topology evidence is not yet available.
+- WP0–WP7 source-side implementation/documentation: **GREEN** at recorded evidence heads.
+- WP7 implementation head `f444f4361603cb17d6283d3caa0c2c255bcf3252`: quality run `33891006816` — SUCCESS. A final fresh quality run is still required on the evidence-aligned WP7 head before integration.
+- Foundation Freeze: **BLOCKED / not complete** because required live Preview, access/auth, deployed-identity, deployment-topology, and `main` enforcement evidence are unresolved.
 - Stable/public Production release: **NOT APPROVED**.
 
 ## Phase 1B P1 closure matrix
@@ -22,7 +22,7 @@ This checklist separates **source-side closure** from **live EdgeOne release evi
 | **M05** | Preview credential exposed in model-visible query-string URL | **CLOSED** | WP1 returns browser-only same-origin preview access; model-visible tool results do not serialize the sandbox credential. |
 | **M06** | Sidecar lifecycle races/leaks | **CLOSED source-side** | WP3 explicit starting/ready/stopping state, shared startup, bounded retries, idempotent cleanup, active leases, current-context refresh, and streaming lease tests are GREEN. Live lifecycle behavior is covered indirectly by the Preview smoke gate. |
 | **M08** | Stop/cancel could return while sandbox mutation continues | **BLOCKED (source CLOSED; live command proof pending)** | WP3 starts sidecar stop and platform abort independently and has SSE/Stop race tests. A controlled Preview must prove a running command does not continue a delayed workspace mutation silently after Stop. |
-| **M09** | Production-linked main lacked a required quality gate | **BLOCKED before deploy reconnect** | WP0 provides the full quality workflow and all Foundation implementation candidates use it. `main` required-check/ruleset enforcement is not independently confirmed as enabled; verify/configure required `quality` before reconnecting Git Auto Deploy. |
+| **M09** | Production-linked main lacked a required quality gate | **BLOCKED before deploy reconnect** | WP0 provides the full quality workflow and all Foundation candidates use it, but GitHub re-verification on 2026-09-04 shows `main protected:false`, required-status-check enforcement `off`, and no repository rulesets. The current connector has no administration write action. Protect `main`/deployment branch and require `quality` before reconnecting Git Auto Deploy. See `docs/verification/2026-09-04-main-guardrail.md`. |
 | **M10** | No real integration/E2E and Production smoke proof | **BLOCKED** | Source-side tests are substantially stronger, but controlled Preview smoke, browser paths, model/SSE/workspace/approval/Stop/export, native observability, and safe Production smoke remain live gates. |
 | **M13** | Production topology/deployed SHA/access not independently verified | **BLOCKED** | WP5 emits exact `build-meta.json`, but current deployed commit parity, Production/Preview mapping, environment scope, access/auth and rollback mechanism are **NOT VERIFIED**. Verify in EdgeOne Console and controlled Preview before promotion. |
 
@@ -30,7 +30,7 @@ No P1 is silently omitted. A row may be changed from BLOCKED only when its requi
 
 ## Source-side Foundation checks
 
-- [ ] Final WP7 candidate has a fresh GREEN `quality` workflow: install → prepare → generated drift guard → typecheck → tests → build.
+- [x] WP7 implementation candidate has a GREEN full `quality` workflow: run `33891006816` on `f444f4361603cb17d6283d3caa0c2c255bcf3252`; final evidence-aligned head will receive one additional fresh run before integration.
 - [x] WP1 permission fallback is fail-closed.
 - [x] Automatic sensitive file paths are hidden/rejected before file I/O.
 - [x] Preview credentials are absent from model-visible tool results.
@@ -53,9 +53,9 @@ No P1 is silently omitted. A row may be changed from BLOCKED only when its requi
 - [x] PQG-owned contact dialog has generated keyboard/focus ownership contract tests.
 - [x] Security, architecture, operations, changelog, known-limitations and release-checklist documents exist and are enforced by `tests/release-docs.test.ts`.
 
-## Required live EdgeOne gates
+## Required live/repository gates
 
-These rows are **BLOCKED** until a controlled environment exists.
+These rows are **BLOCKED** until the required environment or administration capability exists.
 
 - [ ] **BLOCKED — Preview identity:** deploy the exact candidate and verify `/build-meta.json` commit/tree match it.
 - [ ] **BLOCKED — access/auth:** verify logged-out/incognito root and direct Agent/API behavior.
@@ -66,7 +66,7 @@ These rows are **BLOCKED** until a controlled environment exists.
 - [ ] **BLOCKED — browser UI:** phone/tablet/desktop representative viewport smoke and real keyboard-only dialog behavior.
 - [ ] **BLOCKED — native observability:** inspect logs/metrics/traces for one representative browser → Host → sidecar → Gateway/MCP request.
 - [ ] **BLOCKED — rollback rehearsal:** Preview B → verify B → rollback/redeploy A → verify A → minimal smoke.
-- [ ] **BLOCKED — main guardrail:** verify required `quality` rule/check before any Git Auto Deploy reconnect.
+- [ ] **BLOCKED — main guardrail:** `main` is confirmed unprotected with required checks off and no rulesets; configure required `quality` before any Git Auto Deploy reconnect.
 - [ ] **BLOCKED — Production topology:** verify Production/Preview branch mapping and current deployed source identity.
 - [ ] **BLOCKED — safe Production smoke:** only after explicit promotion approval, run the non-destructive Production subset.
 
@@ -79,13 +79,13 @@ These rows are **BLOCKED** until a controlled environment exists.
 
 ## Promotion decision
 
-Foundation Freeze remains **BLOCKED / not declared** while any mandatory P1/live row above remains unresolved, unless the owner explicitly records an **ACCEPTED RISK — reason + review date** for a row that is legitimately deferrable.
+Foundation Freeze remains **BLOCKED / not declared** while any mandatory P1/live/repository row above remains unresolved, unless the owner explicitly records an **ACCEPTED RISK — reason + review date** for a row that is legitimately deferrable.
 
 When the required rows are closed:
 
 1. record final integration commit/tree and exact GREEN quality run;
 2. record controlled Preview build identity and smoke evidence;
-3. verify main required-quality enforcement;
+3. configure and verify main required-quality enforcement;
 4. review access/auth and rollback evidence;
 5. only then consider a final Foundation PR toward `main`;
 6. reconnect Production Auto Deploy only as a separate reviewed action.
