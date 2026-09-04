@@ -217,6 +217,44 @@ async function snapshotSettingsAfterWrite(
   return new Response(bytes, { status: upstream.status, headers })
 }
 
+function leaseBoundBody(
+  body: ReadableStream<Uint8Array> | null,
+  lease: DshWebSidecarLease,
+): ReadableStream<Uint8Array> | null {
+  if (!body) {
+    lease.release()
+    return null
+  }
+  const reader = body.getReader()
+  let released = false
+  const release = (): void => {
+    if (released) return
+    released = true
+    lease.release()
+  }
+
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const result = await reader.read()
+        if (result.done) {
+          release()
+          controller.close()
+          return
+        }
+        controller.enqueue(result.value)
+      } catch (error) {
+        release()
+        controller.error(error)
+      }
+    },
+    async cancel(reason) {
+      release()
+      try { await reader.cancel(reason) } catch { /* upstream may already be closed */ }
+    },
+  })
+}
+
 async function proxy(context: any): Promise<Response> {
   const path = requestPath(context)
   if (path === '/api/events.mux') return eventStream(context, 'mux')
@@ -227,6 +265,7 @@ async function proxy(context: any): Promise<Response> {
   if (lockedPreset) return rejectLockedPreset(asRecord(incomingBody)?.rpcId, lockedPreset)
 
   const lease = await acquireDshWebSidecar(context)
+  let releaseOnReturn = true
   try {
     const sidecar = lease.sidecar
     const incomingUrl = new URL(typeof context.request?.url === 'string' ? context.request.url : path, 'http://local')
@@ -257,9 +296,11 @@ async function proxy(context: any): Promise<Response> {
     }
     const settingsResponse = await snapshotSettingsAfterWrite(context, sidecar, path, upstream, headers)
     if (settingsResponse) return settingsResponse
-    return new Response(upstream.body, { status: upstream.status, headers })
+    const streamedBody = leaseBoundBody(upstream.body, lease)
+    releaseOnReturn = false
+    return new Response(streamedBody, { status: upstream.status, headers })
   } finally {
-    lease.release()
+    if (releaseOnReturn) lease.release()
   }
 }
 
