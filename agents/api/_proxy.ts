@@ -1,5 +1,10 @@
 import WebSocket from 'ws'
-import { getDshWebSidecar, snapshotDshSettingsYaml, type DshWebSidecar } from '../_dsh-web-sidecar.ts'
+import {
+  acquireDshWebSidecar,
+  snapshotDshSettingsYaml,
+  type DshWebSidecar,
+  type DshWebSidecarLease,
+} from '../_dsh-web-sidecar.ts'
 
 function requestPath(context: any): string {
   const value = typeof context.request?.url === 'string' ? context.request.url : '/api'
@@ -26,10 +31,33 @@ function requestSearch(context: any, incomingUrl: URL): string {
 function eventStream(context: any, kind: 'mux' | 'host'): Response {
   const encoder = new TextEncoder()
   let socket: WebSocket | undefined
+  let lease: DshWebSidecarLease | undefined
+  let leaseReleased = false
   const signal = context.request?.signal as AbortSignal | undefined
+  let cancelled = signal?.aborted === true
+
+  const releaseLease = (): void => {
+    if (leaseReleased || !lease) return
+    leaseReleased = true
+    lease.release()
+  }
+  const closeSocket = (): void => {
+    if (socket?.readyState === WebSocket.CONNECTING || socket?.readyState === WebSocket.OPEN) socket.close()
+  }
+  const abort = (): void => {
+    cancelled = true
+    closeSocket()
+    releaseLease()
+  }
+
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
+      const cleanup = (): void => {
+        signal?.removeEventListener('abort', abort)
+        releaseLease()
+      }
       const streamError = (error: unknown): void => {
+        cleanup()
         try {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({
             type: 'server-request',
@@ -45,25 +73,36 @@ function eventStream(context: any, kind: 'mux' | 'host'): Response {
         }
         try { controller.close() } catch { /* already cancelled */ }
       }
+
+      signal?.addEventListener('abort', abort, { once: true })
+      if (cancelled) {
+        cleanup()
+        try { controller.close() } catch { /* already cancelled */ }
+        return
+      }
+
       try {
-        const sidecar = await getDshWebSidecar(context)
+        lease = await acquireDshWebSidecar(context)
+        if (cancelled) {
+          cleanup()
+          try { controller.close() } catch { /* already cancelled */ }
+          return
+        }
+
+        const sidecar = lease.sidecar
         const path = kind === 'mux' ? '/api/events.mux' : '/api/events.host'
         socket = new WebSocket(`ws://127.0.0.1:${String(sidecar.port)}${path}`, {
           headers: { origin: `http://127.0.0.1:${String(sidecar.port)}` },
         })
-        const close = (): void => {
-          if (socket?.readyState === WebSocket.CONNECTING || socket?.readyState === WebSocket.OPEN) socket.close()
-        }
-        signal?.addEventListener('abort', close, { once: true })
         socket.once('open', () => {
-          try { controller.enqueue(encoder.encode(': connected\n\n')) } catch { close() }
+          try { controller.enqueue(encoder.encode(': connected\n\n')) } catch { closeSocket() }
         })
         socket.on('message', data => {
-          try { controller.enqueue(encoder.encode(`data: ${data.toString()}\n\n`)) } catch { close() }
+          try { controller.enqueue(encoder.encode(`data: ${data.toString()}\n\n`)) } catch { closeSocket() }
         })
         socket.once('error', streamError)
         socket.once('close', () => {
-          signal?.removeEventListener('abort', close)
+          cleanup()
           try { controller.close() } catch { /* already cancelled */ }
         })
       } catch (error) {
@@ -71,7 +110,10 @@ function eventStream(context: any, kind: 'mux' | 'host'): Response {
       }
     },
     cancel() {
-      if (socket?.readyState === WebSocket.CONNECTING || socket?.readyState === WebSocket.OPEN) socket.close()
+      cancelled = true
+      signal?.removeEventListener('abort', abort)
+      closeSocket()
+      releaseLease()
     },
   })
   return new Response(stream, {
@@ -184,36 +226,41 @@ async function proxy(context: any): Promise<Response> {
   const lockedPreset = requestedLockedPreset(incomingBody)
   if (lockedPreset) return rejectLockedPreset(asRecord(incomingBody)?.rpcId, lockedPreset)
 
-  const sidecar = await getDshWebSidecar(context)
-  const incomingUrl = new URL(typeof context.request?.url === 'string' ? context.request.url : path, 'http://local')
-  const upstreamUrl = new URL(`${incomingUrl.pathname}${requestSearch(context, incomingUrl)}`, `http://127.0.0.1:${String(sidecar.port)}`)
-  const method = String(context.request?.method || 'POST').toUpperCase()
-  const body = method === 'GET' || method === 'HEAD' ? undefined : JSON.stringify(context.request?.body ?? {})
-  const upstream = await fetch(upstreamUrl, {
-    method,
-    headers: {
-      accept: context.request?.headers?.accept || '*/*',
-      ...(body === undefined ? {} : { 'content-type': 'application/json' }),
-    },
-    ...(body === undefined ? {} : { body }),
-    signal: context.request?.signal,
-  })
-  const headers = new Headers(upstream.headers)
-  headers.delete('content-length')
-  headers.delete('transfer-encoding')
-  if (path === '/api/session.export' && method === 'GET') {
-    const bytes = new Uint8Array(await upstream.arrayBuffer())
-    if (!headers.has('content-type')) headers.set('content-type', 'application/zip')
-    // Makers' strict stream detector only treats SSE / chunked / this flag as binary.
-    // Without it the runtime UTF-8-decodes the ZIP and the local proxy then writes
-    // leftover bytes into an already-ended response (ERR_STREAM_WRITE_AFTER_END).
-    headers.set('x-content-type-stream', 'true')
-    headers.set('cache-control', 'no-store')
-    return new Response(bytes, { status: upstream.status, headers })
+  const lease = await acquireDshWebSidecar(context)
+  try {
+    const sidecar = lease.sidecar
+    const incomingUrl = new URL(typeof context.request?.url === 'string' ? context.request.url : path, 'http://local')
+    const upstreamUrl = new URL(`${incomingUrl.pathname}${requestSearch(context, incomingUrl)}`, `http://127.0.0.1:${String(sidecar.port)}`)
+    const method = String(context.request?.method || 'POST').toUpperCase()
+    const body = method === 'GET' || method === 'HEAD' ? undefined : JSON.stringify(context.request?.body ?? {})
+    const upstream = await fetch(upstreamUrl, {
+      method,
+      headers: {
+        accept: context.request?.headers?.accept || '*/*',
+        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+      },
+      ...(body === undefined ? {} : { body }),
+      signal: context.request?.signal,
+    })
+    const headers = new Headers(upstream.headers)
+    headers.delete('content-length')
+    headers.delete('transfer-encoding')
+    if (path === '/api/session.export' && method === 'GET') {
+      const bytes = new Uint8Array(await upstream.arrayBuffer())
+      if (!headers.has('content-type')) headers.set('content-type', 'application/zip')
+      // Makers' strict stream detector only treats SSE / chunked / this flag as binary.
+      // Without it the runtime UTF-8-decodes the ZIP and the local proxy then writes
+      // leftover bytes into an already-ended response (ERR_STREAM_WRITE_AFTER_END).
+      headers.set('x-content-type-stream', 'true')
+      headers.set('cache-control', 'no-store')
+      return new Response(bytes, { status: upstream.status, headers })
+    }
+    const settingsResponse = await snapshotSettingsAfterWrite(context, sidecar, path, upstream, headers)
+    if (settingsResponse) return settingsResponse
+    return new Response(upstream.body, { status: upstream.status, headers })
+  } finally {
+    lease.release()
   }
-  const settingsResponse = await snapshotSettingsAfterWrite(context, sidecar, path, upstream, headers)
-  if (settingsResponse) return settingsResponse
-  return new Response(upstream.body, { status: upstream.status, headers })
 }
 
 export async function onRequest(context: any): Promise<Response> {
