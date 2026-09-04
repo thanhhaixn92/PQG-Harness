@@ -95,19 +95,18 @@ test('charset is declared in the first 1024 bytes before overlay copy', async ()
   assert.ok(charset.index < html.indexOf('GitHub 源码'))
 })
 
-test('locale defaults from hostname instead of the browser language', async () => {
+test('locale defaults from browser language instead of hostname', async () => {
   const source = await readFile(
     new URL('../public/plugins/@deepseek-ai/dsh-client-locale/client.js', import.meta.url),
     'utf8',
   )
-  assert.match(
-    source,
-    /function resolveInitialLocale\(\) \{\n\t\t\tif \(typeof window !== "undefined" && location\.hostname\.endsWith\("\.edgeone\.dev"\)\) return "en";\n\t\t\treturn "zh";/,
-  )
-  assert.doesNotMatch(source, /detectBrowserLocale/)
+  assert.match(source, /function resolveInitialLocale\(\)/)
+  assert.match(source, /navigator\.languages/)
+  assert.match(source, /navigator\.language/)
+  assert.doesNotMatch(source, /location\.hostname\.endsWith/)
 })
 
-test('page chrome keeps GitHub, deploy, and a contact dialog', async () => {
+test('page chrome keeps GitHub, deploy, and a contact dialog' , async () => {
   const html = await readFile(new URL('../index.html', import.meta.url), 'utf8')
   assert.match(html, /dsh-makers-actions/)
   assert.match(html, /dsh-makers-powered/)

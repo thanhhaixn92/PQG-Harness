@@ -21,11 +21,35 @@ export interface DshWebSidecar {
   close(): Promise<void>
 }
 
-const sidecars = new Map<string, Promise<DshWebSidecar>>()
+export interface DshWebSidecarLease {
+  sidecar: DshWebSidecar
+  release(): void
+}
+
+type SidecarEntryState = 'starting' | 'ready' | 'stopping'
+
+interface SidecarEntry {
+  conversationId: string
+  state: SidecarEntryState
+  pending: Promise<DshWebSidecar>
+  lastUsedAt: number
+  activeUsers: number
+  closePromise?: Promise<{ found: true; closed: boolean; error?: string }>
+}
+
+type SidecarStarter = (context: any, conversationId: string) => Promise<DshWebSidecar>
+
+const sidecars = new Map<string, SidecarEntry>()
+let sidecarStarterForTests: SidecarStarter | undefined
 const SIDECAR_IDLE_MS = 25 * 60_000
+const SIDECAR_START_ATTEMPTS = 3
 const DSH_SETTINGS_FILE = 'settings.yaml'
 const DSH_SETTINGS_METADATA_KEY = 'dshSettingsYaml'
 const DSH_SETTINGS_MAX_BYTES = 256 * 1024
+
+export function __setSidecarStarterForTests(starter: SidecarStarter | undefined): void {
+  sidecarStarterForTests = starter
+}
 
 function safeSegment(value: string): string {
   return value.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 96) || 'default'
@@ -298,12 +322,12 @@ async function writeProfilePatch(
     '        sandbox: read-only',
     '        approval: ask',
     '        name: read-only',
-        '        description: Inspect the EdgeOne Makers sandbox. Writes, commands, and preview ask for confirmation.',
-        '      workspace-write:',
-        '        sandbox: workspace-write',
-        '        approval: ask',
-        '        name: workspace-write',
-        '        description: Read and write files in the EdgeOne Makers sandbox. Commands and preview ask for confirmation.',
+    '        description: Inspect the EdgeOne Makers sandbox. Writes, commands, and preview ask for confirmation.',
+    '      workspace-write:',
+    '        sandbox: workspace-write',
+    '        approval: ask',
+    '        name: workspace-write',
+    '        description: Read and write files in the EdgeOne Makers sandbox. Commands and preview ask for confirmation.',
     '      danger-full-access:',
     '        sandbox: danger-full-access',
     '        approval: never',
@@ -390,119 +414,233 @@ async function waitForReady(child: ChildProcess, port: number): Promise<void> {
     }
     await new Promise(resolve => setTimeout(resolve, 250))
   }
-  child.kill('SIGTERM')
   throw new Error(`DSH Web sidecar did not become ready: ${stderr}`)
 }
 
-async function startSidecar(context: any, conversationId: string): Promise<DshWebSidecar> {
-  const [port, gateway, mcp] = await Promise.all([
-    freePort(),
-    startLocalGatewayProxy(context, conversationId),
-    startLocalMcpBridge(context, conversationId),
+async function terminateChild(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null) return
+  child.kill('SIGTERM')
+  if (child.exitCode !== null) return
+  await Promise.race([
+    new Promise<void>(resolve => child.once('exit', () => resolve())),
+    new Promise<void>(resolve => setTimeout(() => {
+      if (child.exitCode === null) child.kill('SIGKILL')
+      resolve()
+    }, 3_000)),
   ])
-  const home = dshHomeFor(conversationId)
-  const defaultModel = envString(context, 'AI_GATEWAY_MODEL') || DEFAULT_MAKERS_MODEL
-  const deepseekApiKey = envString(context, 'DEEPSEEK_API_KEY')
-  const deepseekBaseUrl = envString(context, 'DEEPSEEK_BASE_URL')
-  await mkdir(home, { recursive: true })
-  await restoreDshSettingsYaml(context, conversationId, home)
-  await ensureMakersDefaultModelSettings(home, defaultModel)
-  await writeProfilePatch(home, {
-    mcpUrl: mcp.url,
-    gatewayBaseUrl: gateway.baseUrl,
-    defaultModel,
-  })
+}
 
-  const dshBin = join(dirname(require.resolve('@deepseek-ai/dsh/package.json')), 'lib', 'bin.js')
-  const child = spawn(process.execPath, [
-    '--expose-internals',
-    dshBin,
-    'web',
-    '--host', '127.0.0.1',
-    '--port', String(port),
-  ], {
-    cwd: home,
-    env: {
-      PATH: typeof context.env?.PATH === 'string' ? context.env.PATH : '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
-      HOME: '/tmp',
-      DSH_HOME: home,
-      DSH_CWD: home,
-      [MAKERS_GATEWAY_API_KEY_ENV]: 'makers-proxy',
-      ...(deepseekApiKey ? { DEEPSEEK_API_KEY: deepseekApiKey } : {}),
-      ...(deepseekBaseUrl ? { DEEPSEEK_BASE_URL: deepseekBaseUrl } : {}),
-      DSH_TELEMETRY_DISABLED: '1',
-      NO_COLOR: '1',
-    },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  })
+async function startSidecarAttempt(context: any, conversationId: string): Promise<DshWebSidecar> {
+  let gateway: LocalGatewayProxy | undefined
+  let mcp: LocalMcpBridge | undefined
+  let child: ChildProcess | undefined
+  let sidecar!: DshWebSidecar
+  const getContext = (): any => sidecar?.context ?? context
+
   try {
+    const port = await freePort()
+    gateway = await startLocalGatewayProxy(getContext, conversationId)
+    mcp = await startLocalMcpBridge(getContext, conversationId)
+    const home = dshHomeFor(conversationId)
+    const defaultModel = envString(context, 'AI_GATEWAY_MODEL') || DEFAULT_MAKERS_MODEL
+    const deepseekApiKey = envString(context, 'DEEPSEEK_API_KEY')
+    const deepseekBaseUrl = envString(context, 'DEEPSEEK_BASE_URL')
+    await mkdir(home, { recursive: true })
+    await restoreDshSettingsYaml(context, conversationId, home)
+    await ensureMakersDefaultModelSettings(home, defaultModel)
+    await writeProfilePatch(home, {
+      mcpUrl: mcp.url,
+      gatewayBaseUrl: gateway.baseUrl,
+      defaultModel,
+    })
+
+    const dshBin = join(dirname(require.resolve('@deepseek-ai/dsh/package.json')), 'lib', 'bin.js')
+    child = spawn(process.execPath, [
+      '--expose-internals',
+      dshBin,
+      'web',
+      '--host', '127.0.0.1',
+      '--port', String(port),
+    ], {
+      cwd: home,
+      env: {
+        PATH: typeof context.env?.PATH === 'string' ? context.env.PATH : '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+        HOME: '/tmp',
+        DSH_HOME: home,
+        DSH_CWD: home,
+        [MAKERS_GATEWAY_API_KEY_ENV]: 'makers-proxy',
+        ...(deepseekApiKey ? { DEEPSEEK_API_KEY: deepseekApiKey } : {}),
+        ...(deepseekBaseUrl ? { DEEPSEEK_BASE_URL: deepseekBaseUrl } : {}),
+        DSH_TELEMETRY_DISABLED: '1',
+        NO_COLOR: '1',
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+
     await waitForReady(child, port)
     const workspacePath = join(home, 'workspace')
     await mkdir(workspacePath, { recursive: true })
     await callRpc(port, 'workspace.create', { path: workspacePath })
+
+    const runningChild = child
+    const runningGateway = gateway
+    const runningMcp = mcp
+    let closePromise: Promise<void> | undefined
+
+    const closeSidecarResources = async (): Promise<void> => {
+      await snapshotDshSettingsYaml(sidecar.context, conversationId, home)
+      await terminateChild(runningChild)
+      await Promise.allSettled([runningGateway.close(), runningMcp.close()])
+    }
+
+    sidecar = {
+      conversationId,
+      home,
+      port,
+      child: runningChild,
+      gateway: runningGateway,
+      mcp: runningMcp,
+      lastUsedAt: Date.now(),
+      context,
+      close() {
+        closePromise ??= closeSidecarResources()
+        return closePromise
+      },
+    }
+
+    runningChild.once('exit', () => {
+      const entry = sidecars.get(conversationId)
+      if (!entry || entry.state === 'stopping') return
+      void entry.pending.then(value => {
+        if (value === sidecar && sidecars.get(conversationId) === entry) {
+          sidecars.delete(conversationId)
+        }
+      }).catch(() => {
+        if (sidecars.get(conversationId) === entry) sidecars.delete(conversationId)
+      })
+    })
+
+    return sidecar
   } catch (error) {
-    await Promise.allSettled([gateway.close(), mcp.close()])
+    if (child) await terminateChild(child)
+    await Promise.allSettled([
+      ...(gateway ? [gateway.close()] : []),
+      ...(mcp ? [mcp.close()] : []),
+    ])
     throw error
   }
+}
 
-  const sidecar: DshWebSidecar = {
-    conversationId,
-    home,
-    port,
-    child,
-    gateway,
-    mcp,
-    lastUsedAt: Date.now(),
-    context,
-    async close() {
-      await snapshotDshSettingsYaml(sidecar.context, conversationId, home)
-      child.kill('SIGTERM')
-      await Promise.race([
-        new Promise<void>(resolve => child.once('exit', () => resolve())),
-        new Promise<void>(resolve => setTimeout(() => { child.kill('SIGKILL'); resolve() }, 3_000)),
-      ])
-      await Promise.allSettled([gateway.close(), mcp.close()])
-    },
+async function startSidecar(context: any, conversationId: string): Promise<DshWebSidecar> {
+  const starter = sidecarStarterForTests ?? startSidecarAttempt
+  let lastError: unknown
+  for (let attempt = 1; attempt <= SIDECAR_START_ATTEMPTS; attempt++) {
+    try {
+      return await starter(context, conversationId)
+    } catch (error) {
+      lastError = error
+      if (attempt === SIDECAR_START_ATTEMPTS) break
+      await new Promise(resolve => setTimeout(resolve, 100 * attempt))
+    }
   }
-  child.once('exit', () => {
-    const current = sidecars.get(conversationId)
-    if (current) void current.then(value => { if (value === sidecar) sidecars.delete(conversationId) })
-  })
-  return sidecar
+  throw lastError instanceof Error ? lastError : new Error('DSH sidecar startup failed')
+}
+
+function createSidecarEntry(context: any, conversationId: string): SidecarEntry {
+  const entry = {
+    conversationId,
+    state: 'starting' as SidecarEntryState,
+    pending: Promise.resolve(undefined as unknown as DshWebSidecar),
+    lastUsedAt: Date.now(),
+    activeUsers: 0,
+  } as SidecarEntry
+
+  entry.pending = startSidecar(context, conversationId).then(
+    sidecar => {
+      if (sidecars.get(conversationId) === entry) {
+        if (entry.state === 'starting') entry.state = 'ready'
+        entry.lastUsedAt = Date.now()
+      }
+      return sidecar
+    },
+    error => {
+      if (sidecars.get(conversationId) === entry && entry.state !== 'stopping') {
+        sidecars.delete(conversationId)
+      }
+      throw error
+    },
+  )
+  sidecars.set(conversationId, entry)
+  return entry
+}
+
+function beginClose(entry: SidecarEntry): Promise<{ found: true; closed: boolean; error?: string }> {
+  entry.state = 'stopping'
+  entry.closePromise ??= (async () => {
+    try {
+      const sidecar = await entry.pending
+      await sidecar.close()
+      return { found: true, closed: true } as const
+    } catch {
+      return { found: true, closed: false, error: 'SIDE_CAR_CLOSE_FAILED' } as const
+    } finally {
+      if (sidecars.get(entry.conversationId) === entry) {
+        sidecars.delete(entry.conversationId)
+      }
+    }
+  })()
+  return entry.closePromise
 }
 
 function sweepIdleSidecars(): void {
   const cutoff = Date.now() - SIDECAR_IDLE_MS
-  for (const [conversationId, pending] of sidecars) {
-    void pending.then(sidecar => {
-      if (sidecar.lastUsedAt >= cutoff) return
-      if (sidecars.get(conversationId) === pending) sidecars.delete(conversationId)
-      void sidecar.close()
-    }).catch(() => { sidecars.delete(conversationId) })
+  for (const entry of sidecars.values()) {
+    if (entry.state !== 'ready' || entry.activeUsers !== 0 || entry.lastUsedAt >= cutoff) continue
+    void beginClose(entry)
+  }
+}
+
+export async function acquireDshWebSidecar(context: any): Promise<DshWebSidecarLease> {
+  const conversationId = String(context.conversation_id || '').trim()
+  if (!conversationId) throw new Error('makers-conversation-id is required for DSH Web.')
+  sweepIdleSidecars()
+
+  let entry = sidecars.get(conversationId)
+  if (entry?.state === 'stopping') throw new Error('SIDE_CAR_STOPPING')
+  if (!entry) entry = createSidecarEntry(context, conversationId)
+
+  const sidecar = await entry.pending
+  if (entry.state === 'stopping') throw new Error('SIDE_CAR_STOPPING')
+
+  entry.state = 'ready'
+  entry.activeUsers += 1
+  entry.lastUsedAt = Date.now()
+  sidecar.lastUsedAt = entry.lastUsedAt
+  sidecar.context = context
+
+  let released = false
+  return {
+    sidecar,
+    release() {
+      if (released) return
+      released = true
+      entry!.activeUsers = Math.max(0, entry!.activeUsers - 1)
+      entry!.lastUsedAt = Date.now()
+      sidecar.lastUsedAt = entry!.lastUsedAt
+    },
   }
 }
 
 export async function getDshWebSidecar(context: any): Promise<DshWebSidecar> {
-  const conversationId = String(context.conversation_id || '').trim()
-  if (!conversationId) throw new Error('makers-conversation-id is required for DSH Web.')
-  sweepIdleSidecars()
-  let pending = sidecars.get(conversationId)
-  if (!pending) {
-    pending = startSidecar(context, conversationId)
-    sidecars.set(conversationId, pending)
-    void pending.catch(() => { if (sidecars.get(conversationId) === pending) sidecars.delete(conversationId) })
-  }
-  const sidecar = await pending
-  sidecar.lastUsedAt = Date.now()
-  sidecar.context = context
-  return sidecar
+  const lease = await acquireDshWebSidecar(context)
+  lease.release()
+  return lease.sidecar
 }
 
-export async function stopDshWebSidecar(conversationId: string): Promise<boolean> {
-  const pending = sidecars.get(conversationId)
-  if (!pending) return false
-  sidecars.delete(conversationId)
-  const sidecar = await pending
-  await sidecar.close()
-  return true
+export async function stopDshWebSidecar(
+  conversationId: string,
+): Promise<{ found: boolean; closed: boolean; error?: string }> {
+  const entry = sidecars.get(conversationId)
+  if (!entry) return { found: false, closed: false }
+  return beginClose(entry)
 }

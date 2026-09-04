@@ -19,6 +19,7 @@ test('generated sidecar plugin is self-contained and importable', async () => {
   assert.equal(generated.name, 'makers-mcp-permission')
   assert.equal(generated.makersToolGate('read-only', 'workspace_write_file'), 'ask')
   assert.equal(generated.makersToolGate('danger-full-access', 'publish_preview'), 'allow')
+  assert.equal(generated.makersToolGate(undefined, 'workspace_write_file'), 'ask')
 })
 
 test('every Makers tool stays visible; permission only decides allow vs ask', () => {
@@ -57,6 +58,14 @@ test('full access auto-allows commands and preview without asking', () => {
   assert.deepEqual([...makersAutoAllowTools('danger-full-access')], [...ALL_MAKERS_TOOLS])
 })
 
+test('invalid or missing runtime permission fails closed to read-only behavior', () => {
+  assert.equal(makersToolGate(undefined as any, 'workspace_write_file'), 'ask')
+  assert.equal(makersToolGate('broken-mode', 'workspace_write_file'), 'ask')
+  assert.equal(makersToolGate(undefined as any, 'workspace_read_file'), 'allow')
+  assert.equal(makersToolGate('workspace-write', 'workspace_write_file'), 'allow')
+  assert.ok(!makersAutoAllowTools(undefined as any).includes('workspace_write_file'))
+})
+
 test('ask copy tells the user which mode the call needs', () => {
   assert.match(makersAskReason('read-only', 'workspace_write_file'), /Workspace Write/)
   assert.match(makersAskReason('workspace-write', 'publish_preview'), /Full access/)
@@ -79,6 +88,26 @@ test('pre-execute asks the user instead of hiding the tool', () => {
   assert.equal((decisions[0] as { kind: string }).kind, 'ask')
   assert.equal((decisions[1] as { kind: string }).kind, 'allow')
   assert.equal((decisions[2] as { kind: string }).kind, 'allow')
+})
+
+test('pre-execute fails closed when sandbox policy is missing or throws', () => {
+  const decisionKinds: string[] = []
+  const run = (get: () => unknown) => {
+    const ctx = {
+      get,
+      on(_event: string, handler: (exec: { name: string; agent?: { session?: object } }, next: () => { kind: 'allow' }) => unknown) {
+        const result = handler({ name: 'mcp__edgeone__workspace_write_file', agent: { session: {} } }, () => ({ kind: 'allow' as const })) as { kind: string }
+        decisionKinds.push(result.kind)
+      },
+    }
+    applyMakersMcpPermission(ctx)
+  }
+
+  run(() => undefined)
+  run(() => ({ resolve: () => { throw new Error('policy unavailable') } }))
+  run(() => ({ resolve: () => ({ mode: 'broken-mode' }) }))
+
+  assert.deepEqual(decisionKinds, ['ask', 'ask', 'ask'])
 })
 
 test('MCP bridge registers every tool instead of filtering by mode', async () => {

@@ -6,6 +6,27 @@ export interface LocalGatewayProxy {
   close(): Promise<void>
 }
 
+export type MakersContextProvider = () => any
+
+const GATEWAY_RESPONSE_HEADERS = new Set([
+  'content-type',
+  'cache-control',
+  'retry-after',
+  'x-request-id',
+])
+
+export function publicError(code: string): { error: string } {
+  return { error: code }
+}
+
+export function gatewayResponseHeaders(headers: Headers): Headers {
+  const filtered = new Headers()
+  for (const [name, value] of headers.entries()) {
+    if (GATEWAY_RESPONSE_HEADERS.has(name.toLowerCase())) filtered.append(name, value)
+  }
+  return filtered
+}
+
 function envValue(context: any, key: string): string {
   const value = context.env?.[key]
   return typeof value === 'string' ? value.trim() : ''
@@ -33,7 +54,7 @@ export function normalizeGatewayRequest(body: Record<string, unknown>): Record<s
 }
 
 async function proxyGatewayRequest(
-  context: any,
+  getContext: MakersContextProvider,
   conversationId: string,
   request: IncomingMessage,
   response: ServerResponse,
@@ -43,6 +64,7 @@ async function proxyGatewayRequest(
     return
   }
 
+  const context = getContext()
   const upstreamBaseUrl = envValue(context, 'AI_GATEWAY_BASE_URL').replace(/\/+$/, '')
   const apiKey = envValue(context, 'AI_GATEWAY_API_KEY')
   if (!upstreamBaseUrl || !apiKey) {
@@ -65,6 +87,8 @@ async function proxyGatewayRequest(
       authorization: `Bearer ${apiKey}`,
       'content-type': 'application/json',
       accept: 'text/event-stream',
+      // Compatibility behavior inherited from the EdgeOne adapter. Their public
+      // semantics are not documented by the currently reviewed Makers docs.
       'x-gateway-quota-bypass': 'true',
       'x-prompt-log': 'true',
       'makers-conversation-id': conversationId,
@@ -73,11 +97,8 @@ async function proxyGatewayRequest(
     signal: controller.signal,
   })
 
-  const headers = Object.fromEntries(
-    [...upstream.headers.entries()].filter(([name]) =>
-      name.toLowerCase() !== 'content-length' && name.toLowerCase() !== 'transfer-encoding'),
-  )
-  response.writeHead(upstream.status, headers)
+  const headers = gatewayResponseHeaders(upstream.headers)
+  response.writeHead(upstream.status, Object.fromEntries(headers.entries()))
   if (!upstream.body) {
     response.end()
     return
@@ -90,11 +111,19 @@ async function proxyGatewayRequest(
   response.end()
 }
 
-export async function startLocalGatewayProxy(context: any, conversationId: string): Promise<LocalGatewayProxy> {
+export async function startLocalGatewayProxy(
+  getContext: MakersContextProvider,
+  conversationId: string,
+): Promise<LocalGatewayProxy> {
   const server = createServer((request, response) => {
-    void proxyGatewayRequest(context, conversationId, request, response).catch(error => {
-      if (!response.headersSent) response.writeHead(502, { 'content-type': 'application/json' })
-      response.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }))
+    void proxyGatewayRequest(getContext, conversationId, request, response).catch(error => {
+      console.warn('[gateway] request failed:', error instanceof Error ? error.name : 'unknown')
+      if (!response.headersSent) {
+        response.writeHead(502, { 'content-type': 'application/json' })
+        response.end(JSON.stringify(publicError('AI_GATEWAY_PROXY_FAILED')))
+        return
+      }
+      response.destroy()
     })
   })
 

@@ -5,9 +5,17 @@ const IGNORED_DIRECTORIES = new Set([
 
 const IGNORED_FILES = new Set(['.DS_Store', 'preview'])
 
+const SAFE_ENV_TEMPLATES = new Set(['.env.example', '.env.sample', '.env.template'])
+const SENSITIVE_BASENAMES = new Set([
+  '.env', '.npmrc', '.pypirc', '.netrc',
+  'credentials', 'credentials.json', 'service-account.json',
+])
+const SENSITIVE_KEY_PREFIXES = ['id_rsa', 'id_dsa', 'id_ecdsa', 'id_ed25519']
+const SENSITIVE_KEY_EXTENSIONS = ['.key', '.pem', '.p12', '.pfx']
+
 const TEXT_PREVIEW_LIMIT = 512 * 1024
 const SNAPSHOT_FILE_LIMIT = 80
-const SNAPSHOT_BYTE_LIMIT = 2 * 1024 * 1024
+const WORKSPACE_READY_MARKER = '.pqg-workspace-ready'
 
 interface WorkspaceSnapshotFile {
   content: string
@@ -15,6 +23,9 @@ interface WorkspaceSnapshotFile {
 }
 
 type WorkspaceSnapshot = Record<string, WorkspaceSnapshotFile>
+type LegacySnapshotLoad =
+  | { kind: 'found'; snapshot: WorkspaceSnapshot }
+  | { kind: 'missing' }
 
 export interface WorkspaceItem {
   path: string
@@ -23,6 +34,52 @@ export interface WorkspaceItem {
   depth: number
   size?: number
   mtime?: number
+}
+
+export interface WorkspaceListing {
+  items: WorkspaceItem[]
+  truncated: boolean
+  limit: number
+}
+
+export interface WorkspaceCheckpoint {
+  size: number
+  sha256: string
+  etag: string
+  persistedAt: string
+}
+
+export interface WorkspacePersistenceStatus {
+  persisted: boolean
+  checkpoint?: WorkspaceCheckpoint
+  error?: string
+}
+
+const workspacePersistQueues = new Map<string, Promise<WorkspaceCheckpoint>>()
+
+export async function persistWorkspaceCheckpoint(
+  context: any,
+  conversationId: string,
+  root: string,
+): Promise<WorkspaceCheckpoint> {
+  const previous = workspacePersistQueues.get(conversationId)
+  const next = (previous ? previous.catch(() => undefined) : Promise.resolve())
+    .then(() => context.sandbox.persist({ path: root, timeout: 180 }))
+    .then((result: any) => ({
+      size: Number(result.size),
+      sha256: String(result.sha256 || ''),
+      etag: String(result.etag || ''),
+      persistedAt: String(result.persistedAt || ''),
+    }))
+
+  workspacePersistQueues.set(conversationId, next)
+  try {
+    return await next
+  } finally {
+    if (workspacePersistQueues.get(conversationId) === next) {
+      workspacePersistQueues.delete(conversationId)
+    }
+  }
 }
 
 function safeSegment(value: string): string {
@@ -39,6 +96,17 @@ export function normalizeWorkspacePath(value: string): string | null {
   const parts = path.split('/')
   if (parts.some(part => !part || part === '.' || part === '..')) return null
   return parts.join('/')
+}
+
+export function isSensitiveWorkspacePath(requestedPath: string): boolean {
+  const path = normalizeWorkspacePath(requestedPath)
+  if (!path) return false
+  const name = path.split('/').pop()!.toLowerCase()
+  if (SAFE_ENV_TEMPLATES.has(name)) return false
+  if (SENSITIVE_BASENAMES.has(name)) return true
+  if (name.startsWith('.env.')) return true
+  if (SENSITIVE_KEY_PREFIXES.some(prefix => name === prefix || name.startsWith(`${prefix}.`))) return true
+  return SENSITIVE_KEY_EXTENSIONS.some(extension => name.endsWith(extension))
 }
 
 function shellQuote(value: string): string {
@@ -113,27 +181,37 @@ async function updateConversationMetadata(
   }
 }
 
-async function loadWorkspaceSnapshot(context: any, conversationId: string): Promise<WorkspaceSnapshot> {
+async function loadLegacyWorkspaceSnapshot(
+  context: any,
+  conversationId: string,
+): Promise<LegacySnapshotLoad> {
+  if (!context?.store) return { kind: 'missing' }
   try {
     const conversation = await getConversation(context, conversationId)
     const snapshot = conversation?.metadata?.workspaceSnapshot
-    return snapshot && typeof snapshot === 'object' ? snapshot as WorkspaceSnapshot : {}
-  } catch {
-    return {}
+    if (!snapshot || typeof snapshot !== 'object' || Object.keys(snapshot).length === 0) {
+      return { kind: 'missing' }
+    }
+    return { kind: 'found', snapshot: snapshot as WorkspaceSnapshot }
+  } catch (error) {
+    if (isMissingConversation(error)) return { kind: 'missing' }
+    throw error
   }
 }
 
-async function workspaceHasFiles(context: any, root: string): Promise<boolean> {
-  const result = await context.sandbox.commands.run(
-    "find . -mindepth 1 -maxdepth 1 ! -name preview -print -quit",
-    { cwd: root, timeout: 10 },
-  )
-  return result.exitCode === 0 && Boolean(String(result.stdout || '').trim())
+async function workspaceReady(context: any, root: string): Promise<boolean> {
+  return Boolean(await context.sandbox.files.exists(`${root}/${WORKSPACE_READY_MARKER}`))
 }
 
-async function restoreWorkspaceSnapshot(context: any, conversationId: string, root: string): Promise<void> {
-  if (await workspaceHasFiles(context, root)) return
-  const snapshot = await loadWorkspaceSnapshot(context, conversationId)
+async function markWorkspaceReady(context: any, root: string): Promise<void> {
+  await context.sandbox.files.write(`${root}/${WORKSPACE_READY_MARKER}`, 'v1\n')
+}
+
+async function restoreLegacySnapshotFiles(
+  context: any,
+  root: string,
+  snapshot: WorkspaceSnapshot,
+): Promise<void> {
   for (const [path, file] of Object.entries(snapshot).slice(0, SNAPSHOT_FILE_LIMIT)) {
     const normalized = normalizeWorkspacePath(path)
     if (!normalized || typeof file?.content !== 'string') continue
@@ -143,39 +221,42 @@ async function restoreWorkspaceSnapshot(context: any, conversationId: string, ro
   }
 }
 
-async function saveWorkspaceSnapshotFile(
-  context: any,
-  conversationId: string,
-  path: string,
-  content: string,
-): Promise<void> {
-  const snapshot = await loadWorkspaceSnapshot(context, conversationId)
-  snapshot[path] = { content, updatedAt: Date.now() }
-  const ordered = Object.entries(snapshot)
-    .sort((left, right) => right[1].updatedAt - left[1].updatedAt)
-  const bounded: WorkspaceSnapshot = {}
-  let bytes = 0
-  for (const [candidatePath, file] of ordered) {
-    const size = new TextEncoder().encode(file.content).byteLength
-    if (Object.keys(bounded).length >= SNAPSHOT_FILE_LIMIT || bytes + size > SNAPSHOT_BYTE_LIMIT) continue
-    bounded[candidatePath] = file
-    bytes += size
+async function initializeWorkspace(context: any, conversationId: string, root: string): Promise<void> {
+  if (await workspaceReady(context, root)) return
+
+  const restored = await context.sandbox.restore({ path: root, timeout: 180 })
+  if (restored?.restored === true) {
+    await markWorkspaceReady(context, root)
+    return
   }
-  try {
-    await updateConversationMetadata(context, conversationId, { workspaceSnapshot: bounded })
-  } catch (error) {
-    console.warn('[workspace] snapshot persistence failed:', error)
+  if (restored?.reason !== 'not_found') {
+    throw new Error(`Workspace restore failed: ${String(restored?.reason || 'unknown')}`)
   }
+
+  const legacy = await loadLegacyWorkspaceSnapshot(context, conversationId)
+  if (legacy.kind === 'found') {
+    await restoreLegacySnapshotFiles(context, root, legacy.snapshot)
+    await persistWorkspaceCheckpoint(context, conversationId, root)
+    await updateConversationMetadata(context, conversationId, {
+      workspaceSnapshot: {},
+      workspaceSnapshotMigratedAt: Date.now(),
+    })
+    await markWorkspaceReady(context, root)
+    return
+  }
+
+  await persistWorkspaceCheckpoint(context, conversationId, root)
+  await markWorkspaceReady(context, root)
 }
 
 export async function ensureWorkspace(context: any, conversationId: string): Promise<string> {
   const root = workspaceRoot(conversationId)
   await context.sandbox.files.makeDir(root)
-  await restoreWorkspaceSnapshot(context, conversationId, root)
+  await initializeWorkspace(context, conversationId, root)
   return root
 }
 
-export async function listWorkspace(context: any, conversationId: string): Promise<WorkspaceItem[]> {
+export async function listWorkspace(context: any, conversationId: string): Promise<WorkspaceListing> {
   const root = await ensureWorkspace(context, conversationId)
   const ignored = [...IGNORED_DIRECTORIES]
     .map(directory => `-path './${directory}'`)
@@ -192,7 +273,7 @@ export async function listWorkspace(context: any, conversationId: string): Promi
     throw new Error(result.stderr || result.stdout || 'Failed to list workspace files.')
   }
 
-  return String(result.stdout || '')
+  const parsed = String(result.stdout || '')
     .split('\n')
     .map((line: string) => line.trimEnd())
     .filter(Boolean)
@@ -203,7 +284,7 @@ export async function listWorkspace(context: any, conversationId: string): Promi
     .filter(item => item.rawPath && item.rawPath !== '.' && ['d', 'f', 'l'].includes(item.kind))
     .filter(item => !item.rawPath.split('/').some(segment => IGNORED_DIRECTORIES.has(segment)))
     .filter(item => !IGNORED_FILES.has(item.rawPath.split('/').pop() || ''))
-    .slice(0, 400)
+    .filter(item => !isSensitiveWorkspacePath(item.rawPath))
     .map(item => {
       const name = item.rawPath.split('/').pop() || item.rawPath
       const mtime = Number.parseFloat(item.mtimeRaw)
@@ -217,6 +298,13 @@ export async function listWorkspace(context: any, conversationId: string): Promi
         ...(Number.isFinite(mtime) && mtime > 0 ? { mtime: Math.round(mtime * 1000) } : {}),
       }
     })
+
+  const limit = 400
+  return {
+    items: parsed.slice(0, limit),
+    truncated: parsed.length > limit,
+    limit,
+  }
 }
 
 export async function readWorkspaceFile(
@@ -226,6 +314,9 @@ export async function readWorkspaceFile(
 ): Promise<{ path: string; content: string; size: number; truncated: boolean }> {
   const path = normalizeWorkspacePath(requestedPath)
   if (!path) throw new Error('Invalid workspace file path.')
+  if (isSensitiveWorkspacePath(path)) {
+    throw new Error('Sensitive workspace files are not available to automatic file tools.')
+  }
   const root = await ensureWorkspace(context, conversationId)
   const result = await context.sandbox.files.read(`${root}/${path}`)
   const content = typeof result === 'string'
@@ -250,15 +341,30 @@ export async function writeWorkspaceFile(
   conversationId: string,
   requestedPath: string,
   content: string,
-): Promise<{ path: string; bytes: number }> {
+): Promise<{ path: string; bytes: number; persisted: true; checkpoint: WorkspaceCheckpoint }> {
   const path = normalizeWorkspacePath(requestedPath)
   if (!path) throw new Error('Invalid workspace file path.')
+  if (isSensitiveWorkspacePath(path)) {
+    throw new Error('Sensitive workspace files are not available to automatic file tools.')
+  }
   const root = await ensureWorkspace(context, conversationId)
   const parent = path.split('/').slice(0, -1).join('/')
   if (parent) await context.sandbox.files.makeDir(`${root}/${parent}`)
   await context.sandbox.files.write(`${root}/${path}`, content)
-  await saveWorkspaceSnapshotFile(context, conversationId, path, content)
-  return { path, bytes: new TextEncoder().encode(content).byteLength }
+
+  let checkpoint: WorkspaceCheckpoint
+  try {
+    checkpoint = await persistWorkspaceCheckpoint(context, conversationId, root)
+  } catch (error) {
+    throw new Error(`Workspace write completed but checkpoint persistence failed: ${error instanceof Error ? error.message : String(error)}`)
+  }
+
+  return {
+    path,
+    bytes: new TextEncoder().encode(content).byteLength,
+    persisted: true,
+    checkpoint,
+  }
 }
 
 export async function runWorkspaceCommand(
@@ -266,18 +372,37 @@ export async function runWorkspaceCommand(
   conversationId: string,
   command: string,
   timeout = 120,
-): Promise<{ command: string; stdout: string; stderr: string; exitCode: number }> {
+): Promise<{
+  command: string
+  stdout: string
+  stderr: string
+  exitCode: number
+  persistence: WorkspacePersistenceStatus
+}> {
   if (!command.trim()) throw new Error('Command must not be empty.')
   const root = await ensureWorkspace(context, conversationId)
   const result = await context.sandbox.commands.run(command, {
     cwd: root,
     timeout: Math.min(Math.max(Math.round(timeout), 1), 300),
   })
+
+  let persistence: WorkspacePersistenceStatus
+  try {
+    const checkpoint = await persistWorkspaceCheckpoint(context, conversationId, root)
+    persistence = { persisted: true, checkpoint }
+  } catch (error) {
+    persistence = {
+      persisted: false,
+      error: error instanceof Error ? error.message : String(error),
+    }
+  }
+
   return {
     command,
     stdout: String(result.stdout || '').slice(-20_000),
     stderr: String(result.stderr || '').slice(-20_000),
     exitCode: Number(result.exitCode),
+    persistence,
   }
 }
 
@@ -298,7 +423,7 @@ function appendAccessToken(url: string, token: string): string {
 export async function publishWorkspacePreview(
   context: any,
   conversationId: string,
-): Promise<{ previewUrl: string; framework: string }> {
+): Promise<{ published: true; framework: string }> {
   const root = await ensureWorkspace(context, conversationId)
   const packageJsonExists = await context.sandbox.files.exists(`${root}/package.json`)
   const release = [
@@ -344,10 +469,6 @@ export async function publishWorkspacePreview(
     throw new Error(ready.stdout || ready.stderr || 'Preview server did not become ready.')
   }
 
-  const host = normalizePublicUrl(context.sandbox.getHost(9000))
-  const token = String(context.sandbox.envdAccessToken || '')
-  if (!host || !token) throw new Error('Sandbox preview credentials are unavailable.')
-  const previewUrl = appendAccessToken(host, token)
   try {
     await updateConversationMetadata(context, conversationId, {
       preview: { published: true, framework, updatedAt: Date.now() },
@@ -355,7 +476,7 @@ export async function publishWorkspacePreview(
   } catch (error) {
     console.warn('[workspace] preview metadata persistence failed:', error)
   }
-  return { previewUrl, framework }
+  return { published: true, framework }
 }
 
 export async function currentPreview(
@@ -366,6 +487,22 @@ export async function currentPreview(
     const conversation = await getConversation(context, conversationId)
     const published = conversation?.metadata?.preview?.published === true
     if (!published) return { published: false }
+
+    const health = await context.sandbox.commands.run(
+      "curl -fsS http://127.0.0.1:3000/preview/ >/dev/null 2>&1 || curl -fsS http://127.0.0.1:3000/ >/dev/null 2>&1",
+      { timeout: 5 },
+    )
+    if (health.exitCode !== 0) {
+      try {
+        await updateConversationMetadata(context, conversationId, {
+          preview: { published: false, updatedAt: Date.now() },
+        })
+      } catch (error) {
+        console.warn('[workspace] stale preview metadata cleanup failed:', error)
+      }
+      return { published: false }
+    }
+
     try {
       const host = normalizePublicUrl(context.sandbox.getHost(9000))
       const token = String(context.sandbox.envdAccessToken || '')

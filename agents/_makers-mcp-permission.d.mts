@@ -3,14 +3,16 @@ export const inject: readonly string[]
 export const MCP_SERVER_NAME: string
 export const MCP_TOOL_PREFIX: string
 export const DEFAULT_MAKERS_PERMISSION: string
+export const SAFE_FALLBACK_MAKERS_PERMISSION: string
 export const ALL_MAKERS_TOOLS: readonly string[]
 
 export function isMakersPermissionMode(value: unknown): boolean
-export function makersAutoAllowTools(mode: string): readonly string[]
-export function makersToolAllowed(mode: string, tool: string): boolean
+export function makersEffectivePermission(value: unknown): 'read-only' | 'workspace-write' | 'danger-full-access'
+export function makersAutoAllowTools(mode: unknown): readonly string[]
+export function makersToolAllowed(mode: unknown, tool: string): boolean
 export function makersRequiredMode(tool: string): string
 export function makersRequiredModeLabel(tool: string): string
-export function makersToolGate(mode: string, tool: string): 'allow' | 'ask'
+export function makersToolGate(mode: unknown, tool: string): 'allow' | 'ask'
 export function makersAskReason(mode: string, tool: string): string
 export function makersRawToolName(publicName: unknown): string | null
 export function apply(ctx: any): void
