@@ -4,6 +4,7 @@ import {
   isSensitiveWorkspacePath,
   listWorkspace,
   normalizeWorkspacePath,
+  publishWorkspacePreview,
   readWorkspaceFile,
   workspaceRoot,
   writeWorkspaceFile,
@@ -174,4 +175,49 @@ test('writeWorkspaceFile still succeeds when snapshot persistence fails', async 
 
   assert.equal(result.path, 'index.html')
   assert.ok([...written.keys()].some(path => path.endsWith('/index.html')))
+})
+
+test('publishWorkspacePreview keeps sandbox access credentials out of model-visible result', async () => {
+  const conversations = new Map<string, { metadata: Record<string, unknown> }>([
+    ['conv-1', { metadata: {} }],
+  ])
+  const context = {
+    sandbox: {
+      files: {
+        makeDir: async () => {},
+        exists: async () => false,
+      },
+      commands: {
+        async run(command: string) {
+          if (command.includes('-mindepth 1 -maxdepth 1')) {
+            return { exitCode: 0, stdout: './src\n', stderr: '' }
+          }
+          return { exitCode: 0, stdout: '', stderr: '' }
+        },
+      },
+      getHost: () => 'https://9000-test.sandbox.example.com',
+      envdAccessToken: 'secret-token',
+    },
+    store: {
+      async getConversation({ conversationId }: { conversationId: string }) {
+        const row = conversations.get(conversationId)
+        if (!row) throw missingConversation('getConversation')
+        return row
+      },
+      async appendMessage({ conversationId }: { conversationId: string }) {
+        if (!conversations.has(conversationId)) conversations.set(conversationId, { metadata: {} })
+      },
+      async updateConversation({ conversationId, metadata }: { conversationId: string; metadata: Record<string, unknown> }) {
+        const row = conversations.get(conversationId)
+        if (!row) throw missingConversation('updateConversation')
+        row.metadata = { ...row.metadata, ...metadata }
+      },
+    },
+  }
+
+  const result = await publishWorkspacePreview(context, 'conv-1')
+  assert.deepEqual(result, { published: true, framework: 'static' })
+  const serialized = JSON.stringify(result)
+  assert.equal(serialized.includes('secret-token'), false)
+  assert.equal(serialized.includes('access_token'), false)
 })
