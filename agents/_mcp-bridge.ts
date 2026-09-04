@@ -3,7 +3,7 @@ import type { AddressInfo } from 'node:net'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { z } from 'zod'
-import { registerActiveWorkspaceSandbox } from './_active-sandbox.ts'
+import { registerActiveWorkspaceSandbox, resetWorkspaceStop } from './_active-sandbox.ts'
 import {
   listWorkspace,
   publishWorkspacePreview,
@@ -127,13 +127,21 @@ async function createMcpServer(
     inputSchema: { seconds: z.number().int().min(1).max(30) },
   }, async ({ seconds }) => {
     const context = getContext()
-    const result = await context.sandbox.commands.run(
-      `sleep ${String(seconds)}; printf 'WAIT_FINISHED'`,
-      { timeout: seconds + 5 },
-    )
-    return {
-      content: [{ type: 'text', text: result.stdout || result.stderr }],
-      isError: result.exitCode !== 0,
+    let releaseActiveSandbox = () => {}
+    try {
+      releaseActiveSandbox = registerActiveWorkspaceSandbox(conversationId, context.sandbox)
+      const result = await context.sandbox.commands.run(
+        `sleep ${String(seconds)}; printf 'WAIT_FINISHED'`,
+        { timeout: seconds + 5 },
+      )
+      return {
+        content: [{ type: 'text', text: result.stdout || result.stderr }],
+        isError: result.exitCode !== 0,
+      }
+    } catch (error) {
+      return { content: [{ type: 'text', text: error instanceof Error ? error.message : String(error) }], isError: true }
+    } finally {
+      releaseActiveSandbox()
     }
   })
 
@@ -183,7 +191,6 @@ async function createMcpServer(
     },
   }, async ({ command, timeout }) => {
     const context = getContext()
-    const releaseActiveSandbox = registerActiveWorkspaceSandbox(conversationId, context.sandbox)
     try {
       const result = await runWorkspaceCommand(context, conversationId, command, timeout)
       return {
@@ -192,8 +199,6 @@ async function createMcpServer(
       }
     } catch (error) {
       return { content: [{ type: 'text', text: error instanceof Error ? error.message : String(error) }], isError: true }
-    } finally {
-      releaseActiveSandbox()
     }
   })
 
@@ -237,6 +242,7 @@ export async function startLocalMcpBridge(
   getContext: MakersContextProvider,
   conversationId: string,
 ): Promise<LocalMcpBridge> {
+  resetWorkspaceStop(conversationId)
   let requests = 0
   let requestMetadata: McpRequestMetadata[] = []
   const httpServer = createServer((request, response) => {
