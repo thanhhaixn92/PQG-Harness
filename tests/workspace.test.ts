@@ -8,6 +8,7 @@ import {
   persistWorkspaceCheckpoint,
   publishWorkspacePreview,
   readWorkspaceFile,
+  runWorkspaceCommand,
   workspaceRoot,
   writeWorkspaceFile,
 } from '../agents/_workspace.ts'
@@ -310,70 +311,116 @@ test('workspace listing hides sensitive files but keeps safe templates', async (
   assert.deepEqual(items.map(item => item.path), ['.env.example', 'src/app.ts'])
 })
 
-test('writeWorkspaceFile bootstraps a missing conversation before snapshotting', async () => {
-  const written = new Map<string, string>()
-  const conversations = new Map<string, { metadata: Record<string, unknown> }>()
-  const store = {
-    async getConversation({ conversationId }: { conversationId: string }) {
-      const row = conversations.get(conversationId)
-      if (!row) throw missingConversation('getConversation')
-      return row
+test('writeWorkspaceFile checkpoints after writing before reporting durable success', async () => {
+  const events: string[] = []
+  const sandbox = {
+    files: {
+      makeDir: async () => {},
+      exists: async () => true,
+      async write() { events.push('write') },
     },
-    async appendMessage({ conversationId }: { conversationId: string }) {
-      if (!conversations.has(conversationId)) {
-        conversations.set(conversationId, { metadata: {} })
-      }
+    commands: {
+      run: async () => ({ exitCode: 0, stdout: '', stderr: '' }),
     },
-    async updateConversation({
-      conversationId,
-      metadata,
-    }: {
-      conversationId: string
-      metadata: Record<string, unknown>
-    }) {
-      const row = conversations.get(conversationId)
-      if (!row) throw missingConversation('updateConversation')
-      row.metadata = { ...row.metadata, ...metadata }
-      return row
+    async persist() {
+      events.push('persist')
+      return { size: 12, sha256: 'sha-write', etag: 'etag-write', persistedAt: '2026-09-04T00:00:00Z' }
     },
   }
 
-  const result = await writeWorkspaceFile(
-    { store, sandbox: createSandbox(written) },
-    'conv-1',
-    'index.html',
-    '<html></html>',
-  )
+  const result = await writeWorkspaceFile({ sandbox }, 'conv-1', 'index.html', '<html></html>')
 
-  assert.equal(result.path, 'index.html')
-  assert.ok([...written.keys()].some(path => path.endsWith('/index.html')))
-  const snapshot = conversations.get('conv-1')?.metadata?.workspaceSnapshot as Record<string, { content: string }>
-  assert.equal(snapshot['index.html']?.content, '<html></html>')
+  assert.deepEqual(events, ['write', 'persist'])
+  assert.equal(result.persisted, true)
+  assert.equal(result.checkpoint.sha256, 'sha-write')
 })
 
-test('writeWorkspaceFile still succeeds when snapshot persistence fails', async () => {
-  const written = new Map<string, string>()
-  const store = {
-    async getConversation() {
-      throw missingConversation('getConversation')
+test('writeWorkspaceFile rejects when checkpoint persistence fails after the write', async () => {
+  let wrote = false
+  const sandbox = {
+    files: {
+      makeDir: async () => {},
+      exists: async () => true,
+      async write() { wrote = true },
     },
-    async appendMessage() {
-      throw new Error('store unavailable')
+    commands: {
+      run: async () => ({ exitCode: 0, stdout: '', stderr: '' }),
     },
-    async updateConversation() {
-      throw missingConversation('updateConversation')
+    async persist() {
+      throw new Error('checkpoint unavailable')
     },
   }
 
-  const result = await writeWorkspaceFile(
-    { store, sandbox: createSandbox(written) },
-    'conv-1',
-    'index.html',
-    '<html></html>',
+  await assert.rejects(
+    () => writeWorkspaceFile({ sandbox }, 'conv-1', 'index.html', '<html></html>'),
+    /checkpoint persistence failed: checkpoint unavailable/,
   )
+  assert.equal(wrote, true)
+})
 
-  assert.equal(result.path, 'index.html')
-  assert.ok([...written.keys()].some(path => path.endsWith('/index.html')))
+test('runWorkspaceCommand persists after a successful command', async () => {
+  let persistCalls = 0
+  const sandbox = {
+    files: {
+      makeDir: async () => {},
+      exists: async () => true,
+    },
+    commands: {
+      run: async () => ({ exitCode: 0, stdout: 'ok', stderr: '' }),
+    },
+    async persist() {
+      persistCalls += 1
+      return { size: 1, sha256: 'sha-command', etag: 'etag-command', persistedAt: '2026-09-04T00:00:00Z' }
+    },
+  }
+
+  const result = await runWorkspaceCommand({ sandbox }, 'conv-1', 'printf ok')
+  assert.equal(persistCalls, 1)
+  assert.equal(result.persistence.persisted, true)
+  assert.equal(result.stdout, 'ok')
+})
+
+test('runWorkspaceCommand persists even when the command exits nonzero', async () => {
+  let persistCalls = 0
+  const sandbox = {
+    files: {
+      makeDir: async () => {},
+      exists: async () => true,
+    },
+    commands: {
+      run: async () => ({ exitCode: 7, stdout: '', stderr: 'failed' }),
+    },
+    async persist() {
+      persistCalls += 1
+      return { size: 1, sha256: 'sha-failed', etag: 'etag-failed', persistedAt: '2026-09-04T00:00:00Z' }
+    },
+  }
+
+  const result = await runWorkspaceCommand({ sandbox }, 'conv-1', 'false')
+  assert.equal(result.exitCode, 7)
+  assert.equal(persistCalls, 1)
+  assert.equal(result.persistence.persisted, true)
+})
+
+test('runWorkspaceCommand reports checkpoint persistence failure without hiding command output', async () => {
+  const sandbox = {
+    files: {
+      makeDir: async () => {},
+      exists: async () => true,
+    },
+    commands: {
+      run: async () => ({ exitCode: 0, stdout: 'changed files', stderr: '' }),
+    },
+    async persist() {
+      throw new Error('persist failed')
+    },
+  }
+
+  const result = await runWorkspaceCommand({ sandbox }, 'conv-1', 'touch changed.txt')
+  assert.equal(result.exitCode, 0)
+  assert.equal(result.stdout, 'changed files')
+  assert.equal(result.persistence.persisted, false)
+  assert.equal(result.persistence.error, 'persist failed')
 })
 
 test('publishWorkspacePreview keeps sandbox access credentials out of model-visible result', async () => {
