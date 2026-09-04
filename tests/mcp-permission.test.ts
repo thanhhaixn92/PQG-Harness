@@ -6,7 +6,6 @@ import {
   apply as applyMakersMcpPermission,
   makersAskReason,
   makersAutoAllowTools,
-  makersEffectivePermission,
   makersMcpPermissionSource,
   makersRawToolName,
   makersToolAllowed,
@@ -20,6 +19,7 @@ test('generated sidecar plugin is self-contained and importable', async () => {
   assert.equal(generated.name, 'makers-mcp-permission')
   assert.equal(generated.makersToolGate('read-only', 'workspace_write_file'), 'ask')
   assert.equal(generated.makersToolGate('danger-full-access', 'publish_preview'), 'allow')
+  assert.equal(generated.makersToolGate(undefined, 'workspace_write_file'), 'ask')
 })
 
 test('every Makers tool stays visible; permission only decides allow vs ask', () => {
@@ -58,13 +58,12 @@ test('full access auto-allows commands and preview without asking', () => {
   assert.deepEqual([...makersAutoAllowTools('danger-full-access')], [...ALL_MAKERS_TOOLS])
 })
 
-test('invalid or missing runtime permission fails closed to read-only', () => {
-  assert.equal(makersEffectivePermission(undefined), 'read-only')
-  assert.equal(makersEffectivePermission('broken-mode'), 'read-only')
-  assert.equal(makersEffectivePermission('workspace-write'), 'workspace-write')
-  assert.equal(makersToolGate(undefined, 'workspace_write_file'), 'ask')
-  assert.equal(makersToolGate(undefined, 'workspace_read_file'), 'allow')
-  assert.ok(!makersAutoAllowTools(undefined).includes('workspace_write_file'))
+test('invalid or missing runtime permission fails closed to read-only behavior', () => {
+  assert.equal(makersToolGate(undefined as any, 'workspace_write_file'), 'ask')
+  assert.equal(makersToolGate('broken-mode', 'workspace_write_file'), 'ask')
+  assert.equal(makersToolGate(undefined as any, 'workspace_read_file'), 'allow')
+  assert.equal(makersToolGate('workspace-write', 'workspace_write_file'), 'allow')
+  assert.ok(!makersAutoAllowTools(undefined as any).includes('workspace_write_file'))
 })
 
 test('ask copy tells the user which mode the call needs', () => {
