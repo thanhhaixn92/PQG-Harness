@@ -150,6 +150,46 @@ test('Stop kills every distinct sandbox registered by overlapping workspace comm
   }
 })
 
+test('Stop attempts every active sandbox when one kill throws synchronously', async () => {
+  let secondSandboxKills = 0
+  let stopRequestSandboxKills = 0
+  const releaseFirst = registerActiveWorkspaceSandbox('conv-stop-sync-kill-failure', {
+    kill() {
+      throw new Error('synchronous sandbox kill failure')
+    },
+  })
+  const releaseSecond = registerActiveWorkspaceSandbox('conv-stop-sync-kill-failure', {
+    kill() {
+      secondSandboxKills += 1
+    },
+  })
+
+  try {
+    const response = await onRequestPost({
+      request: { body: { conversation_id: 'conv-stop-sync-kill-failure' } },
+      utils: {
+        async abortActiveRun() {
+          return { aborted: true }
+        },
+      },
+      sandbox: {
+        async kill() {
+          stopRequestSandboxKills += 1
+        },
+      },
+    })
+    const body = await response.json() as any
+
+    assert.equal(body.ok, false)
+    assert.deepEqual(body.sandbox, { killed: false, error: 'SANDBOX_KILL_FAILED' })
+    assert.equal(secondSandboxKills, 1, 'a later active sandbox must still be terminated after a synchronous kill failure')
+    assert.equal(stopRequestSandboxKills, 0, 'the Stop request sandbox remains only a fallback')
+  } finally {
+    releaseSecond()
+    releaseFirst()
+  }
+})
+
 test('Stop returns stable non-secret outcomes when sidecar, platform abort, and sandbox kill fail', async () => {
   __setSidecarStarterForTests(async (_context: any, conversationId: string) =>
     fakeSidecar(conversationId, async () => {
