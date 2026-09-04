@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  ensureWorkspace,
   isSensitiveWorkspacePath,
   listWorkspace,
   normalizeWorkspacePath,
@@ -49,6 +50,7 @@ function createSandbox(written = new Map<string, string>()) {
   return {
     files: {
       makeDir: async () => {},
+      exists: async () => true,
       read: async () => '',
       write: async (path: string, content: string) => { written.set(path, content) },
     },
@@ -101,12 +103,165 @@ test('native workspace checkpoints serialize per conversation', async () => {
   assert.equal(secondCheckpoint.sha256, 'sha-2')
 })
 
+test('native restore wins over legacy metadata', async () => {
+  const written = new Map<string, string>()
+  let restoreCalls = 0
+  let storeReads = 0
+  const context = {
+    sandbox: {
+      files: {
+        makeDir: async () => {},
+        exists: async () => false,
+        write: async (path: string, content: string) => { written.set(path, content) },
+      },
+      commands: {
+        run: async () => ({ exitCode: 0, stdout: '', stderr: '' }),
+      },
+      async restore({ path, timeout }: { path: string; timeout: number }) {
+        restoreCalls += 1
+        assert.equal(path, 'projects/conv-1/workspace')
+        assert.equal(timeout, 180)
+        return { restored: true }
+      },
+    },
+    store: {
+      async getConversation() {
+        storeReads += 1
+        return { metadata: { workspaceSnapshot: { 'legacy.txt': { content: 'legacy', updatedAt: 1 } } } }
+      },
+    },
+  }
+
+  await ensureWorkspace(context, 'conv-1')
+  assert.equal(restoreCalls, 1)
+  assert.equal(storeReads, 0)
+  assert.equal(written.get('projects/conv-1/workspace/.pqg-workspace-ready'), 'v1\n')
+})
+
+test('legacy snapshot migrates only after native not_found', async () => {
+  const written = new Map<string, string>()
+  const metadataUpdates: Record<string, unknown>[] = []
+  let restoreCalls = 0
+  let persistCalls = 0
+  const context = {
+    sandbox: {
+      files: {
+        makeDir: async () => {},
+        exists: async () => false,
+        write: async (path: string, content: string) => { written.set(path, content) },
+      },
+      commands: {
+        run: async () => ({ exitCode: 0, stdout: '', stderr: '' }),
+      },
+      async restore() {
+        restoreCalls += 1
+        return { restored: false, reason: 'not_found' }
+      },
+      async persist() {
+        persistCalls += 1
+        return { size: 10, sha256: 'sha', etag: 'etag', persistedAt: '2026-09-04T00:00:00Z' }
+      },
+    },
+    store: {
+      async getConversation() {
+        return { metadata: { workspaceSnapshot: { 'legacy.txt': { content: 'legacy', updatedAt: 1 } } } }
+      },
+      async updateConversation({ metadata }: { metadata: Record<string, unknown> }) {
+        metadataUpdates.push(metadata)
+      },
+    },
+  }
+
+  await ensureWorkspace(context, 'conv-1')
+  assert.equal(restoreCalls, 1)
+  assert.equal(persistCalls, 1)
+  assert.equal(written.get('projects/conv-1/workspace/legacy.txt'), 'legacy')
+  assert.equal(written.get('projects/conv-1/workspace/.pqg-workspace-ready'), 'v1\n')
+  assert.deepEqual(metadataUpdates.at(-1)?.workspaceSnapshot, {})
+  assert.equal(typeof metadataUpdates.at(-1)?.workspaceSnapshotMigratedAt, 'number')
+})
+
+test('restore failure never persists an incomplete workspace', async () => {
+  const written = new Map<string, string>()
+  let persistCalls = 0
+  const context = {
+    sandbox: {
+      files: {
+        makeDir: async () => {},
+        exists: async () => false,
+        write: async (path: string, content: string) => { written.set(path, content) },
+      },
+      commands: {
+        run: async () => ({ exitCode: 0, stdout: '', stderr: '' }),
+      },
+      async restore() {
+        throw new Error('restore unavailable')
+      },
+      async persist() {
+        persistCalls += 1
+        return { size: 0, sha256: '', etag: '', persistedAt: '' }
+      },
+    },
+  }
+
+  await assert.rejects(() => ensureWorkspace(context, 'conv-1'), /restore unavailable/)
+  assert.equal(persistCalls, 0)
+  assert.equal(written.has('projects/conv-1/workspace/.pqg-workspace-ready'), false)
+})
+
+test('ready marker skips duplicate restore on a live sandbox', async () => {
+  let restoreCalls = 0
+  const context = {
+    sandbox: {
+      files: {
+        makeDir: async () => {},
+        exists: async (path: string) => path.endsWith('/.pqg-workspace-ready'),
+        write: async () => {},
+      },
+      commands: {
+        run: async () => { throw new Error('legacy emptiness probe must not run') },
+      },
+      async restore() {
+        restoreCalls += 1
+        return { restored: true }
+      },
+    },
+  }
+
+  await ensureWorkspace(context, 'conv-1')
+  assert.equal(restoreCalls, 0)
+})
+
+test('junk file without marker does not suppress native restore', async () => {
+  let restoreCalls = 0
+  const context = {
+    sandbox: {
+      files: {
+        makeDir: async () => {},
+        exists: async () => false,
+        write: async () => {},
+      },
+      commands: {
+        run: async () => ({ exitCode: 0, stdout: './junk.txt\n', stderr: '' }),
+      },
+      async restore() {
+        restoreCalls += 1
+        return { restored: true }
+      },
+    },
+  }
+
+  await ensureWorkspace(context, 'conv-1')
+  assert.equal(restoreCalls, 1)
+})
+
 test('automatic workspace read and write tools reject sensitive paths before file I/O', async () => {
   let reads = 0
   let writes = 0
   const sandbox = {
     files: {
       makeDir: async () => {},
+      exists: async () => true,
       read: async () => { reads += 1; return 'SECRET' },
       write: async () => { writes += 1 },
     },
@@ -131,12 +286,12 @@ test('automatic workspace read and write tools reject sensitive paths before fil
 
 test('workspace listing hides sensitive files but keeps safe templates', async () => {
   const sandbox = {
-    files: { makeDir: async () => {} },
+    files: {
+      makeDir: async () => {},
+      exists: async () => true,
+    },
     commands: {
-      async run(command: string) {
-        if (command.includes('-mindepth 1 -maxdepth 1')) {
-          return { exitCode: 0, stdout: './src\n', stderr: '' }
-        }
+      async run() {
         return {
           exitCode: 0,
           stdout: [
@@ -229,13 +384,10 @@ test('publishWorkspacePreview keeps sandbox access credentials out of model-visi
     sandbox: {
       files: {
         makeDir: async () => {},
-        exists: async () => false,
+        exists: async () => true,
       },
       commands: {
-        async run(command: string) {
-          if (command.includes('-mindepth 1 -maxdepth 1')) {
-            return { exitCode: 0, stdout: './src\n', stderr: '' }
-          }
+        async run() {
           return { exitCode: 0, stdout: '', stderr: '' }
         },
       },
