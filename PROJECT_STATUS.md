@@ -17,7 +17,7 @@
 - Production branch mapping after reconnect: **NOT VERIFIED**; do not infer that `main` is or is not the active Production source until Console/deployment identity is checked.
 - Preview branch behavior after reconnect: **NOT VERIFIED**; a controlled Preview URL/identity is still required before live gates can close.
 - Independent anonymous probe from a GitHub-hosted runner: `GET / -> 200`, `GET /build-meta.json -> 404` (workflow `33898408637`). This confirms the currently reachable origin does not block anonymous root access and does not expose the reviewed Foundation build identity.
-- Access/auth: **LIVE OUTER BOUNDARY FAIL CONFIRMED; source mitigation GREEN, live candidate proof pending**. A minimal all-route single-user middleware gate is implemented on the Foundation auth branch; see `docs/verification/2026-09-04-foundation-single-user-auth.md`.
+- Access/auth: **BLOCKED — live outer boundary FAIL confirmed; source mitigation GREEN, live candidate proof pending**. A minimal all-route single-user middleware gate is implemented on the Foundation auth branch; see `docs/verification/2026-09-04-foundation-single-user-auth.md`.
 - Deployed Foundation commit parity: **NOT VERIFIED / NOT PARITY** because `/build-meta.json` returned 404 anonymously on the known origin. A controlled authenticated candidate must be checked before promotion.
 - Required `AI_GATEWAY_*` and `PQG_ACCESS_SECRET` environment-variable presence/scope: NOT VERIFIED in EdgeOne Console; values must never be copied into repository evidence.
 
