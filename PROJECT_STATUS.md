@@ -4,28 +4,29 @@
 - Canonical branch: `main`
 - Audited baseline: `70119cfdae992a203a5e29eb24e91c7200222a7c`
 - Foundation integration branch: `integration/foundation-core`
-- Current Foundation integration commit: `f24f69f2368c0c36241f646e39b5ca06114a44a8`
-- Current Foundation integration tree: `43125c8dc47dfa1519c226ad0818397f47be42e7`
+- Reviewed Foundation source state before the docs-only checkpoint merge: commit `f24f69f2368c0c36241f646e39b5ca06114a44a8`, tree `43125c8dc47dfa1519c226ad0818397f47be42e7`
+- Verified docs-only Foundation checkpoint merge: `b3f9fec1e127ae3a410e445840c456f77935a37e`, tree `99cc554cc334b9c4058120b5af3f11b6a6a390cf`
+- The moving `integration/foundation-core` branch head must be read from GitHub; this file intentionally records immutable reviewed checkpoints rather than calling an embedded SHA "current".
 - Post-WP7 source checkpoint merge: `0a6b68320e6a53378c0046d2a8aebdac2f345c21`
 - Upstream provenance: see `UPSTREAM.md`
 
 ## Known deployment
 - Known URL: `https://pqg-harness-dp0dukyw6bfl.edgeone.cool/`
-- Git-connected EdgeOne deployment: **DISCONNECTED** by the project owner on 2026-09-04; repository changes no longer auto-deploy while disconnected.
-- Production branch mapping: NOT APPLICABLE while Git integration is disconnected; must be re-verified before any future reconnect.
-- Preview branch behavior: NOT APPLICABLE while Git integration is disconnected; must be re-verified before any future reconnect.
+- EdgeOne Git connection: **RECONNECTED — OWNER-REPORTED on 2026-09-04**. Direct EdgeOne Console state is not independently available to this session; see `docs/verification/2026-09-04-edgeone-reconnect-status.md`.
+- Production branch mapping after reconnect: **NOT VERIFIED**; do not infer that `main` is or is not the active Production source until Console/deployment identity is checked.
+- Preview branch behavior after reconnect: **NOT VERIFIED**; a controlled Preview URL/identity is still required before live gates can close.
 - Access/auth policy: **NOT VERIFIED — Foundation Freeze blocker**; confirm in EdgeOne Console and logged-out/direct API behavior before public/stable use.
-- Deployed commit parity: NOT VERIFIED; the existing deployment may remain on an earlier source revision until a controlled redeploy is performed.
+- Deployed commit parity: NOT VERIFIED; reconnect alone does not prove that the known deployment runs the Foundation integration source.
 - Required `AI_GATEWAY_*` environment variable presence/scope: NOT VERIFIED in EdgeOne Console; values must never be copied into repository evidence.
-- Fresh probe from the current execution environment on 2026-09-04 could not resolve the known deployment hostname; `/` and `/build-meta.json` remain **BLOCKED by execution environment**, not recorded as application FAIL. See `docs/verification/2026-09-04-foundation-source-checkpoint.md`.
+- Fresh probe from the current execution environment after reconnect on 2026-09-04 still could not resolve the known deployment hostname; `/` and `/build-meta.json` remain **BLOCKED by execution environment**, not recorded as application FAIL. See `docs/verification/2026-09-04-edgeone-reconnect-status.md`.
 
 ## GitHub deployment guardrail
 - `main` commit remains `70119cfdae992a203a5e29eb24e91c7200222a7c`.
-- Direct branch metadata re-verified after the Foundation dependency cleanup on 2026-09-04: `protected: false`.
+- Direct branch metadata re-verified after the EdgeOne reconnect report on 2026-09-04: `protected: false`.
 - Required-status-check enforcement: `off`; contexts/checks empty.
 - Repository rulesets endpoint returned an empty list.
-- The current connector exposes read-only branch-protection/ruleset access, so this setting cannot be applied from the current session.
-- Required action before reconnecting Git Auto Deploy: protect the deployment branch and require the `quality` check. See `docs/verification/2026-09-04-main-guardrail.md`.
+- The current connector exposes branch-protection/ruleset reads but no administration write action, so this setting cannot be applied from the current session.
+- Because Git integration is now owner-reported reconnected **before this guardrail was configured**, do not merge Foundation changes to `main` or use a main push as a promotion mechanism until the deployment branch mapping is verified and `quality` is required. See `docs/verification/2026-09-04-main-guardrail.md` and `docs/verification/2026-09-04-edgeone-reconnect-status.md`.
 
 ## Foundation Core status
 - WP0 quality/governance: source-side GREEN; repository-level required-check enforcement remains a release blocker as above.
@@ -38,7 +39,7 @@
 - Dependency audit status is point-in-time evidence only. DSH rc.6 retains its required nested newer telemetry graph; future advisories or DSH/telemetry migration still require review.
 - `x-prompt-log` / `x-gateway-quota-bypass`: NOT VERIFIED from authoritative public EdgeOne documentation; preserved only as inherited compatibility behavior. See `docs/verification/2026-09-04-wp4-gateway-header-status.md`.
 - WP5 build identity: source-side GREEN. `build:prepared` emits `dist/build-meta.json` from exact git commit/tree and package version; recorded WP5 quality evidence is GREEN.
-- WP5 controlled Preview smoke, deployed `/build-meta.json` parity, topology, access/auth, native observability and rollback: **BLOCKED / NOT VERIFIED**. See `docs/verification/2026-09-04-foundation-preview-smoke.md`.
+- WP5 controlled Preview smoke, deployed `/build-meta.json` parity, topology, access/auth, native observability and rollback: **BLOCKED / NOT VERIFIED**. EdgeOne reconnect makes these checks operationally relevant again but does not satisfy them by itself. See `docs/verification/2026-09-04-foundation-preview-smoke.md`.
 - WP6 product/locale/accessibility: source-side GREEN. Final WP6 evidence head `2f1573d6f43588805671f3667454524e7ba92fad`, quality run `33889812234` — SUCCESS.
 - WP6 full Vietnamese: DEFERRED because pinned DSH `0.1.0-rc.6` exposes namespace dictionary registration but no clean external locale-descriptor registration path. `vi-VN` falls back to complete shipped English. See `docs/localization/vi-status.md`.
 - WP6 controlled phone/tablet/desktop and real-browser accessibility smoke: **BLOCKED**. See `docs/verification/2026-09-04-wp6-preview-ui.md`.
@@ -52,11 +53,12 @@
 - Known limitations: `docs/release/KNOWN_LIMITATIONS.md`
 - Change history: `CHANGELOG.md`
 - Foundation source checkpoint: `docs/verification/2026-09-04-foundation-source-checkpoint.md`
+- EdgeOne reconnect status: `docs/verification/2026-09-04-edgeone-reconnect-status.md`
 - Transitive dependency security refresh: `docs/verification/2026-09-04-dependency-security-refresh.md`
 - Root OpenTelemetry cleanup: `docs/verification/2026-09-04-foundation-otel-root-cleanup.md`
 
 ## Deployment safety rule
-Do not reconnect Git Auto Deploy until Foundation Core changes have passed the quality gate and a controlled deployment/reconnect plan has been reviewed. Reconnection must re-verify Production/Preview branch mapping, environment scope, access policy, required `quality` enforcement on `main`, rollback mechanism, and deployed commit parity before enabling automatic promotion.
+EdgeOne Git integration is owner-reported reconnected. Until Production/Preview mapping and deployed identity are verified, **do not merge Foundation changes to `main` or intentionally promote Production**. Configure required `quality` enforcement on the actual deployment branch before using Git push/merge as a release mechanism. A controlled non-Production Preview may be used to close the remaining live gates once its exact URL and build identity are available.
 
 ## Release status
 **Foundation Freeze is BLOCKED / not complete.** WP0–WP7 and the reviewed dependency cleanup are source-side GREEN, but the mandatory live EdgeOne and repository-enforcement gates in `docs/release/RELEASE_CHECKLIST.md` remain unresolved. Stable/public Production release is not approved.
