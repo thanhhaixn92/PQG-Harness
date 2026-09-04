@@ -30,11 +30,20 @@ The repository records Git Auto Deploy as **DISCONNECTED** by the owner. The cur
 
 The existing known URL may therefore run an older source revision. No statement in Foundation docs should imply deployed parity until `/build-meta.json` is checked on a controlled deployment.
 
-## 4. Main required-quality enforcement is not confirmed
+## 4. Main required-quality enforcement is confirmed absent
 
-The repository has a working quality workflow and Foundation candidates have been verified through temporary PRs targeting `main`. However, a required-check/ruleset that prevents an unsafe `main` update is not independently confirmed as enabled.
+Direct GitHub branch/ruleset verification on 2026-09-04 shows:
 
-Before any Git Auto Deploy reconnect, require the `quality` gate on `main` or apply an equivalent repository rule.
+```text
+main protected: false
+required-status-check enforcement: off
+required contexts/checks: empty
+repository rulesets: []
+```
+
+The repository has a working `quality` workflow and Foundation candidates have been verified through temporary PRs targeting `main`, but GitHub does not currently enforce that workflow on the branch.
+
+The connector available in this session exposes branch-protection/ruleset reads but no administration write action. Before any Git Auto Deploy reconnect, protect the deployment branch and require the `quality` gate. See `docs/verification/2026-09-04-main-guardrail.md`.
 
 ## 5. Symlink/canonical filesystem policy is incomplete
 
@@ -94,6 +103,6 @@ A restored filesystem checkpoint does not restart sidecar or preview processes. 
 
 ## 14. Foundation Freeze is BLOCKED, not complete
 
-WP0-WP7 may become source-side GREEN while required live gates remain blocked. **Foundation Freeze is not declared complete** until the required rows in `RELEASE_CHECKLIST.md` are closed or explicitly owner-accepted with a dated reason.
+WP0-WP7 are source-side GREEN while required live/repository gates remain blocked. **Foundation Freeze is not declared complete** until the required rows in `RELEASE_CHECKLIST.md` are closed or explicitly owner-accepted with a dated reason.
 
 No business module should be used as evidence that these infrastructure/release gates are resolved.
