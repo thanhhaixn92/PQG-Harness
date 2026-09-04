@@ -6,6 +6,8 @@ export interface LocalGatewayProxy {
   close(): Promise<void>
 }
 
+export type MakersContextProvider = () => any
+
 function envValue(context: any, key: string): string {
   const value = context.env?.[key]
   return typeof value === 'string' ? value.trim() : ''
@@ -33,7 +35,7 @@ export function normalizeGatewayRequest(body: Record<string, unknown>): Record<s
 }
 
 async function proxyGatewayRequest(
-  context: any,
+  getContext: MakersContextProvider,
   conversationId: string,
   request: IncomingMessage,
   response: ServerResponse,
@@ -43,6 +45,7 @@ async function proxyGatewayRequest(
     return
   }
 
+  const context = getContext()
   const upstreamBaseUrl = envValue(context, 'AI_GATEWAY_BASE_URL').replace(/\/+$/, '')
   const apiKey = envValue(context, 'AI_GATEWAY_API_KEY')
   if (!upstreamBaseUrl || !apiKey) {
@@ -90,9 +93,12 @@ async function proxyGatewayRequest(
   response.end()
 }
 
-export async function startLocalGatewayProxy(context: any, conversationId: string): Promise<LocalGatewayProxy> {
+export async function startLocalGatewayProxy(
+  getContext: MakersContextProvider,
+  conversationId: string,
+): Promise<LocalGatewayProxy> {
   const server = createServer((request, response) => {
-    void proxyGatewayRequest(context, conversationId, request, response).catch(error => {
+    void proxyGatewayRequest(getContext, conversationId, request, response).catch(error => {
       if (!response.headersSent) response.writeHead(502, { 'content-type': 'application/json' })
       response.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }))
     })
