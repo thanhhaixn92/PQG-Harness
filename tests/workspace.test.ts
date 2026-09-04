@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { normalizeWorkspacePath, workspaceRoot, writeWorkspaceFile } from '../agents/_workspace.ts'
+import {
+  isSensitiveWorkspacePath,
+  listWorkspace,
+  normalizeWorkspacePath,
+  readWorkspaceFile,
+  workspaceRoot,
+  writeWorkspaceFile,
+} from '../agents/_workspace.ts'
 
 test('workspace paths stay relative and traversal-free', () => {
   assert.equal(normalizeWorkspacePath('src/App.tsx'), 'src/App.tsx')
@@ -17,6 +24,19 @@ test('workspace root sanitizes the conversation id', () => {
   )
 })
 
+test('common secret paths are sensitive while documentation templates remain visible', () => {
+  assert.equal(isSensitiveWorkspacePath('.env'), true)
+  assert.equal(isSensitiveWorkspacePath('.env.local'), true)
+  assert.equal(isSensitiveWorkspacePath('.npmrc'), true)
+  assert.equal(isSensitiveWorkspacePath('keys/id_ed25519'), true)
+  assert.equal(isSensitiveWorkspacePath('certs/private.key'), true)
+  assert.equal(isSensitiveWorkspacePath('service-account.json'), true)
+  assert.equal(isSensitiveWorkspacePath('.env.example'), false)
+  assert.equal(isSensitiveWorkspacePath('.env.sample'), false)
+  assert.equal(isSensitiveWorkspacePath('.env.template'), false)
+  assert.equal(isSensitiveWorkspacePath('src/app.ts'), false)
+})
+
 function missingConversation(action: string) {
   return Object.assign(new Error(`Conversation not found by ${action}.`), {
     code: 'MemoryNotFoundError',
@@ -27,6 +47,7 @@ function createSandbox(written = new Map<string, string>()) {
   return {
     files: {
       makeDir: async () => {},
+      read: async () => '',
       write: async (path: string, content: string) => { written.set(path, content) },
     },
     commands: {
@@ -34,6 +55,60 @@ function createSandbox(written = new Map<string, string>()) {
     },
   }
 }
+
+test('automatic workspace read and write tools reject sensitive paths before file I/O', async () => {
+  let reads = 0
+  let writes = 0
+  const sandbox = {
+    files: {
+      makeDir: async () => {},
+      read: async () => { reads += 1; return 'SECRET' },
+      write: async () => { writes += 1 },
+    },
+    commands: {
+      run: async () => ({ exitCode: 0, stdout: './src\n', stderr: '' }),
+    },
+  }
+  const context = { sandbox }
+
+  await assert.rejects(
+    () => readWorkspaceFile(context, 'conv-1', '.env'),
+    /Sensitive workspace files/,
+  )
+  await assert.rejects(
+    () => writeWorkspaceFile(context, 'conv-1', 'certs/private.key', 'SECRET'),
+    /Sensitive workspace files/,
+  )
+
+  assert.equal(reads, 0)
+  assert.equal(writes, 0)
+})
+
+test('workspace listing hides sensitive files but keeps safe templates', async () => {
+  const sandbox = {
+    files: { makeDir: async () => {} },
+    commands: {
+      async run(command: string) {
+        if (command.includes('-mindepth 1 -maxdepth 1')) {
+          return { exitCode: 0, stdout: './src\n', stderr: '' }
+        }
+        return {
+          exitCode: 0,
+          stdout: [
+            'f\t1\t10\t./.env',
+            'f\t1\t10\t./.env.example',
+            'f\t1\t10\t./certs/private.key',
+            'f\t1\t10\t./src/app.ts',
+          ].join('\n'),
+          stderr: '',
+        }
+      },
+    },
+  }
+
+  const items = await listWorkspace({ sandbox }, 'conv-1')
+  assert.deepEqual(items.map(item => item.path), ['.env.example', 'src/app.ts'])
+})
 
 test('writeWorkspaceFile bootstraps a missing conversation before snapshotting', async () => {
   const written = new Map<string, string>()
