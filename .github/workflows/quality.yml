@@ -1,0 +1,45 @@
+name: quality
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare DSH web once
+        run: npm run prepare:dsh-web
+
+      - name: Verify committed generated artifacts are current
+        run: git diff --exit-code -- index.html public agents/api
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test prepared tree
+        run: npm run test:prepared
+
+      - name: Build prepared frontend
+        run: npm run build:prepared
