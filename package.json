@@ -17,8 +17,10 @@
     "prepare:dsh-web": "node scripts/prepare-dsh-web.mjs && node scripts/generate-dsh-api-routes.mjs",
     "dev": "vite",
     "build": "npm run prepare:dsh-web && vite build",
+    "build:prepared": "vite build",
     "build:makers": "npm run build && npm run prepare:makers-runtime && node scripts/prune-agent-dependencies.mjs && node scripts/clean-agent-node.mjs",
     "test": "npm run prepare:dsh-web && node --experimental-strip-types --test tests/*.test.ts",
+    "test:prepared": "node --experimental-strip-types --test tests/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
