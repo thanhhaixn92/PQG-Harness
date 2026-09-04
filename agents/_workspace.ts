@@ -15,7 +15,6 @@ const SENSITIVE_KEY_EXTENSIONS = ['.key', '.pem', '.p12', '.pfx']
 
 const TEXT_PREVIEW_LIMIT = 512 * 1024
 const SNAPSHOT_FILE_LIMIT = 80
-const SNAPSHOT_BYTE_LIMIT = 2 * 1024 * 1024
 const WORKSPACE_READY_MARKER = '.pqg-workspace-ready'
 
 interface WorkspaceSnapshotFile {
@@ -176,16 +175,6 @@ async function updateConversationMetadata(
   }
 }
 
-async function loadWorkspaceSnapshot(context: any, conversationId: string): Promise<WorkspaceSnapshot> {
-  try {
-    const conversation = await getConversation(context, conversationId)
-    const snapshot = conversation?.metadata?.workspaceSnapshot
-    return snapshot && typeof snapshot === 'object' ? snapshot as WorkspaceSnapshot : {}
-  } catch {
-    return {}
-  }
-}
-
 async function loadLegacyWorkspaceSnapshot(
   context: any,
   conversationId: string,
@@ -252,31 +241,6 @@ async function initializeWorkspace(context: any, conversationId: string, root: s
 
   await persistWorkspaceCheckpoint(context, conversationId, root)
   await markWorkspaceReady(context, root)
-}
-
-async function saveWorkspaceSnapshotFile(
-  context: any,
-  conversationId: string,
-  path: string,
-  content: string,
-): Promise<void> {
-  const snapshot = await loadWorkspaceSnapshot(context, conversationId)
-  snapshot[path] = { content, updatedAt: Date.now() }
-  const ordered = Object.entries(snapshot)
-    .sort((left, right) => right[1].updatedAt - left[1].updatedAt)
-  const bounded: WorkspaceSnapshot = {}
-  let bytes = 0
-  for (const [candidatePath, file] of ordered) {
-    const size = new TextEncoder().encode(file.content).byteLength
-    if (Object.keys(bounded).length >= SNAPSHOT_FILE_LIMIT || bytes + size > SNAPSHOT_BYTE_LIMIT) continue
-    bounded[candidatePath] = file
-    bytes += size
-  }
-  try {
-    await updateConversationMetadata(context, conversationId, { workspaceSnapshot: bounded })
-  } catch (error) {
-    console.warn('[workspace] snapshot persistence failed:', error)
-  }
 }
 
 export async function ensureWorkspace(context: any, conversationId: string): Promise<string> {
@@ -365,7 +329,7 @@ export async function writeWorkspaceFile(
   conversationId: string,
   requestedPath: string,
   content: string,
-): Promise<{ path: string; bytes: number }> {
+): Promise<{ path: string; bytes: number; persisted: true; checkpoint: WorkspaceCheckpoint }> {
   const path = normalizeWorkspacePath(requestedPath)
   if (!path) throw new Error('Invalid workspace file path.')
   if (isSensitiveWorkspacePath(path)) {
@@ -375,8 +339,20 @@ export async function writeWorkspaceFile(
   const parent = path.split('/').slice(0, -1).join('/')
   if (parent) await context.sandbox.files.makeDir(`${root}/${parent}`)
   await context.sandbox.files.write(`${root}/${path}`, content)
-  await saveWorkspaceSnapshotFile(context, conversationId, path, content)
-  return { path, bytes: new TextEncoder().encode(content).byteLength }
+
+  let checkpoint: WorkspaceCheckpoint
+  try {
+    checkpoint = await persistWorkspaceCheckpoint(context, conversationId, root)
+  } catch (error) {
+    throw new Error(`Workspace write completed but checkpoint persistence failed: ${error instanceof Error ? error.message : String(error)}`)
+  }
+
+  return {
+    path,
+    bytes: new TextEncoder().encode(content).byteLength,
+    persisted: true,
+    checkpoint,
+  }
 }
 
 export async function runWorkspaceCommand(
@@ -384,18 +360,37 @@ export async function runWorkspaceCommand(
   conversationId: string,
   command: string,
   timeout = 120,
-): Promise<{ command: string; stdout: string; stderr: string; exitCode: number }> {
+): Promise<{
+  command: string
+  stdout: string
+  stderr: string
+  exitCode: number
+  persistence: WorkspacePersistenceStatus
+}> {
   if (!command.trim()) throw new Error('Command must not be empty.')
   const root = await ensureWorkspace(context, conversationId)
   const result = await context.sandbox.commands.run(command, {
     cwd: root,
     timeout: Math.min(Math.max(Math.round(timeout), 1), 300),
   })
+
+  let persistence: WorkspacePersistenceStatus
+  try {
+    const checkpoint = await persistWorkspaceCheckpoint(context, conversationId, root)
+    persistence = { persisted: true, checkpoint }
+  } catch (error) {
+    persistence = {
+      persisted: false,
+      error: error instanceof Error ? error.message : String(error),
+    }
+  }
+
   return {
     command,
     stdout: String(result.stdout || '').slice(-20_000),
     stderr: String(result.stderr || '').slice(-20_000),
     exitCode: Number(result.exitCode),
+    persistence,
   }
 }
 
