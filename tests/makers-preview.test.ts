@@ -13,6 +13,9 @@ test('browser preview route redirects without serializing sandbox credential in 
       },
     },
     sandbox: {
+      commands: {
+        run: async () => ({ exitCode: 0, stdout: '', stderr: '' }),
+      },
       getHost: () => 'https://9000-test.sandbox.example.com',
       envdAccessToken: 'secret-token',
     },
