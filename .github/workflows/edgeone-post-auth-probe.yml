@@ -1,0 +1,33 @@
+name: edgeone-post-auth-probe
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe anonymous Foundation access surface
+        shell: bash
+        run: |
+          set -u
+          origin='https://pqg-harness.edgeone.cool'
+          probe() {
+            path="$1"
+            accept="$2"
+            headers="$(mktemp)"
+            code="$(curl --silent --show-error --output /dev/null --dump-header "$headers" --write-out '%{http_code}' --max-time 20 -H "Accept: ${accept}" "${origin}${path}" || true)"
+            if [ -z "$code" ]; then code='curl_error'; fi
+            location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]+:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$headers")"
+            printf 'PATH=%s STATUS=%s' "$path" "$code"
+            if [ -n "$location" ]; then printf ' LOCATION=%s' "$location"; fi
+            printf '\n'
+            rm -f "$headers"
+          }
+          probe '/' 'text/html'
+          probe '/pqg-login' 'text/html'
+          probe '/build-meta.json' 'application/json'
