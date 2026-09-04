@@ -5,6 +5,14 @@ const IGNORED_DIRECTORIES = new Set([
 
 const IGNORED_FILES = new Set(['.DS_Store', 'preview'])
 
+const SAFE_ENV_TEMPLATES = new Set(['.env.example', '.env.sample', '.env.template'])
+const SENSITIVE_BASENAMES = new Set([
+  '.env', '.npmrc', '.pypirc', '.netrc',
+  'credentials', 'credentials.json', 'service-account.json',
+])
+const SENSITIVE_KEY_PREFIXES = ['id_rsa', 'id_dsa', 'id_ecdsa', 'id_ed25519']
+const SENSITIVE_KEY_EXTENSIONS = ['.key', '.pem', '.p12', '.pfx']
+
 const TEXT_PREVIEW_LIMIT = 512 * 1024
 const SNAPSHOT_FILE_LIMIT = 80
 const SNAPSHOT_BYTE_LIMIT = 2 * 1024 * 1024
@@ -39,6 +47,17 @@ export function normalizeWorkspacePath(value: string): string | null {
   const parts = path.split('/')
   if (parts.some(part => !part || part === '.' || part === '..')) return null
   return parts.join('/')
+}
+
+export function isSensitiveWorkspacePath(requestedPath: string): boolean {
+  const path = normalizeWorkspacePath(requestedPath)
+  if (!path) return false
+  const name = path.split('/').pop()!.toLowerCase()
+  if (SAFE_ENV_TEMPLATES.has(name)) return false
+  if (SENSITIVE_BASENAMES.has(name)) return true
+  if (name.startsWith('.env.')) return true
+  if (SENSITIVE_KEY_PREFIXES.some(prefix => name === prefix || name.startsWith(`${prefix}.`))) return true
+  return SENSITIVE_KEY_EXTENSIONS.some(extension => name.endsWith(extension))
 }
 
 function shellQuote(value: string): string {
@@ -203,6 +222,7 @@ export async function listWorkspace(context: any, conversationId: string): Promi
     .filter(item => item.rawPath && item.rawPath !== '.' && ['d', 'f', 'l'].includes(item.kind))
     .filter(item => !item.rawPath.split('/').some(segment => IGNORED_DIRECTORIES.has(segment)))
     .filter(item => !IGNORED_FILES.has(item.rawPath.split('/').pop() || ''))
+    .filter(item => !isSensitiveWorkspacePath(item.rawPath))
     .slice(0, 400)
     .map(item => {
       const name = item.rawPath.split('/').pop() || item.rawPath
@@ -226,6 +246,9 @@ export async function readWorkspaceFile(
 ): Promise<{ path: string; content: string; size: number; truncated: boolean }> {
   const path = normalizeWorkspacePath(requestedPath)
   if (!path) throw new Error('Invalid workspace file path.')
+  if (isSensitiveWorkspacePath(path)) {
+    throw new Error('Sensitive workspace files are not available to automatic file tools.')
+  }
   const root = await ensureWorkspace(context, conversationId)
   const result = await context.sandbox.files.read(`${root}/${path}`)
   const content = typeof result === 'string'
@@ -253,6 +276,9 @@ export async function writeWorkspaceFile(
 ): Promise<{ path: string; bytes: number }> {
   const path = normalizeWorkspacePath(requestedPath)
   if (!path) throw new Error('Invalid workspace file path.')
+  if (isSensitiveWorkspacePath(path)) {
+    throw new Error('Sensitive workspace files are not available to automatic file tools.')
+  }
   const root = await ensureWorkspace(context, conversationId)
   const parent = path.split('/').slice(0, -1).join('/')
   if (parent) await context.sandbox.files.makeDir(`${root}/${parent}`)
