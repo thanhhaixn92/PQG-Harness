@@ -2,7 +2,7 @@
 
 Repository: `thanhhaixn92/PQG-Harness`
 
-Direct GitHub branch metadata was re-read during WP7. The current canonical `main` remains:
+Direct GitHub branch metadata was re-read after the project owner reported EdgeOne Git integration reconnected. The canonical `main` remains:
 
 ```text
 commit: 70119cfdae992a203a5e29eb24e91c7200222a7c
@@ -11,22 +11,30 @@ protection.enabled: false
 required_status_checks.enforcement_level: off
 required_status_checks.contexts: []
 required_status_checks.checks: []
+repository rulesets: []
 ```
 
 ## Interpretation
 
 The `quality` workflow exists and has been used as the source-side gate for Foundation candidates, but GitHub currently does **not** enforce that workflow as a required check on `main`.
 
-Therefore Phase 1B finding M09 is not fully closed at the repository-enforcement layer and remains **BLOCKED before any Git Auto Deploy reconnect**.
+Phase 1B finding M09 therefore remains open at the repository-enforcement layer.
 
-## Required action
+The original safety plan required this guardrail **before** reconnecting a Git-linked deployment. The project owner has now reported EdgeOne Git integration **RECONNECTED on 2026-09-04** before the guardrail was configured. This is a sequencing deviation, not evidence that the guardrail is no longer required.
 
-Before reconnecting a Git-linked Production deployment:
+## Required action now
 
-1. protect `main` or create an equivalent repository ruleset;
-2. require pull-request based changes for the deployment branch;
-3. require the `quality` check before merge/promotion;
-4. verify the rule is active by re-reading branch/ruleset metadata;
-5. only then review reconnecting EdgeOne Git Auto Deploy.
+Before any merge/push is used as a release or Production-promotion mechanism:
 
-The GitHub connector available to this execution environment exposes branch-protection/ruleset reads but no administration write action, so WP7 cannot safely apply this repository setting from the current session. It is retained as an explicit release gate rather than represented as complete.
+1. verify the actual EdgeOne Production branch after reconnect;
+2. protect that deployment branch or create an equivalent repository ruleset;
+3. require pull-request based changes for the deployment branch where supported;
+4. require the `quality` check before merge/promotion;
+5. verify the rule is active by re-reading branch/ruleset metadata;
+6. verify deployed `/build-meta.json` after any approved promotion.
+
+Until these steps are complete, **do not merge Foundation changes to `main` on the assumption that the reconnect is safe**.
+
+The GitHub connector available to this execution environment exposes branch-protection/ruleset reads but no administration write action, so this repository setting cannot safely be applied from the current session. It is retained as an explicit Foundation Freeze blocker rather than represented as complete.
+
+See `docs/verification/2026-09-04-edgeone-reconnect-status.md` for the owner-reported reconnect evidence and current live-verification limitations.
