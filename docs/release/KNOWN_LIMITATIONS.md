@@ -12,7 +12,7 @@ Do not assume the deployment is private. If the outer platform boundary is insuf
 
 ## 2. Controlled Preview evidence is BLOCKED
 
-The current execution environment cannot create/use a controlled EdgeOne Preview deployment. Therefore the following remain BLOCKED:
+EdgeOne Git integration is now owner-reported reconnected, but this session still does not have a reachable controlled Preview URL or direct Console access. Therefore the following remain BLOCKED:
 
 - exact deployed `/build-meta.json` parity;
 - workspace recycle/recovery proof;
@@ -22,13 +22,15 @@ The current execution environment cannot create/use a controlled EdgeOne Preview
 - native logs/metrics/traces correlation;
 - rollback rehearsal.
 
-Source-side tests do not substitute for these live cases.
+Reconnect alone does not satisfy these cases. Source-side tests do not substitute for live evidence.
 
 ## 3. Production identity and topology are NOT VERIFIED
 
-The repository records Git Auto Deploy as **DISCONNECTED** by the owner. The current Production deployment commit, Production/Preview branch mapping, environment-variable scope, and rollback mechanism have not been independently verified from this execution environment.
+The project owner reports EdgeOne Git integration was **RECONNECTED on 2026-09-04**. The current Production deployment commit, Production/Preview branch mapping, environment-variable scope, and rollback mechanism have not been independently verified from this execution environment.
 
-The existing known URL may therefore run an older source revision. No statement in Foundation docs should imply deployed parity until `/build-meta.json` is checked on a controlled deployment.
+The existing known URL may still run an older or different source revision. No statement in Foundation docs should imply deployed parity until `/build-meta.json` and the EdgeOne deployment mapping are checked on a controlled deployment.
+
+See `docs/verification/2026-09-04-edgeone-reconnect-status.md`.
 
 ## 4. Main required-quality enforcement is confirmed absent
 
@@ -43,7 +45,7 @@ repository rulesets: []
 
 The repository has a working `quality` workflow and Foundation candidates have been verified through temporary PRs targeting `main`, but GitHub does not currently enforce that workflow on the branch.
 
-The connector available in this session exposes branch-protection/ruleset reads but no administration write action. Before any Git Auto Deploy reconnect, protect the deployment branch and require the `quality` gate. See `docs/verification/2026-09-04-main-guardrail.md`.
+The connector available in this session exposes branch-protection/ruleset reads but no administration write action. Because EdgeOne Git integration is already owner-reported reconnected, the safety requirement is now stricter: **do not merge/push a Foundation promotion through `main` until the actual deployment branch is verified and required `quality` enforcement is configured**. See `docs/verification/2026-09-04-main-guardrail.md`.
 
 ## 5. Symlink/canonical filesystem policy is incomplete
 
