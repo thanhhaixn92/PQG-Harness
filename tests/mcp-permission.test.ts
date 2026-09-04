@@ -111,7 +111,7 @@ test('pre-execute fails closed when sandbox policy is missing or throws', () => 
 })
 
 test('MCP bridge registers every tool instead of filtering by mode', async () => {
-  const source = await readFile(new URL('../agents/_mcp-bridge.ts', import.meta.url), 'utf8')
+  const source = await readFile(new URL('../agents/_mcp-bridge-base.ts', import.meta.url), 'utf8')
   assert.match(source, /server\.registerTool\(name/)
   assert.doesNotMatch(source, /if \(!allowed\.has/)
   assert.doesNotMatch(source, /permissionDeniedMessage/)
