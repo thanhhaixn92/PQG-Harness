@@ -66,7 +66,7 @@ test('workspace command sandbox registration ends before checkpoint persistence 
 
   const registerIndex = block.indexOf('registerActiveWorkspaceSandbox')
   const runIndex = block.indexOf('context.sandbox.commands.run')
-  const releaseIndex = block.indexOf('releaseActiveSandbox')
+  const releaseIndex = block.indexOf('releaseActiveSandbox()')
   const persistIndex = block.indexOf('persistWorkspaceCheckpoint')
 
   assert.ok(registerIndex >= 0, 'runWorkspaceCommand must register the execution sandbox')
