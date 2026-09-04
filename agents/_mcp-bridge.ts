@@ -167,7 +167,10 @@ async function createMcpServer(context: any, conversationId: string): Promise<Mc
   }, async ({ command, timeout }) => {
     try {
       const result = await runWorkspaceCommand(context, conversationId, command, timeout)
-      return { content: [{ type: 'text', text: JSON.stringify(result) }], isError: result.exitCode !== 0 }
+      return {
+        content: [{ type: 'text', text: JSON.stringify(result) }],
+        isError: result.exitCode !== 0 || result.persistence.persisted !== true,
+      }
     } catch (error) {
       return { content: [{ type: 'text', text: error instanceof Error ? error.message : String(error) }], isError: true }
     }
