@@ -1,4 +1,4 @@
-import { activeWorkspaceSandboxHandles } from './_active-sandbox.ts'
+import { beginWorkspaceStop } from './_active-sandbox.ts'
 import { stopDshWebSidecar } from './_dsh-web-sidecar.ts'
 
 type SandboxStopResult =
@@ -31,7 +31,7 @@ export async function onRequestPost(context: any): Promise<Response> {
     return Response.json({ ok: false, error: 'conversation_id is required' }, { status: 400 })
   }
 
-  const activeSandboxes = activeWorkspaceSandboxHandles(conversationId)
+  const activeSandboxes = beginWorkspaceStop(conversationId)
   const sandboxes = activeSandboxes.length > 0 ? activeSandboxes : [context.sandbox]
   const [webResult, platformResult, sandboxResult] = await Promise.allSettled([
     stopDshWebSidecar(conversationId),
