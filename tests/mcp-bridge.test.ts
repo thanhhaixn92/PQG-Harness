@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import { appendMcpRequestMetadata } from '../agents/_mcp-bridge.ts'
 
@@ -26,4 +27,12 @@ test('MCP request diagnostics retain only bounded metadata', () => {
   assert.equal(next.at(-1)?.bodyBytes, 79)
   assert.ok(next.every(entry => !Object.hasOwn(entry, 'body')))
   assert.ok(next.every(entry => Object.keys(entry).sort().join(',') === 'bodyBytes,method,url'))
+})
+
+test('workspace command MCP result treats durability failure as a tool error', async () => {
+  const source = await readFile(new URL('../agents/_mcp-bridge.ts', import.meta.url), 'utf8')
+  assert.match(
+    source,
+    /result\.exitCode\s*!==\s*0\s*\|\|\s*result\.persistence\.persisted\s*!==\s*true/,
+  )
 })
