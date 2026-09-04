@@ -22,14 +22,39 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run prepare:dsh-web
+      - name: Migrate the legacy hostname locale contract
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          path = Path('tests/dsh-web.test.ts')
+          text = path.read_text()
+          pattern = r"test\('locale defaults from hostname instead of the browser language', async \(\) => \{.*?\n\}\)\n\ntest\('page chrome keeps GitHub, deploy, and a contact dialog'"
+          replacement = '''test('locale defaults from browser language instead of hostname', async () => {
+            const source = await readFile(
+              new URL('../public/plugins/@deepseek-ai/dsh-client-locale/client.js', import.meta.url),
+              'utf8',
+            )
+            assert.match(source, /function resolveInitialLocale\\(\\)/)
+            assert.match(source, /navigator\\.languages/)
+            assert.match(source, /navigator\\.language/)
+            assert.doesNotMatch(source, /location\\.hostname\\.endsWith/)
+          })
+
+          test('page chrome keeps GitHub, deploy, and a contact dialog' '''
+          next_text, count = re.subn(pattern, replacement, text, count=1, flags=re.S)
+          if count != 1:
+            raise SystemExit('legacy locale test patch point missing')
+          path.write_text(next_text)
+          PY
       - name: Commit deterministic generated artifacts
         run: |
-          if git diff --quiet -- index.html public agents/api; then
-            echo "Generated artifacts already current."
+          if git diff --quiet -- index.html public agents/api tests/dsh-web.test.ts; then
+            echo "Generated artifacts and locale contract already current."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add index.html public agents/api
+          git add index.html public agents/api tests/dsh-web.test.ts
           git commit -m "chore(wp6): regenerate productized DSH web"
           git push origin HEAD:impl/wp6-product-locale-a11y
