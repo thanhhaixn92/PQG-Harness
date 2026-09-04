@@ -1,0 +1,64 @@
+name: wp4-lock-refresh
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'impl/wp4-supply-chain-core'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Refresh lock without transitive churn
+        run: |
+          cp package-lock.json /tmp/package-lock.before.json
+          npm install --package-lock-only --ignore-scripts
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'
+          import assert from 'node:assert/strict'
+          const before = JSON.parse(fs.readFileSync('/tmp/package-lock.before.json', 'utf8'))
+          const after = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'))
+          const normalize = lock => {
+            const copy = structuredClone(lock)
+            const root = copy.packages?.['']
+            if (root?.dependencies) {
+              for (const name of Object.keys(root.dependencies)) {
+                if (name === '@deepseek-ai/dsh' || name.startsWith('@deepseek-ai/dsh-')) root.dependencies[name] = '0.1.0-rc.6'
+              }
+              root.dependencies.ws = '8.21.3'
+            }
+            if (copy.packages?.['node_modules/ws']) copy.packages['node_modules/ws'] = '__WS_ENTRY__'
+            return copy
+          }
+          assert.deepEqual(normalize(after), normalize(before), 'npm attempted unrelated lockfile churn')
+          const root = after.packages?.['']?.dependencies || {}
+          for (const [name, version] of Object.entries(root)) {
+            if (name === '@deepseek-ai/dsh' || name.startsWith('@deepseek-ai/dsh-')) assert.equal(version, '0.1.0-rc.6')
+          }
+          assert.equal(root.ws, '8.21.3')
+          assert.equal(after.packages?.['node_modules/ws']?.version, '8.21.3')
+          assert.equal(after.packages?.['node_modules/ws']?.integrity, 'sha512-201TZ/kPWxoPr/OKWjquZR1SWKXcvxdH+e1xrx89b3YbmzLMFCLfnaG1HFIgWzJOEWZ7MvpK++odZufgYR50Rw==')
+          NODE
+
+      - name: Commit refreshed lock if needed
+        run: |
+          if git diff --quiet -- package-lock.json; then exit 0; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add package-lock.json
+          git commit -m 'chore(wp4): refresh reviewed lockfile'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
