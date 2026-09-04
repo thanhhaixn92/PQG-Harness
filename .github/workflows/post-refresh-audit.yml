@@ -1,0 +1,35 @@
+name: post-refresh-audit
+
+on:
+  push:
+    branches:
+      - impl/foundation-transitive-security-refresh
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Report residual audit findings
+        shell: bash
+        run: |
+          npm audit --json > audit.json || true
+          node <<'NODE'
+          const fs = require('fs')
+          const report = JSON.parse(fs.readFileSync('audit.json', 'utf8'))
+          console.log('AUDIT_COUNTS', JSON.stringify(report.metadata?.vulnerabilities || {}))
+          for (const [name, item] of Object.entries(report.vulnerabilities || {})) {
+            const via = (item.via || []).map((entry) => typeof entry === 'string' ? entry : `${entry.source}:${entry.title}`).join(' | ')
+            const fix = item.fixAvailable === false ? 'false' : JSON.stringify(item.fixAvailable)
+            console.log(`AUDIT_VULN name=${name} severity=${item.severity} direct=${item.isDirect} range=${item.range} via=${via} fix=${fix}`)
+          }
+          NODE
