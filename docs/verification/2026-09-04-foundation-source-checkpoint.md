@@ -91,19 +91,20 @@ See `docs/verification/2026-09-04-edgeone-reconnect-status.md`.
 
 ## Known EdgeOne deployment probe
 
-Known deployment URL recorded by the project:
+Canonical non-secret origin supplied by the project owner:
 
 ```text
-https://pqg-harness-dp0dukyw6bfl.edgeone.cool/
+https://pqg-harness.edgeone.cool/
 ```
 
-After reconnect was reported, a fresh network probe from the current execution runtime still failed before HTTP because DNS resolution was unavailable:
+The owner supplied a tokenized access URL for verification. The credential/query parameters are intentionally not stored in this repository.
 
-```text
-curl: (6) Could not resolve host: pqg-harness-dp0dukyw6bfl.edgeone.cool
-```
+After reconnect and after receiving that access URL, fresh probes from the current execution runtime still failed before application content was available:
 
-The same limitation prevented a request to `/build-meta.json`.
+- direct runtime HTTP failed DNS resolution for `pqg-harness.edgeone.cool`;
+- the separate web-fetch path returned no application response.
+
+The same environment limitation prevented a verified request to `/build-meta.json`.
 
 Interpretation:
 
