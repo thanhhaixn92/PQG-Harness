@@ -32,7 +32,7 @@ export async function runWithSandboxAbort<T>(
   }
 
   if (signal.aborted) {
-    await killOnce()
+    void killOnce()
     throw workspaceAbortError()
   }
 
@@ -41,7 +41,11 @@ export async function runWithSandboxAbort<T>(
     rejectAbort = reject
   })
   const onAbort = (): void => {
-    void killOnce().finally(() => rejectAbort(workspaceAbortError()))
+    // Cancellation settlement must not wait for sandbox.kill(). A slow kill
+    // must never allow a concurrently settling command to win the race and
+    // advance into checkpoint persistence. The kill still runs exactly once.
+    void killOnce()
+    rejectAbort(workspaceAbortError())
   }
 
   signal.addEventListener('abort', onAbort, { once: true })
@@ -49,7 +53,7 @@ export async function runWithSandboxAbort<T>(
     return await Promise.race([operation(), aborted])
   } catch (error) {
     if (signal.aborted) {
-      await killOnce()
+      void killOnce()
       throw workspaceAbortError()
     }
     throw error
