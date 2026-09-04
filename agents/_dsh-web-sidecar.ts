@@ -434,11 +434,13 @@ async function startSidecarAttempt(context: any, conversationId: string): Promis
   let gateway: LocalGatewayProxy | undefined
   let mcp: LocalMcpBridge | undefined
   let child: ChildProcess | undefined
+  let sidecar!: DshWebSidecar
+  const getContext = (): any => sidecar?.context ?? context
 
   try {
     const port = await freePort()
-    gateway = await startLocalGatewayProxy(context, conversationId)
-    mcp = await startLocalMcpBridge(context, conversationId)
+    gateway = await startLocalGatewayProxy(getContext, conversationId)
+    mcp = await startLocalMcpBridge(getContext, conversationId)
     const home = dshHomeFor(conversationId)
     const defaultModel = envString(context, 'AI_GATEWAY_MODEL') || DEFAULT_MAKERS_MODEL
     const deepseekApiKey = envString(context, 'DEEPSEEK_API_KEY')
@@ -484,7 +486,6 @@ async function startSidecarAttempt(context: any, conversationId: string): Promis
     const runningGateway = gateway
     const runningMcp = mcp
     let closePromise: Promise<void> | undefined
-    let sidecar!: DshWebSidecar
 
     const closeSidecarResources = async (): Promise<void> => {
       await snapshotDshSettingsYaml(sidecar.context, conversationId, home)
