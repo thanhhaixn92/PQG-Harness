@@ -37,8 +37,12 @@ test('workspace command MCP result treats durability failure as a tool error', a
   )
 })
 
-test('workspace command registers its sandbox for Stop for the full command lifetime', async () => {
+test('workspace command MCP wrapper delegates cancellation scope to the workspace execution layer', async () => {
   const source = await readFile(new URL('../agents/_mcp-bridge.ts', import.meta.url), 'utf8')
-  assert.match(source, /registerActiveWorkspaceSandbox\(conversationId,\s*context\.sandbox\)/)
-  assert.match(source, /finally\s*\{\s*releaseActiveSandbox\(\)\s*\}/)
+  const start = source.indexOf("register('workspace_run_command'")
+  const end = source.indexOf("register('publish_preview'", start)
+  assert.ok(start >= 0 && end > start)
+  const block = source.slice(start, end)
+  assert.doesNotMatch(block, /registerActiveWorkspaceSandbox/)
+  assert.match(block, /runWorkspaceCommand\(context,\s*conversationId,\s*command,\s*timeout\)/)
 })
