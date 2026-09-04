@@ -29,6 +29,8 @@ jobs:
           import re
           path = Path('tests/dsh-web.test.ts')
           text = path.read_text()
+          if "locale defaults from browser language instead of hostname" in text:
+            raise SystemExit(0)
           pattern = r"test\('locale defaults from hostname instead of the browser language', async \(\) => \{.*?\n\}\)\n\ntest\('page chrome keeps GitHub, deploy, and a contact dialog'"
           replacement = '''test('locale defaults from browser language instead of hostname', async () => {
             const source = await readFile(
