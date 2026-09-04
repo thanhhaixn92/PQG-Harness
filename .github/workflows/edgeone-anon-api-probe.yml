@@ -1,0 +1,35 @@
+name: edgeone-anon-api-probe
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe anonymous API boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          origin='https://pqg-harness.edgeone.cool'
+          headers="$(mktemp)"
+          body="$(mktemp)"
+          code="$(curl --silent --show-error --output "$body" --dump-header "$headers" --write-out '%{http_code}' --max-time 20 -H 'Accept: application/json' "${origin}/api/agentPreset.list")"
+          printf 'PATH=/api/agentPreset.list STATUS=%s\n' "$code"
+          if [ "$code" != '401' ]; then
+            echo 'Expected anonymous API request to be rejected with 401 before runtime.' >&2
+            echo 'Response body (first 200 bytes):' >&2
+            head -c 200 "$body" >&2 || true
+            exit 1
+          fi
+          if grep -qi 'set-cookie:' "$headers"; then
+            echo 'Unexpected session cookie on anonymous rejected API request.' >&2
+            exit 1
+          fi
+          rm -f "$headers" "$body"
