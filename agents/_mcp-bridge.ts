@@ -132,9 +132,15 @@ async function createMcpServer(context: any, conversationId: string): Promise<Mc
   register('workspace_list_files', {
     description: 'List the current coding workspace. Paths are relative to the workspace root.',
     inputSchema: {},
-  }, async () => ({
-    content: [{ type: 'text', text: JSON.stringify({ root: workspaceRoot(conversationId), items: await listWorkspace(context, conversationId) }) }],
-  }))
+  }, async () => {
+    const listing = await listWorkspace(context, conversationId)
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({ root: workspaceRoot(conversationId), ...listing }),
+      }],
+    }
+  })
 
   register('workspace_read_file', {
     description: 'Read one UTF-8 source file from the coding workspace using a relative path.',
