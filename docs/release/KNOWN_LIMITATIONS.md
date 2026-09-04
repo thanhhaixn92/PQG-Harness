@@ -65,11 +65,13 @@ All direct DSH packages are intentionally frozen at `0.1.0-rc.6`. This avoids a 
 
 Do not opportunistically upgrade individual DSH packages. A later DSH migration should be isolated, reviewed as one compatibility wave, and validated through generated drift, tests, Preview smoke, and rollback.
 
-## 8. Current dependency audit findings are not fully modernized
+## 8. Dependency audit is point-in-time evidence
 
-Current `npm ci` quality logs report dependency audit findings. WP4 fixed the reviewed `ws` issue, froze the DSH wave, and added native-package integrity verification; it did not perform a broad forced dependency upgrade.
+The Foundation dependency cleanup removed an unused root OpenTelemetry dependency wave and refreshed the compatible `fast-uri` / `qs` transitive resolutions without `--force` or a DSH upgrade. Fresh quality on the cleaned candidate reported `npm ci` auditing 563 packages with **0 known vulnerabilities** and all 90 tests/build checks passing.
 
-Before a stable/public release, triage remaining high/moderate findings for exploitability in this runtime rather than automatically running a breaking `npm audit fix --force`.
+This is a point-in-time npm advisory result, not a guarantee that the dependency graph is permanently vulnerability-free. New advisories can affect the same locked versions later, and install-script/native-package trust remains a separate supply-chain concern.
+
+See `docs/verification/2026-09-04-foundation-dependency-cleanup.md`. Re-run dependency review before stable/public release and during any DSH compatibility wave rather than applying blind forced upgrades.
 
 ## 9. Full Vietnamese localization is deferred
 
