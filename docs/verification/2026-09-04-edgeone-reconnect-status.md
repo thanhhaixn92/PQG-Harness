@@ -6,6 +6,12 @@ The project owner reports that the repository has been reconnected to EdgeOne Gi
 
 This is an operational state change from the earlier owner-recorded DISCONNECTED state. The current session does not have direct EdgeOne Console access, so the reconnect itself is recorded as **OWNER-REPORTED / not independently Console-verified**.
 
+The owner also supplied a tokenized EdgeOne access URL. The credential/query parameters are intentionally **not recorded** in repository evidence. Only the non-secret origin is retained:
+
+```text
+https://pqg-harness.edgeone.cool/
+```
+
 ## GitHub state at reconnect follow-up
 
 Fresh GitHub verification after the owner reported reconnect:
@@ -39,25 +45,24 @@ No Foundation work has been merged to `main`.
 
 ## Live network probe after reconnect
 
-The known deployment URL remains:
+The canonical non-secret deployment origin supplied by the owner is:
 
 ```text
-https://pqg-harness-dp0dukyw6bfl.edgeone.cool/
+https://pqg-harness.edgeone.cool/
 ```
 
-After reconnect was reported, a fresh probe from the current execution runtime still failed before HTTP because DNS resolution was unavailable:
+After reconnect and after receiving the tokenized access URL, two independent fetch paths in the current execution environment still could not complete an HTTP request:
 
-```text
-curl: (6) Could not resolve host: pqg-harness-dp0dukyw6bfl.edgeone.cool
-```
+- web fetch returned a cache-miss/internal fetch failure before application content was available;
+- direct runtime HTTP failed DNS resolution for `pqg-harness.edgeone.cool`.
 
-The same limitation prevents direct verification of `/build-meta.json` from this runtime.
+The credential itself is not logged here. The same environment limitation prevents direct verification of `/build-meta.json`.
 
 The GitHub commit check/status surfaces inspected for the current integration checkpoint did not expose EdgeOne deployment metadata or a Preview URL. Absence of those GitHub records is **not** evidence that EdgeOne did not deploy; it only means this session cannot use those surfaces as deployment identity evidence.
 
 ## Interpretation
 
-Reconnect changes the operational safety posture but does not close any live release gate by itself:
+Reconnect and a valid-looking owner-supplied access URL change the operational safety posture but do not close any live release gate by themselves:
 
 - Production/Preview branch mapping: **NOT VERIFIED**;
 - current deployed commit/tree parity: **NOT VERIFIED**;
