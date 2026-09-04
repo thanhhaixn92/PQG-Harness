@@ -21,10 +21,11 @@ function fakeSidecar(conversationId: string, close: () => Promise<void>): any {
   }
 }
 
-test('platform abort starts even while sidecar shutdown is waiting for startup', async () => {
+test('platform abort and sandbox kill start even while sidecar shutdown is waiting for startup', async () => {
   let releaseStart!: () => void
   const startGate = new Promise<void>(resolve => { releaseStart = resolve })
   let abortCalls = 0
+  let killCalls = 0
   let closeCalls = 0
 
   __setSidecarStarterForTests(async (_context: any, conversationId: string) => {
@@ -45,11 +46,17 @@ test('platform abort starts even while sidecar shutdown is waiting for startup',
         return { aborted: true }
       },
     },
+    sandbox: {
+      async kill() {
+        killCalls += 1
+      },
+    },
   })
 
   try {
     await new Promise(resolve => setTimeout(resolve, 0))
     assert.equal(abortCalls, 1, 'platform abort must start without waiting for sidecar close')
+    assert.equal(killCalls, 1, 'sandbox kill must start without waiting for sidecar close')
   } finally {
     releaseStart()
   }
@@ -61,11 +68,12 @@ test('platform abort starts even while sidecar shutdown is waiting for startup',
   assert.equal(body.ok, true)
   assert.deepEqual(body.sidecar, { found: true, closed: true })
   assert.deepEqual(body.platform, { aborted: true })
+  assert.deepEqual(body.sandbox, { killed: true })
   assert.equal(closeCalls, 1)
   __setSidecarStarterForTests(undefined)
 })
 
-test('Stop returns stable non-secret outcomes when both abort phases fail', async () => {
+test('Stop returns stable non-secret outcomes when sidecar, platform abort, and sandbox kill fail', async () => {
   __setSidecarStarterForTests(async (_context: any, conversationId: string) =>
     fakeSidecar(conversationId, async () => {
       throw new Error('sensitive sidecar close detail')
@@ -80,6 +88,11 @@ test('Stop returns stable non-secret outcomes when both abort phases fail', asyn
       utils: {
         async abortActiveRun() {
           throw new Error('sensitive platform abort detail')
+        },
+      },
+      sandbox: {
+        async kill() {
+          throw new Error('sensitive sandbox kill detail')
         },
       },
     })
@@ -97,10 +110,34 @@ test('Stop returns stable non-secret outcomes when both abort phases fail', asyn
       aborted: false,
       error: 'PLATFORM_ABORT_FAILED',
     })
+    assert.deepEqual(body.sandbox, {
+      killed: false,
+      error: 'SANDBOX_KILL_FAILED',
+    })
     assert.equal(serialized.includes('sensitive sidecar close detail'), false)
     assert.equal(serialized.includes('sensitive platform abort detail'), false)
+    assert.equal(serialized.includes('sensitive sandbox kill detail'), false)
   } finally {
     __setSidecarStarterForTests(undefined)
     await stopDshWebSidecar('conv-stop-errors')
   }
+})
+
+test('Stop fails closed when sandbox kill is unavailable', async () => {
+  const response = await onRequestPost({
+    request: { body: { conversation_id: 'conv-stop-no-kill' } },
+    utils: {
+      async abortActiveRun() {
+        return { aborted: true }
+      },
+    },
+  })
+  const body = await response.json() as any
+
+  assert.equal(response.status, 200)
+  assert.equal(body.ok, false)
+  assert.deepEqual(body.sandbox, {
+    killed: false,
+    error: 'SANDBOX_KILL_UNAVAILABLE',
+  })
 })
