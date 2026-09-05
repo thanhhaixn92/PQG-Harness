@@ -16,6 +16,8 @@ const SENSITIVE_KEY_EXTENSIONS = ['.key', '.pem', '.p12', '.pfx']
 const TEXT_PREVIEW_LIMIT = 512 * 1024
 const SNAPSHOT_FILE_LIMIT = 80
 const WORKSPACE_READY_MARKER = '.pqg-workspace-ready'
+const STATIC_PREVIEW_ROOT = '/tmp/dsh-preview-static'
+const STATIC_PREVIEW_DOCUMENT_ROOT = `${STATIC_PREVIEW_ROOT}/preview`
 
 interface WorkspaceSnapshotFile {
   content: string
@@ -421,6 +423,44 @@ function appendAccessToken(url: string, token: string): string {
   return parsed.toString()
 }
 
+export async function resolveStaticPreviewSource(context: any, root: string): Promise<string> {
+  for (const relative of ['dist', 'build', 'out', 'public', '']) {
+    const source = relative ? `${root}/${relative}` : root
+    if (await context.sandbox.files.exists(`${source}/index.html`)) return source
+  }
+  return root
+}
+
+export async function stageStaticPreview(context: any, source: string): Promise<void> {
+  const ignored = [...IGNORED_DIRECTORIES]
+    .map(directory => `-path './${directory}'`)
+    .join(' -o ')
+  const copyScript = [
+    'dest="$1"; shift;',
+    'for file do',
+    'name=${file##*/};',
+    'case "$name" in',
+    '.env.example|.env.sample|.env.template) ;;',
+    '.env|.env.*|.npmrc|.pypirc|.netrc|credentials|credentials.json|service-account.json|id_rsa|id_rsa.*|id_dsa|id_dsa.*|id_ecdsa|id_ecdsa.*|id_ed25519|id_ed25519.*|*.key|*.pem|*.p12|*.pfx) continue ;;',
+    'esac;',
+    'relative=${file#./};',
+    'mkdir -p "$dest/$(dirname "$relative")";',
+    'cp -- "$file" "$dest/$relative";',
+    'done',
+  ].join(' ')
+  const result = await context.sandbox.commands.run([
+    `rm -rf ${shellQuote(STATIC_PREVIEW_ROOT)} && mkdir -p ${shellQuote(STATIC_PREVIEW_DOCUMENT_ROOT)} &&`,
+    `find . \\( ${ignored} \\) -prune -o -type f -exec sh -c`,
+    shellQuote(copyScript),
+    'sh',
+    shellQuote(STATIC_PREVIEW_DOCUMENT_ROOT),
+    '{} +',
+  ].join(' '), { cwd: source, timeout: 30 })
+  if (result.exitCode !== 0) {
+    throw new Error(result.stderr || result.stdout || 'Failed to stage static preview.')
+  }
+}
+
 export async function publishWorkspacePreview(
   context: any,
   conversationId: string,
@@ -435,7 +475,7 @@ export async function publishWorkspacePreview(
   await context.sandbox.commands.run(release, { timeout: 10 })
 
   let framework = 'static'
-  let command = "ln -sfn . preview; : > /tmp/dsh-preview.log; nohup python3 -m http.server 3000 --bind 0.0.0.0 >> /tmp/dsh-preview.log 2>&1 &"
+  let command = ''
   if (packageJsonExists) {
     const scripts = await context.sandbox.commands.run(
       "node -e \"const p=require('./package.json'); console.log(JSON.stringify(p.scripts||{}))\"",
@@ -456,6 +496,16 @@ export async function publishWorkspacePreview(
       framework = 'node-start'
       command = ': > /tmp/dsh-preview.log; nohup env PORT=3000 npm run start >> /tmp/dsh-preview.log 2>&1 &'
     }
+  }
+
+  if (!command) {
+    const source = await resolveStaticPreviewSource(context, root)
+    await stageStaticPreview(context, source)
+    command = [
+      ': > /tmp/dsh-preview.log;',
+      `nohup python3 -m http.server 3000 --bind 0.0.0.0 --directory ${shellQuote(STATIC_PREVIEW_ROOT)}`,
+      '>> /tmp/dsh-preview.log 2>&1 &',
+    ].join(' ')
   }
 
   const started = await context.sandbox.commands.run(command, { cwd: root, timeout: 15 })
@@ -484,34 +534,28 @@ export async function currentPreview(
   context: any,
   conversationId: string,
 ): Promise<{ previewUrl?: string; published: boolean }> {
+  let conversation: any
   try {
-    const conversation = await getConversation(context, conversationId)
-    const published = conversation?.metadata?.preview?.published === true
-    if (!published) return { published: false }
+    conversation = await getConversation(context, conversationId)
+  } catch (error) {
+    if (isMissingConversation(error)) return { published: false }
+    throw error
+  }
 
-    const health = await context.sandbox.commands.run(
-      "curl -fsS http://127.0.0.1:3000/preview/ >/dev/null 2>&1 || curl -fsS http://127.0.0.1:3000/ >/dev/null 2>&1",
-      { timeout: 5 },
-    )
-    if (health.exitCode !== 0) {
-      try {
-        await updateConversationMetadata(context, conversationId, {
-          preview: { published: false, updatedAt: Date.now() },
-        })
-      } catch (error) {
-        console.warn('[workspace] stale preview metadata cleanup failed:', error)
-      }
-      return { published: false }
-    }
+  const published = conversation?.metadata?.preview?.published === true
+  if (!published) return { published: false }
 
-    try {
-      const host = normalizePublicUrl(context.sandbox.getHost(9000))
-      const token = String(context.sandbox.envdAccessToken || '')
-      return { published: true, ...(host && token ? { previewUrl: appendAccessToken(host, token) } : {}) }
-    } catch {
-      return { published: true }
-    }
+  const health = await context.sandbox.commands.run(
+    "curl -fsS http://127.0.0.1:3000/preview/ >/dev/null 2>&1 || curl -fsS http://127.0.0.1:3000/ >/dev/null 2>&1",
+    { timeout: 5 },
+  )
+  if (health.exitCode !== 0) return { published: true }
+
+  try {
+    const host = normalizePublicUrl(context.sandbox.getHost(9000))
+    const token = String(context.sandbox.envdAccessToken || '')
+    return { published: true, ...(host && token ? { previewUrl: appendAccessToken(host, token) } : {}) }
   } catch {
-    return { published: false }
+    return { published: true }
   }
 }
