@@ -118,6 +118,7 @@ export async function runWithSandboxAbort<T>(
 
   let signalCancelled = false
   let sharedCancelled = false
+  let sharedFailure: Error | undefined
   let pollTimer: ReturnType<typeof setTimeout> | undefined
   let polling = true
 
@@ -193,7 +194,7 @@ export async function runWithSandboxAbort<T>(
     const pollIntervalMs = Math.max(20, options.pollIntervalMs ?? 100)
 
     const pollSharedStop = async (): Promise<void> => {
-      if (!polling || !state || sharedCancelled) return
+      if (!polling || !state || sharedCancelled || sharedFailure) return
       try {
         const currentEpoch = await readStopEpoch(state)
         // A timer can expire while the read is in flight. Once this wrapper has
@@ -212,9 +213,11 @@ export async function runWithSandboxAbort<T>(
       } catch {
         if (!polling) return
         if (options.requireSharedStop === true) {
-          const unavailable = cancellationUnavailableError()
+          // Record the authoritative failure before kill can synchronously make
+          // commands.run reject. The outer catch must preserve this stable code.
+          sharedFailure = cancellationUnavailableError()
           void killOnce().then(
-            () => rejectShared(unavailable),
+            () => rejectShared(sharedFailure!),
             error => rejectShared(error instanceof Error
               ? error
               : stableError('SandboxTerminationError', 'SANDBOX_KILL_FAILED')),
@@ -240,6 +243,10 @@ export async function runWithSandboxAbort<T>(
 
       // Recheck after Promise.race. A synchronous sandbox termination can settle
       // commands.run before the cancellation promise's rejection reaction wins.
+      if (sharedFailure) {
+        await killOnce()
+        throw sharedFailure
+      }
       if (signal?.aborted || signalCancelled || sharedCancelled) {
         return await ensureCancelled()
       }
@@ -270,6 +277,10 @@ export async function runWithSandboxAbort<T>(
 
       return result
     } catch (error) {
+      if (sharedFailure) {
+        await killOnce()
+        throw sharedFailure
+      }
       if (error instanceof Error && error.name === 'CancellationUnavailableError') {
         await killOnce()
         throw error
