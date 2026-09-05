@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import * as sidecarModule from '../agents/_dsh-web-sidecar.ts'
+import { M08_STOP_EPOCH_KEY } from '../agents/_sandbox-abort.ts'
 
 const sidecarApi = sidecarModule as typeof sidecarModule & Record<string, any>
 
@@ -207,6 +208,58 @@ test('later acquire refreshes the sidecar to the latest Makers context', async (
     assert.equal(starts, 1)
     second.release()
     await stop('conv-context-refresh')
+  } finally {
+    setStarter(undefined)
+  }
+})
+
+test('later acquire retires a stale sidecar after a cross-process Stop epoch change', async () => {
+  const acquire = requiredFunction('acquireDshWebSidecar')
+  const stop = requiredFunction('stopDshWebSidecar')
+  const setStarter = requiredFunction('__setSidecarStarterForTests')
+  let epoch = 'before-stop'
+  let starts = 0
+  let closeCalls = 0
+
+  const makersContext = {
+    conversation_id: 'conv-post-stop-refresh',
+    env: {},
+    store: {
+      state: {
+        async get(key: string) {
+          assert.equal(key, M08_STOP_EPOCH_KEY)
+          return epoch
+        },
+      },
+    },
+  }
+
+  setStarter(async (ctx: any, conversationId: string) => {
+    starts += 1
+    const sidecar = fakeSidecar(conversationId, () => { closeCalls += 1 })
+    sidecar.context = ctx
+    sidecar.mcp.stopEpochBaseline = Object.freeze({
+      value: await ctx.store.state.get(M08_STOP_EPOCH_KEY),
+    })
+    return sidecar
+  })
+
+  try {
+    const first = await acquire(makersContext)
+    assert.deepEqual(first.sidecar.mcp.stopEpochBaseline, { value: 'before-stop' })
+    first.release()
+
+    // Simulate Stop being published by another runtime process. The local
+    // sidecar registry is untouched, but the shared conversation epoch moves.
+    epoch = 'after-stop'
+
+    const second = await acquire(makersContext)
+    assert.notEqual(second.sidecar, first.sidecar, 'a post-Stop request must not reuse the stale bridge')
+    assert.equal(starts, 2)
+    assert.equal(closeCalls, 1, 'the stale DSH/MCP process must be retired before reuse')
+    assert.deepEqual(second.sidecar.mcp.stopEpochBaseline, { value: 'after-stop' })
+    second.release()
+    await stop('conv-post-stop-refresh')
   } finally {
     setStarter(undefined)
   }
