@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path'
 import { startLocalGatewayProxy, type LocalGatewayProxy } from './_gateway-proxy.ts'
 import { makersMcpPermissionSource } from './_makers-mcp-permission.mjs'
 import { startLocalMcpBridge, type LocalMcpBridge } from './_mcp-bridge.ts'
+import { M08_STOP_EPOCH_KEY } from './_sandbox-abort.ts'
 
 const require = createRequire(import.meta.url)
 
@@ -34,6 +35,8 @@ interface SidecarEntry {
   pending: Promise<DshWebSidecar>
   lastUsedAt: number
   activeUsers: number
+  stopEpochTracked: boolean
+  stopEpochBaseline: unknown
   closePromise?: Promise<{ found: true; closed: boolean; error?: string }>
 }
 
@@ -546,6 +549,34 @@ async function startSidecar(context: any, conversationId: string): Promise<DshWe
   throw lastError instanceof Error ? lastError : new Error('DSH sidecar startup failed')
 }
 
+function cancellationState(context: any): any | undefined {
+  const state = context?.store?.state
+  return state && typeof state.get === 'function' ? state : undefined
+}
+
+async function captureSidecarStopEpoch(context: any): Promise<{ tracked: boolean; value: unknown }> {
+  const state = cancellationState(context)
+  if (!state) return { tracked: false, value: undefined }
+  try {
+    return { tracked: true, value: await state.get(M08_STOP_EPOCH_KEY) }
+  } catch {
+    throw new Error('SIDE_CAR_CANCELLATION_UNAVAILABLE')
+  }
+}
+
+async function sidecarStopEpochChanged(context: any, entry: SidecarEntry): Promise<boolean> {
+  if (!entry.stopEpochTracked) return false
+  const state = cancellationState(context)
+  if (!state) throw new Error('SIDE_CAR_CANCELLATION_UNAVAILABLE')
+  let current: unknown
+  try {
+    current = await state.get(M08_STOP_EPOCH_KEY)
+  } catch {
+    throw new Error('SIDE_CAR_CANCELLATION_UNAVAILABLE')
+  }
+  return !Object.is(current, entry.stopEpochBaseline)
+}
+
 function createSidecarEntry(context: any, conversationId: string): SidecarEntry {
   const entry = {
     conversationId,
@@ -553,9 +584,25 @@ function createSidecarEntry(context: any, conversationId: string): SidecarEntry 
     pending: Promise.resolve(undefined as unknown as DshWebSidecar),
     lastUsedAt: Date.now(),
     activeUsers: 0,
+    stopEpochTracked: false,
+    stopEpochBaseline: undefined,
   } as SidecarEntry
 
-  entry.pending = startSidecar(context, conversationId).then(
+  entry.pending = (async () => {
+    const fence = await captureSidecarStopEpoch(context)
+    entry.stopEpochTracked = fence.tracked
+    entry.stopEpochBaseline = fence.value
+    const sidecar = await startSidecar(context, conversationId)
+    if (await sidecarStopEpochChanged(context, entry)) {
+      try {
+        await sidecar.close()
+      } catch {
+        throw new Error('SIDE_CAR_CLOSE_FAILED')
+      }
+      throw new Error('SIDE_CAR_STOPPED_DURING_START')
+    }
+    return sidecar
+  })().then(
     sidecar => {
       if (sidecars.get(conversationId) === entry) {
         if (entry.state === 'starting') entry.state = 'ready'
@@ -605,29 +652,37 @@ export async function acquireDshWebSidecar(context: any): Promise<DshWebSidecarL
   if (!conversationId) throw new Error('makers-conversation-id is required for DSH Web.')
   sweepIdleSidecars()
 
-  let entry = sidecars.get(conversationId)
-  if (entry?.state === 'stopping') throw new Error('SIDE_CAR_STOPPING')
-  if (!entry) entry = createSidecarEntry(context, conversationId)
+  while (true) {
+    let entry = sidecars.get(conversationId)
+    if (entry?.state === 'stopping') throw new Error('SIDE_CAR_STOPPING')
+    if (!entry) entry = createSidecarEntry(context, conversationId)
 
-  const sidecar = await entry.pending
-  if (entry.state === 'stopping') throw new Error('SIDE_CAR_STOPPING')
+    const sidecar = await entry.pending
+    if (entry.state === 'stopping') throw new Error('SIDE_CAR_STOPPING')
 
-  entry.state = 'ready'
-  entry.activeUsers += 1
-  entry.lastUsedAt = Date.now()
-  sidecar.lastUsedAt = entry.lastUsedAt
-  sidecar.context = context
+    if (await sidecarStopEpochChanged(context, entry)) {
+      const retired = await beginClose(entry)
+      if (!retired.closed) throw new Error(retired.error || 'SIDE_CAR_CLOSE_FAILED')
+      continue
+    }
 
-  let released = false
-  return {
-    sidecar,
-    release() {
-      if (released) return
-      released = true
-      entry!.activeUsers = Math.max(0, entry!.activeUsers - 1)
-      entry!.lastUsedAt = Date.now()
-      sidecar.lastUsedAt = entry!.lastUsedAt
-    },
+    entry.state = 'ready'
+    entry.activeUsers += 1
+    entry.lastUsedAt = Date.now()
+    sidecar.lastUsedAt = entry.lastUsedAt
+    sidecar.context = context
+
+    let released = false
+    return {
+      sidecar,
+      release() {
+        if (released) return
+        released = true
+        entry!.activeUsers = Math.max(0, entry!.activeUsers - 1)
+        entry!.lastUsedAt = Date.now()
+        sidecar.lastUsedAt = entry!.lastUsedAt
+      },
+    }
   }
 }
 
