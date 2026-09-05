@@ -111,6 +111,28 @@ test('stale policy for an uninstalled module is not exposed in the catalog', asy
   }
 })
 
+test('uninstall hides a module without deleting its persisted enable override', async () => {
+  const root = await moduleRoot()
+  const { context } = fakeContext()
+  try {
+    await setInstalledModuleEnabled(context, 'task', false, root)
+
+    await writeJson(join(root, 'package.json'), {})
+    assert.deepEqual(await listInstalledModuleStates(context, root), [])
+
+    await writeJson(join(root, 'package.json'), {
+      dependencies: { '@pqg/plugin-task': '1.0.0' },
+    })
+    assert.deepEqual(await listInstalledModuleStates(context, root), [{
+      id: 'task',
+      label: 'Công việc',
+      enabled: false,
+    }])
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
 test('persisted policy seeds bridge state before future tool registration', async () => {
   const root = await moduleRoot()
   const { context } = fakeContext()

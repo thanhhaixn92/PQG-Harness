@@ -2,13 +2,13 @@
 
 Review baseline: 2026-09-05
 
-This file records limitations that remain after the current source and live evidence. Verified gates are stated explicitly so operator guidance does not preserve historical blockers as current facts.
+This file records limitations that remain after source acceptance and recorded live evidence. Source acceptance baseline, last verified Production identity, and live gate evidence are deliberately kept separate.
 
-## 1. Access/auth environment behavior still needs direct live verification
+## 1. Access/auth environment behavior still needs direct live verification for promotion
 
 The single-user all-route middleware is source-side GREEN. It uses a minimum-32-character `PQG_ACCESS_SECRET`, POST login, a signed expiring hardened cookie and fail-closed missing configuration.
 
-Direct EdgeOne environment-variable presence/scope and the complete anonymous/login/logout live matrix have not been independently verified in this session. M03 therefore remains BLOCKED even though the source mitigation exists.
+This document does not promote the live environment row without direct evidence tied to the intended Production deployment. Environment-variable presence/scope must not be inferred from source tests.
 
 ## 2. M01 isolated workspace recycle/recovery remains BLOCKED
 
@@ -22,13 +22,15 @@ write/change/delete
 → exact expected state
 ```
 
-This is the main remaining Foundation data-integrity gate.
+This remains the main unresolved Foundation data-integrity gate.
 
-## 3. Production identity is verified; topology details are not
+## 3. Source acceptance baseline is newer than the last verified Production identity
 
-Production `/build-meta.json` is owner-verified as a **MATCH** for `main` commit `4918d54046fbe64bd11d28a72438180966ccd9d6`, tree `c6ec52df87a997aca49191053f09f01e497381b3`, package version `0.1.0`.
+PR #65 acceptance was based on `main` `50212203b5f4afd17a664da0708de6fa83e618b0`, tree `29f59d1c97a26338a01ea7640484237a3aa7480c`, package version `0.1.0`.
 
-Production/Preview branch mapping, environment-variable scope and the exact rollback/redeploy mechanism are still Console-owned/unverified details. Do not infer them from the verified deployed identity alone.
+The last owner-verified Production `/build-meta.json` evidence is for commit `4918d54046fbe64bd11d28a72438180966ccd9d6`, tree `c6ec52df87a997aca49191053f09f01e497381b3`, package version `0.1.0`. That historical match must not be represented as current Production parity after later source changes; exact intended deployment identity must be verified from `/build-meta.json`.
+
+Production/Preview branch mapping, environment-variable scope and the exact rollback/redeploy mechanism remain Console-owned/unverified details unless recorded by a dedicated live verification.
 
 ## 4. Main protection is active
 
@@ -36,15 +38,17 @@ GitHub ruleset **Protect main is ACTIVE**. Pull requests are required, strict `q
 
 This closes the former M09 repository-enforcement limitation. It does not close unrelated live environment/data gates.
 
-## 5. Stop/cancellation live proof is complete
+## 5. Stop/cancellation live proof is complete at its recorded checkpoint
 
 **M08 is PASS / CLOSED.** The live delayed-mutation test invoked Stop and confirmed the expected artifact remained absent after waiting beyond the 60-second mutation point.
 
-Cancellation should be re-tested when sidecar, MCP, workspace execution or Stop code changes; it is not a current blocker.
+Cancellation should be re-tested when sidecar, MCP, workspace execution or Stop code changes; it is not a current source blocker.
 
-## 6. Realtime approval delivery is verified
+## 6. Realtime approval delivery is verified at its recorded checkpoint
 
-The `Allow` prompt now appears without browser refresh in Production after the SSE downlink heartbeat fix. Changes to SSE/Host transport must preserve this regression behavior.
+The `Allow` prompt appeared without browser refresh in Production after the SSE downlink heartbeat fix. Changes to SSE/Host transport must preserve this regression behavior.
+
+A later deployment still requires identity parity before old live evidence is attributed to new source.
 
 ## 7. Browser, observability and rollback coverage remain incomplete
 
@@ -62,25 +66,25 @@ The project therefore does not claim complete protection against symlink/canonic
 
 ## 10. DSH remains pinned to a release-candidate wave
 
-All direct DSH packages are intentionally frozen at `0.1.0-rc.6`. A later DSH migration must be isolated and validated as one compatibility wave through generated drift, tests, deployment identity and rollback.
+All direct DSH packages are intentionally frozen at `0.1.0-rc.6`. A later DSH migration must be isolated and validated as one compatibility wave through generated drift, tests, real browser boot, deployment identity and rollback.
 
 ## 11. Dependency audit is point-in-time evidence
 
-The recorded compatible dependency cleanup reported:
+The PR #65 acceptance run reported:
 
 ```text
 563 packages audited
 0 known vulnerabilities
-quality: install -> prepare -> drift -> typecheck -> tests -> build SUCCESS
+quality: install -> prepare -> drift -> typecheck -> 131 tests -> build SUCCESS
 ```
 
 This is not a permanent supply-chain guarantee. Re-run dependency review before stable/public release and during any DSH compatibility wave.
 
 ## 12. Full Vietnamese localization is deferred
 
-Pinned DSH `0.1.0-rc.6` supports per-namespace dictionary registration but exposes a fixed selectable locale descriptor list for Chinese/English. PQG therefore uses complete English fallback for `vi`/`vi-VN` instead of shipping a partial translation of the DSH core UI.
+Pinned DSH `0.1.0-rc.6` supports limited locale extension but does not provide the target official third-party-language experience already researched in newer upstream waves. PQG therefore does not patch the compiled DSH core bundle for a full Vietnamese translation.
 
-PQG-owned future product/module surfaces should be Vietnamese-first. See `docs/localization/vi-status.md`.
+PQG-owned surfaces are Vietnamese-first, including the current Settings `Tiện ích` contribution. Full DSH localization should use an upstream-supported locale seam after compatibility validation rather than a second PQG i18n runtime or broad string patching.
 
 ## 13. Generated frontend remains coupled to reviewed DSH patch points
 
@@ -98,8 +102,30 @@ PQG uses platform-native sandbox checkpointing rather than an external database/
 
 The DSH sidecar lives under `/tmp/dsh-makers-web/<conversation>` and can be recreated. Settings YAML is snapshotted separately, while the authoritative Makers project workspace uses sandbox persist/restore. Restored filesystem state does not restart sidecar or preview processes.
 
-## 16. Foundation live validation is not fully closed
+## 16. Plugin-ready is not yet plugin-proven
 
-Foundation source, Production identity, realtime approval, **M08 PASS / CLOSED**, and the protected `main` guardrail are verified. M01 and the remaining environment/operational rows in `RELEASE_CHECKLIST.md` are still unresolved.
+PR1–PR3 provide module discovery, durable enable policy, MCP module-tool lifecycle, installed-only catalog/API, Settings `Tiện ích`, process-local live toggle propagation, and startup policy seeding.
+
+P6 source acceptance additionally proves:
+
+- malformed installed module metadata fails clearly;
+- stale policy is not exposed after uninstall;
+- uninstall/reinstall preserves the existing enable override;
+- a failing module tool returns an MCP tool error while Makers core tools remain usable;
+- source quality remains GREEN with **131/131 tests** and production build PASS.
+
+However, generic `pqg.module` `./client` runtime activation/unload is intentionally not implemented on rc.6, and no real reference/conformance package has yet proven package install → client mount → Makers adapter → disable → enable → uninstall end-to-end.
+
+A minimal reference module is therefore the next architecture proof before describing the platform as plugin-proven. Business-module data preservation is not claimed merely from the module-policy preservation regression.
+
+## 17. Module live propagation is process-local
+
+Settings changes persist the global policy first and then update all currently live `ModuleMcpBridge` instances in the same runtime process. A newly created sidecar seeds from persisted policy.
+
+There is intentionally no distributed synchronous broadcast between separate EdgeOne runtime instances. Do not add distributed coordination until a real business-plugin requirement demonstrates that this limitation is material.
+
+## 18. Foundation live validation is not fully closed
+
+Foundation source, recorded realtime approval behavior, **M08 PASS / CLOSED**, and the protected `main` guardrail are verified. M01 and the remaining deployment/environment/operational rows in `RELEASE_CHECKLIST.md` are still unresolved.
 
 No Task, Writing, Planning, Document, Data, Memory, Workflow or Skill business plugin is implemented yet, and future plugin work must not be used as evidence that an unresolved Foundation gate has passed.

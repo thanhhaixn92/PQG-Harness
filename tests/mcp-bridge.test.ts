@@ -101,3 +101,45 @@ test('module tools toggle on the existing MCP bridge without affecting Makers co
     await bridge.close().catch(() => {})
   }
 })
+
+test('a failing module tool returns an MCP error without taking down Makers core tools', async () => {
+  const bridge = await startLocalMcpBridge(
+    () => ({ tools: { all: () => [] } }),
+    'conv-module-failure',
+  )
+  const moduleBridge = bridge as typeof bridge & {
+    registerModuleTool(
+      moduleId: string,
+      name: string,
+      def: { description: string; inputSchema?: Record<string, unknown> },
+      handler: () => Promise<{ content: Array<{ type: 'text'; text: string }> }>,
+    ): void
+    setModuleEnabled(moduleId: string, enabled: boolean): void
+  }
+  const client = new Client({ name: 'module-failure-test', version: '1.0.0' }, { capabilities: {} })
+  await client.connect(new StreamableHTTPClientTransport(new URL(bridge.url)))
+
+  try {
+    moduleBridge.setModuleEnabled('future', true)
+    moduleBridge.registerModuleTool(
+      'future',
+      'future_fail',
+      { description: 'Failing future module probe', inputSchema: {} },
+      async () => { throw new Error('reference module failure') },
+    )
+
+    const failed = await client.callTool({ name: 'future_fail', arguments: {} }) as any
+    assert.equal(failed.isError, true)
+
+    const afterFailure = (await client.listTools()).tools.map(tool => tool.name)
+    assert.ok(afterFailure.includes('makers_context_probe'))
+    assert.ok(afterFailure.includes('future_fail'))
+
+    const coreProbe = await client.callTool({ name: 'makers_context_probe', arguments: {} }) as any
+    assert.notEqual(coreProbe.isError, true)
+    assert.match(String(coreProbe.content?.[0]?.text || ''), /"ok":true/)
+  } finally {
+    await client.close().catch(() => {})
+    await bridge.close().catch(() => {})
+  }
+})
