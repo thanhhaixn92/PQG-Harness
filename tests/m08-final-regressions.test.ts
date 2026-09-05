@@ -102,6 +102,47 @@ test('/stop fails closed when the authoritative explicit fence cannot be written
   assert.equal(body.ok, false)
 })
 
+test('/stop bootstraps a missing conversation before publishing the explicit fence', async () => {
+  const conversationId = 'conv-stop-bootstrap'
+  let exists = false
+  let appendCalls = 0
+  let metadataWrite: any
+  const missingConversation = () => {
+    const error = new Error('Conversation not found') as Error & { code?: string }
+    error.code = 'MemoryNotFoundError'
+    return error
+  }
+  const context = {
+    conversation_id: '',
+    request: { body: { conversation_id: conversationId } },
+    store: {
+      async updateConversation(input: any) {
+        if (!exists) throw missingConversation()
+        metadataWrite = input
+      },
+      async appendMessage(input: any) {
+        assert.equal(input.conversationId, conversationId)
+        appendCalls += 1
+        exists = true
+      },
+    },
+    utils: {
+      async abortActiveRun(id: string) {
+        assert.equal(id, conversationId)
+        return { aborted: true }
+      },
+    },
+  }
+
+  const response = await stopRequest(context)
+  const body = await response.json() as any
+  assert.equal(appendCalls, 1)
+  assert.equal(body.cancellation.published, true)
+  assert.equal(body.ok, true)
+  assert.equal(metadataWrite?.conversationId, conversationId)
+  assert.equal(typeof metadataWrite?.metadata?.[M08_STOP_EPOCH_METADATA_KEY], 'string')
+})
+
 test('checkpoint persist rechecks the command Stop fence at the actual persistence boundary', async () => {
   let epoch: string | null = 'before-stop'
   let persistCalls = 0
