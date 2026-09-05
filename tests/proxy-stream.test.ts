@@ -233,3 +233,68 @@ test('unary streaming response holds its lease until the body finishes', async (
     await closeHttpServer(sidecarServer)
   }
 })
+
+test('SSE keeps an idle downlink alive and forwards WebSocket frames unchanged', async () => {
+  const wss = new WebSocketServer({ host: '127.0.0.1', port: 0 })
+  await once(wss, 'listening')
+  const address = wss.address() as AddressInfo
+  let upstreamSocket: any
+  const connected = new Promise<void>(resolve => {
+    wss.once('connection', socket => {
+      upstreamSocket = socket
+      resolve()
+    })
+  })
+
+  __setSidecarStarterForTests(async (_context: any, conversationId: string) => ({
+    conversationId,
+    home: `/tmp/${conversationId}`,
+    port: address.port,
+    child: {} as any,
+    gateway: { baseUrl: '', close: async () => {} },
+    mcp: { url: '', requestCount: () => 0, requestLog: () => [], close: async () => {} },
+    lastUsedAt: Date.now(),
+    context: {},
+    close: async () => {},
+  }))
+
+  let response: Response | undefined
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
+  try {
+    response = await onRequest({
+      conversation_id: 'conv-sse-heartbeat',
+      request: {
+        url: '/api/events.mux',
+        method: 'GET',
+        headers: {},
+      },
+    })
+    await connected
+    reader = response.body!.getReader()
+    const decoder = new TextDecoder()
+
+    const initial = await reader.read()
+    assert.equal(initial.done, false)
+    assert.equal(decoder.decode(initial.value), ': connected\n\n')
+
+    const heartbeat = await Promise.race([
+      reader.read(),
+      new Promise<never>((_resolve, reject) => {
+        setTimeout(() => reject(new Error('SSE heartbeat not received within 6.5s')), 6500)
+      }),
+    ])
+    assert.equal(heartbeat.done, false)
+    assert.equal(decoder.decode(heartbeat.value), ': ping\n\n')
+
+    const frame = JSON.stringify({ type: 'approval/requested', rpcId: 'rpc-heartbeat-test' })
+    upstreamSocket.send(frame)
+    const forwarded = await reader.read()
+    assert.equal(forwarded.done, false)
+    assert.equal(decoder.decode(forwarded.value), `data: ${frame}\n\n`)
+  } finally {
+    try { await reader?.cancel() } catch { /* stream may already be closed */ }
+    await stopDshWebSidecar('conv-sse-heartbeat')
+    __setSidecarStarterForTests(undefined)
+    await new Promise<void>(resolve => wss.close(() => resolve()))
+  }
+})

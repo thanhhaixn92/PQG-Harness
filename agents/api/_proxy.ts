@@ -33,6 +33,7 @@ function eventStream(context: any, kind: 'mux' | 'host'): Response {
   const encoder = new TextEncoder()
   let socket: WebSocket | undefined
   let lease: DshWebSidecarLease | undefined
+  let heartbeat: ReturnType<typeof setInterval> | undefined
   let leaseReleased = false
   const signal = context.request?.signal as AbortSignal | undefined
   let cancelled = signal?.aborted === true
@@ -42,11 +43,17 @@ function eventStream(context: any, kind: 'mux' | 'host'): Response {
     leaseReleased = true
     lease.release()
   }
+  const stopHeartbeat = (): void => {
+    if (!heartbeat) return
+    clearInterval(heartbeat)
+    heartbeat = undefined
+  }
   const closeSocket = (): void => {
     if (socket?.readyState === WebSocket.CONNECTING || socket?.readyState === WebSocket.OPEN) socket.close()
   }
   const abort = (): void => {
     cancelled = true
+    stopHeartbeat()
     closeSocket()
     releaseLease()
   }
@@ -55,6 +62,7 @@ function eventStream(context: any, kind: 'mux' | 'host'): Response {
     async start(controller) {
       const cleanup = (): void => {
         signal?.removeEventListener('abort', abort)
+        stopHeartbeat()
         releaseLease()
       }
       const streamError = (error: unknown): void => {
@@ -97,7 +105,17 @@ function eventStream(context: any, kind: 'mux' | 'host'): Response {
           headers: { origin: `http://127.0.0.1:${String(sidecar.port)}` },
         })
         socket.once('open', () => {
-          try { controller.enqueue(encoder.encode(': connected\n\n')) } catch { closeSocket() }
+          try {
+            controller.enqueue(encoder.encode(': connected\n\n'))
+            heartbeat = setInterval(() => {
+              try { controller.enqueue(encoder.encode(': ping\n\n')) } catch {
+                stopHeartbeat()
+                closeSocket()
+              }
+            }, 5000)
+          } catch {
+            closeSocket()
+          }
         })
         socket.on('message', data => {
           try { controller.enqueue(encoder.encode(`data: ${data.toString()}\n\n`)) } catch { closeSocket() }
@@ -114,6 +132,7 @@ function eventStream(context: any, kind: 'mux' | 'host'): Response {
     cancel() {
       cancelled = true
       signal?.removeEventListener('abort', abort)
+      stopHeartbeat()
       closeSocket()
       releaseLease()
     },
