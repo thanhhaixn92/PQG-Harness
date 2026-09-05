@@ -154,3 +154,27 @@ test('treats null adapter export mappings as unavailable', async () => {
     await rm(root, { recursive: true, force: true })
   }
 })
+
+test('rejects installed modules with malformed pqg.module metadata', async () => {
+  const { discoverPqgModules } = await import(modulePath.href)
+  const root = await mkdtemp(join(tmpdir(), 'pqg-invalid-module-'))
+
+  try {
+    await writeJson(join(root, 'package.json'), {
+      dependencies: { '@pqg/plugin-invalid': '1.0.0' },
+    })
+    const packageDir = join(root, 'node_modules', '@pqg', 'plugin-invalid')
+    await mkdir(packageDir, { recursive: true })
+    await writeJson(join(packageDir, 'package.json'), {
+      name: '@pqg/plugin-invalid',
+      pqg: { module: { id: 'invalid', label: '', defaultEnabled: true } },
+    })
+
+    await assert.rejects(
+      discoverPqgModules(root),
+      /@pqg\/plugin-invalid: pqg\.module\.label is required/,
+    )
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
