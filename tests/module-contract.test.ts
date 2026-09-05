@@ -98,6 +98,23 @@ test('discovers pqg modules from optional root dependencies', async () => {
   }
 })
 
+test('ignores optional root modules that are not installed', async () => {
+  const { discoverPqgModules } = await import(modulePath.href)
+  const root = await mkdtemp(join(tmpdir(), 'pqg-missing-optional-module-'))
+
+  try {
+    await writeJson(join(root, 'package.json'), {
+      optionalDependencies: {
+        '@pqg/plugin-unavailable': '1.0.0',
+      },
+    })
+
+    assert.deepEqual(await discoverPqgModules(root), [])
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
 test('treats null adapter export mappings as unavailable', async () => {
   const { discoverPqgModules } = await import(modulePath.href)
   const root = await mkdtemp(join(tmpdir(), 'pqg-null-exports-'))
