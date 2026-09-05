@@ -60,7 +60,7 @@ The sidecar home is process-local under `/tmp/dsh-makers-web/<safeConversationId
 
 ## Host transport
 
-Generated `/api/*` routes proxy the DSH Host API to the conversation sidecar. Host event WebSockets are adapted into browser-facing SSE because Makers carries the event stream through HTTP responses.
+Generated `/api/*` routes proxy the DSH Host API to the conversation sidecar. Host event WebSockets are adapted into browser-facing SSE because Makers carries the event stream through HTTP responses. The SSE adapter keeps the live downlink active with a 5-second comment heartbeat and clears it on abort/error/close.
 
 Unary/streaming requests hold a sidecar lease until the upstream response body reaches EOF, is cancelled, or errors. This prevents idle cleanup from killing a sidecar while a response is still streaming.
 
@@ -131,6 +131,8 @@ Upstream provenance and vendor-patch synchronization are documented in `UPSTREAM
 
 ## Deployment boundary
 
-The repository currently records Git-connected EdgeOne Auto Deploy as DISCONNECTED by the owner. The current deployed commit, Production/Preview branch mapping, environment scope, access/auth policy, native observability, and rollback behavior are not independently verified from this execution environment.
+EdgeOne Git integration is owner-reported reconnected. Production `/build-meta.json` is owner-verified at `main` commit `4918d54046fbe64bd11d28a72438180966ccd9d6`, tree `c6ec52df87a997aca49191053f09f01e497381b3`, package version `0.1.0`. Realtime approval delivery and M08 Stop/cancellation have also passed live Production checks.
 
-Therefore `integration/foundation-core` is the consolidation branch for WP0-WP7. `main` is not promoted during Foundation implementation. A source-side GREEN Foundation is not equivalent to a completed Foundation Freeze; the live release gates in `docs/release/RELEASE_CHECKLIST.md` must be verified or explicitly owner-accepted first.
+The default branch is protected by the active `Protect main` repository ruleset: pull request required, strict `quality` status required, review-thread resolution required, deletion/non-fast-forward blocked, no bypass actors.
+
+Production/Preview branch topology and environment-variable scope are still not independently available from the current execution environment. M01 isolated same-conversation persistence/recycle/restore proof remains pending. Therefore source-side GREEN and protected-branch mergeability must not be presented as proof of the remaining live data/environment gates.
