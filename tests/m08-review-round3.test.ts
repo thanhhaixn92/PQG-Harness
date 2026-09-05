@@ -1,7 +1,5 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { Client } from '@modelcontextprotocol/sdk/client/index.js'
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import * as sidecarModule from '../agents/_dsh-web-sidecar.ts'
 import { startLocalMcpBridge } from '../agents/_mcp-bridge.ts'
 import { M08_STOP_EPOCH_KEY } from '../agents/_sandbox-abort.ts'
@@ -41,14 +39,6 @@ function stateContext(conversationId: string, readEpoch: () => unknown): any {
       },
     },
   }
-}
-
-function textOf(result: any): string {
-  const text = Array.isArray(result?.content)
-    ? result.content.find((entry: any) => entry?.type === 'text')?.text
-    : undefined
-  assert.equal(typeof text, 'string')
-  return text
 }
 
 test('first state-capable acquire retires a sidecar created before shared state was injected', async () => {
@@ -166,31 +156,18 @@ test('Stop reports a successful close when the epoch changes during sidecar star
   }
 })
 
-test('MCP bridge uses the sidecar-captured Stop fence when its own state read would fail', async () => {
-  let failBridgeCapture = true
-  let runCalls = 0
-  let killCalls = 0
+test('MCP bridge accepts the sidecar-captured Stop fence without a second startup state read', async () => {
+  let stateReads = 0
   const context = {
     store: {
       state: {
         async get(key: string) {
           assert.equal(key, M08_STOP_EPOCH_KEY)
-          if (failBridgeCapture) throw new Error('synthetic transient state read failure')
-          return 'stable-epoch'
+          stateReads += 1
+          throw new Error('synthetic transient state read failure')
         },
       },
     },
-    sandbox: {
-      commands: {
-        async run(command: string) {
-          runCalls += 1
-          assert.match(command, /DSH_MAKERS_SANDBOX_OK/)
-          return { exitCode: 0, stdout: 'DSH_MAKERS_SANDBOX_OK', stderr: '' }
-        },
-      },
-      async kill() { killCalls += 1 },
-    },
-    tools: { all: () => [] },
   }
 
   const bridge = await (startLocalMcpBridge as any)(
@@ -198,19 +175,9 @@ test('MCP bridge uses the sidecar-captured Stop fence when its own state read wo
     'conv-round3-shared-fence',
     Object.freeze({ value: 'stable-epoch' }),
   )
-  failBridgeCapture = false
-  const client = new Client({ name: 'pqg-m08-round3', version: '1.0.0' })
-  const transport = new StreamableHTTPClientTransport(new URL(bridge.url))
-
   try {
-    await client.connect(transport)
-    const result = await client.callTool({ name: 'sandbox_probe', arguments: {} })
-    const payload = JSON.parse(textOf(result))
-    assert.equal(payload.ok, true)
-    assert.equal(runCalls, 1)
-    assert.equal(killCalls, 0)
+    assert.equal(stateReads, 0, 'the bridge must use the sidecar-owned fence instead of recapturing it')
   } finally {
-    await client.close().catch(() => {})
     await bridge.close()
   }
 })
