@@ -50,6 +50,10 @@ jobs:
             nextPackages[name] = value
           }
           if (!linked) throw new Error('missing @protobufjs insertion seam')
+          nextPackages['packages/reference-module'] = {
+            name: '@pqg/reference-module',
+            version: '0.0.0',
+          }
           lock.packages = nextPackages
           writeFileSync('package-lock.json', `${JSON.stringify(lock, null, 2)}\n`)
           NODE
