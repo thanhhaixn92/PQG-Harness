@@ -1,28 +1,71 @@
 import { stopDshWebSidecar } from './_dsh-web-sidecar.ts'
-import { M08_STOP_EPOCH_KEY } from './_sandbox-abort.ts'
+import {
+  M08_STOP_EPOCH_KEY,
+  M08_STOP_EPOCH_METADATA_KEY,
+} from './_sandbox-abort.ts'
 
 function newStopEpoch(context: any): string {
   const runId = String(context?.run_id || 'stop').trim() || 'stop'
   return `${runId}:${Date.now()}:${Math.random().toString(36).slice(2)}`
 }
 
+async function publishConversationMetadataEpoch(
+  context: any,
+  conversationId: string,
+  epoch: string,
+): Promise<boolean> {
+  const updateConversation = context?.store?.updateConversation
+  if (typeof updateConversation !== 'function') return false
+  const metadata = { [M08_STOP_EPOCH_METADATA_KEY]: epoch }
+  try {
+    await updateConversation.call(context.store, { conversationId, metadata })
+    return true
+  } catch (firstError) {
+    try {
+      await updateConversation.call(context.store, conversationId, { metadata })
+      return true
+    } catch {
+      throw firstError
+    }
+  }
+}
+
 async function publishCancellationEpoch(context: any, conversationId: string): Promise<{ published: true }> {
+  const epoch = newStopEpoch(context)
   const scopedConversationId = String(context?.conversation_id || '').trim()
-  if (!scopedConversationId || scopedConversationId !== conversationId) {
-    const error = new Error('CANCELLATION_SCOPE_MISMATCH')
-    error.name = 'CancellationStateError'
-    throw error
-  }
-
   const state = context?.store?.state
-  if (!state || typeof state.set !== 'function') {
-    const error = new Error('CANCELLATION_STATE_UNAVAILABLE')
-    error.name = 'CancellationStateError'
-    throw error
+  const metadataAvailable = typeof context?.store?.updateConversation === 'function'
+
+  let metadataPublished = false
+  let metadataFailed = false
+  if (metadataAvailable) {
+    try {
+      metadataPublished = await publishConversationMetadataEpoch(context, conversationId, epoch)
+    } catch {
+      metadataFailed = true
+    }
   }
 
-  await state.set(M08_STOP_EPOCH_KEY, newStopEpoch(context))
-  return { published: true }
+  let statePublished = false
+  let stateFailed = false
+  if (scopedConversationId === conversationId && state && typeof state.set === 'function') {
+    try {
+      await state.set(M08_STOP_EPOCH_KEY, epoch)
+      statePublished = true
+    } catch {
+      stateFailed = true
+    }
+  }
+
+  if (metadataPublished || statePublished) return { published: true }
+
+  const error = new Error(
+    metadataFailed || stateFailed || scopedConversationId === conversationId
+      ? 'CANCELLATION_STATE_UNAVAILABLE'
+      : 'CANCELLATION_SCOPE_MISMATCH',
+  )
+  error.name = 'CancellationStateError'
+  throw error
 }
 
 export async function onRequestPost(context: any): Promise<Response> {
@@ -31,9 +74,10 @@ export async function onRequestPost(context: any): Promise<Response> {
     return Response.json({ ok: false, error: 'conversation_id is required' }, { status: 400 })
   }
 
-  // All three channels start independently. The shared epoch crosses request /
-  // process boundaries; platform abort remains the low-latency signal path;
-  // sidecar shutdown stops DSH work. The Stop request never kills its own sandbox.
+  // The frontend intentionally sends /stop without makers-conversation-id so it
+  // is not sticky-routed to the possibly blocked runner. Conversation metadata
+  // therefore provides the explicit cross-process fence; state remains a
+  // same-scope fast path when the runtime did inject the matching scope.
   const [cancellationResult, webResult, platformResult] = await Promise.allSettled([
     publishCancellationEpoch(context, conversationId),
     stopDshWebSidecar(conversationId),
