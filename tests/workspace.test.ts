@@ -444,7 +444,7 @@ test('runWorkspaceCommand reports checkpoint persistence failure without hiding 
   assert.equal(result.persistence.error, 'persist failed')
 })
 
-test('currentPreview reports false when metadata is stale and port 3000 is unhealthy', async () => {
+test('currentPreview keeps published state when port 3000 is temporarily unhealthy', async () => {
   const metadataUpdates: Record<string, unknown>[] = []
   const context = {
     sandbox: {
@@ -465,8 +465,8 @@ test('currentPreview reports false when metadata is stale and port 3000 is unhea
   }
 
   const result = await currentPreview(context, 'conv-1')
-  assert.deepEqual(result, { published: false })
-  assert.equal((metadataUpdates.at(-1)?.preview as { published?: boolean } | undefined)?.published, false)
+  assert.deepEqual(result, { published: true })
+  assert.equal(metadataUpdates.length, 0)
 })
 
 test('currentPreview reports live preview only after sandbox health succeeds', async () => {
