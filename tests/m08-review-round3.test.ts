@@ -183,3 +183,67 @@ test('MCP bridge accepts the sidecar-captured Stop fence without a second startu
     await bridge.close()
   }
 })
+
+test('request admitted before epoch retirement cannot join the post-Stop replacement', async () => {
+  const acquire = requiredFunction('acquireDshWebSidecar')
+  const stop = requiredFunction('stopDshWebSidecar')
+  const setStarter = requiredFunction('__setSidecarStarterForTests')
+  const conversationId = 'conv-round3-overtaken-acquire'
+  let epoch = 'before-stop'
+  let starts = 0
+  let closeCalls = 0
+  let blockNextRead = false
+  let releaseRead!: () => void
+  let signalReadStarted!: () => void
+  const readGate = new Promise<void>(resolve => { releaseRead = resolve })
+  const readStarted = new Promise<void>(resolve => { signalReadStarted = resolve })
+
+  const makersContext = {
+    conversation_id: conversationId,
+    env: {},
+    store: {
+      state: {
+        async get(key: string) {
+          assert.equal(key, M08_STOP_EPOCH_KEY)
+          if (blockNextRead) {
+            blockNextRead = false
+            signalReadStarted()
+            await readGate
+          }
+          return epoch
+        },
+      },
+    },
+  }
+
+  setStarter(async (_ctx: any, id: string) => {
+    starts += 1
+    return fakeSidecar(id, () => { closeCalls += 1 })
+  })
+
+  try {
+    const initial = await acquire(makersContext)
+    initial.release()
+
+    blockNextRead = true
+    const overtaken = acquire(makersContext).catch((error: unknown) => error)
+    await readStarted
+    epoch = 'after-stop'
+    releaseRead()
+
+    const overtakenResult = await overtaken
+    assert.ok(overtakenResult instanceof Error)
+    assert.match(String(overtakenResult), /SIDE_CAR_STOPPING/)
+    assert.equal(starts, 1, 'an overtaken acquire must not create the post-Stop replacement')
+    assert.equal(closeCalls, 1)
+
+    const retry = await acquire(makersContext)
+    assert.notEqual(retry.sidecar, initial.sidecar)
+    assert.equal(starts, 2)
+    retry.release()
+    await stop(conversationId)
+  } finally {
+    releaseRead()
+    setStarter(undefined)
+  }
+})
