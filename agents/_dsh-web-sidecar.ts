@@ -686,7 +686,10 @@ function beginClose(
       await sidecar.close()
       return { found: true, closed: true } as const
     } catch (error) {
-      if (error instanceof Error && error.message === 'SIDE_CAR_STOPPED_DURING_START') {
+      if (
+        error instanceof Error
+        && (error.message === 'SIDE_CAR_STOPPED_DURING_START' || error.message === 'SIDE_CAR_STOPPING')
+      ) {
         return { found: true, closed: true } as const
       }
       return { found: true, closed: false, error: 'SIDE_CAR_CLOSE_FAILED' } as const
@@ -744,7 +747,12 @@ export async function acquireDshWebSidecar(context: any): Promise<DshWebSidecarL
     }
 
     const wasTracked = entry.stopEpochTracked
-    if (await sidecarStopEpochChanged(context, entry)) {
+    const stopEpochChanged = await sidecarStopEpochChanged(context, entry)
+    if (entry.state === 'stopping') {
+      if (await waitForEpochRetirement(entry, admissionSequence)) continue
+      throw new Error('SIDE_CAR_STOPPING')
+    }
+    if (stopEpochChanged) {
       void beginClose(entry, 'epoch', wasTracked)
       if (await waitForEpochRetirement(entry, admissionSequence)) continue
       throw new Error('SIDE_CAR_STOPPING')
