@@ -8,7 +8,7 @@ function newStopEpoch(context: any): string {
 
 async function publishCancellationEpoch(context: any, conversationId: string): Promise<{ published: true }> {
   const scopedConversationId = String(context?.conversation_id || '').trim()
-  if (scopedConversationId && scopedConversationId !== conversationId) {
+  if (!scopedConversationId || scopedConversationId !== conversationId) {
     const error = new Error('CANCELLATION_SCOPE_MISMATCH')
     error.name = 'CancellationStateError'
     throw error
