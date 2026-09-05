@@ -24,9 +24,11 @@ test('workspace command adapts the existing persistence implementation at the co
   assert.ok(runIndex >= 0 && persistIndex > runIndex, 'checkpoint persistence must remain after command settlement')
 })
 
-test('MCP bridge adapts the runner context instead of maintaining a Stop registry', async () => {
+test('MCP bridge uses shared Stop state instead of latest-request AbortSignal or a Stop registry', async () => {
   const adapter = await readFile(new URL('../agents/_mcp-bridge.ts', import.meta.url), 'utf8')
-  assert.match(adapter, /withRunnerOwnedSandboxCancellation\(getContext\(\)\)/)
+  assert.match(adapter, /withRunnerOwnedSandboxCancellation\(getContext\(\),\s*\{/)
+  assert.match(adapter, /useRequestSignal:\s*false/)
+  assert.match(adapter, /requireSharedStop:\s*true/)
   assert.doesNotMatch(adapter, /registerActiveWorkspaceSandbox|resetWorkspaceStop|beginWorkspaceStop/)
 
   const base = await readFile(new URL('../agents/_mcp-bridge-base.ts', import.meta.url), 'utf8')
