@@ -46,6 +46,8 @@ test('workspace command MCP wrapper delegates cancellation scope to the workspac
   assert.match(block, /runWorkspaceCommand\(context,\s*conversationId,\s*command,\s*timeout\)/)
 
   const adapter = await readFile(new URL('../agents/_mcp-bridge.ts', import.meta.url), 'utf8')
-  assert.match(adapter, /withRunnerOwnedSandboxCancellation\(getContext\(\)\)/)
+  assert.match(adapter, /withRunnerOwnedSandboxCancellation\(getContext\(\),\s*\{/)
+  assert.match(adapter, /useRequestSignal:\s*false/)
+  assert.match(adapter, /requireSharedStop:\s*true/)
   assert.doesNotMatch(adapter, /registerActiveWorkspaceSandbox/)
 })
