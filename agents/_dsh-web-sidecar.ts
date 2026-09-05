@@ -362,7 +362,7 @@ async function writeProfilePatch(
     '        api: openai-completions',
     `        baseURL: ${JSON.stringify(options.gatewayBaseUrl)}`,
     '        models:',
-    ...modelYaml(makersModelCatalog(defaultModel)),
+    ...modelYaml(makersModelCatalog(options.defaultModel)),
     '',
     '- insert:',
     '    - id: makers-mcp',
