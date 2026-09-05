@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
-import { appendMcpRequestMetadata } from '../agents/_mcp-bridge.ts'
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+import { appendMcpRequestMetadata, startLocalMcpBridge } from '../agents/_mcp-bridge.ts'
 
 test('MCP request diagnostics retain only bounded metadata', () => {
   const initial: Array<{ method: string; url: string; bodyBytes: number }> = []
@@ -45,4 +47,57 @@ test('workspace command MCP wrapper delegates cancellation scope to the workspac
   const block = source.slice(start, end)
   assert.doesNotMatch(block, /registerActiveWorkspaceSandbox/)
   assert.match(block, /runWorkspaceCommand\(context,\s*conversationId,\s*command,\s*timeout\)/)
+})
+
+test('module tools toggle on the existing MCP bridge without affecting Makers core tools', async () => {
+  const bridge = await startLocalMcpBridge(
+    () => ({ tools: { all: () => [] } }),
+    'conv-module-lifecycle',
+  )
+  const moduleBridge = bridge as typeof bridge & {
+    registerModuleTool(
+      moduleId: string,
+      name: string,
+      def: { description: string; inputSchema?: Record<string, unknown> },
+      handler: () => Promise<{ content: Array<{ type: 'text'; text: string }> }>,
+    ): void
+    setModuleEnabled(moduleId: string, enabled: boolean): void
+    removeModule(moduleId: string): void
+  }
+  const client = new Client({ name: 'module-lifecycle-test', version: '1.0.0' }, { capabilities: {} })
+  await client.connect(new StreamableHTTPClientTransport(new URL(bridge.url)))
+
+  try {
+    const initial = (await client.listTools()).tools.map(tool => tool.name)
+    assert.ok(initial.includes('makers_context_probe'))
+    assert.equal(initial.includes('future_probe'), false)
+
+    moduleBridge.setModuleEnabled('future', true)
+    moduleBridge.registerModuleTool(
+      'future',
+      'future_probe',
+      { description: 'Future PQG module probe', inputSchema: {} },
+      async () => ({ content: [{ type: 'text', text: 'ok' }] }),
+    )
+
+    const enabled = (await client.listTools()).tools.map(tool => tool.name)
+    assert.ok(enabled.includes('future_probe'))
+    assert.ok(enabled.includes('makers_context_probe'))
+
+    moduleBridge.setModuleEnabled('future', false)
+    const disabled = (await client.listTools()).tools.map(tool => tool.name)
+    assert.equal(disabled.includes('future_probe'), false)
+    assert.ok(disabled.includes('makers_context_probe'))
+
+    moduleBridge.setModuleEnabled('future', true)
+    assert.ok((await client.listTools()).tools.some(tool => tool.name === 'future_probe'))
+
+    moduleBridge.removeModule('future')
+    const removed = (await client.listTools()).tools.map(tool => tool.name)
+    assert.equal(removed.includes('future_probe'), false)
+    assert.ok(removed.includes('makers_context_probe'))
+  } finally {
+    await client.close().catch(() => {})
+    await bridge.close().catch(() => {})
+  }
 })
