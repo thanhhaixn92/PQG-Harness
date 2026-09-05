@@ -3,7 +3,13 @@ import test from 'node:test'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js'
+import {
+  __setSidecarStarterForTests,
+  acquireDshWebSidecar,
+  stopDshWebSidecar,
+} from '../agents/_dsh-web-sidecar.ts'
 import { startLocalMcpBridge } from '../agents/_mcp-bridge.ts'
+import { withSandboxCancellation } from '../agents/_sandbox-abort.ts'
 import { persistWorkspaceCheckpoint, workspaceRoot } from '../agents/_workspace.ts'
 import { onRequestPost } from '../agents/stop.ts'
 
@@ -30,6 +36,20 @@ function deferred<T = void>(): {
 
 function wait(milliseconds: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, milliseconds))
+}
+
+function fakeSidecar(conversationId: string, close: () => Promise<void>): any {
+  return {
+    conversationId,
+    home: `/tmp/${conversationId}`,
+    port: 12345,
+    child: {},
+    gateway: { baseUrl: '', close: async () => {} },
+    mcp: { url: '', requestCount: () => 0, requestLog: () => [], close: async () => {} },
+    lastUsedAt: Date.now(),
+    context: {},
+    close,
+  }
 }
 
 async function waitForRequestMetadata(bridge: { requestLog(): unknown[] }, previousLength: number): Promise<void> {
@@ -106,13 +126,14 @@ test('MCP cancellation terminates the exact sandbox owned by the in-flight tool 
   }
 })
 
-test('cancellation while waiting for the checkpoint queue prevents a later persist dispatch', async () => {
+test('cancellation while waiting for the checkpoint queue terminates the sandbox and prevents persist dispatch', async () => {
   const conversationId = 'conv-m08-native-persist-queue'
   const root = workspaceRoot(conversationId)
   const firstPersistStarted = deferred()
   const releaseFirstPersist = deferred<typeof checkpoint>()
   const commandRan = deferred()
   let persistCalls = 0
+  let sandboxKills = 0
 
   const context = {
     tools: { all: () => [] },
@@ -135,7 +156,7 @@ test('cancellation while waiting for the checkpoint queue prevents a later persi
         }
         return checkpoint
       },
-      async kill() {},
+      async kill() { sandboxKills += 1 },
     },
   }
 
@@ -163,11 +184,132 @@ test('cancellation while waiting for the checkpoint queue prevents a later persi
     await wait(80)
 
     assert.equal(persistCalls, 1, 'an already-cancelled queued checkpoint must not call sandbox.persist')
+    assert.equal(sandboxKills, 1, 'an already-cancelled queued operation must still terminate its captured sandbox')
   } finally {
     releaseFirstPersist.resolve(checkpoint)
     await blockingPersist.catch(() => {})
     await client.close().catch(() => {})
     await bridge.close().catch(() => {})
+  }
+})
+
+test('sandbox termination attempts are individually bounded', async () => {
+  const controller = new AbortController()
+  const commandStarted = deferred()
+  const releaseCommand = deferred<any>()
+  const killGates: Array<ReturnType<typeof deferred>> = []
+
+  const context = {
+    sandbox: {
+      commands: {
+        run() {
+          commandStarted.resolve()
+          return releaseCommand.promise
+        },
+      },
+      kill() {
+        const gate = deferred()
+        killGates.push(gate)
+        return gate.promise
+      },
+    },
+  }
+
+  const wrapped = withSandboxCancellation(context, controller.signal)
+  const operation = wrapped.sandbox.commands.run('sleep 30')
+  await commandStarted.promise
+  controller.abort(new Error('user stop'))
+
+  const settled = await Promise.race([
+    operation.then(
+      () => ({ settled: true, error: undefined as Error | undefined }),
+      (error: unknown) => ({ settled: true, error: error instanceof Error ? error : new Error(String(error)) }),
+    ),
+    wait(2_300).then(() => ({ settled: false, error: undefined as Error | undefined })),
+  ])
+
+  for (const gate of killGates) gate.resolve()
+  releaseCommand.resolve({ stdout: '', stderr: '', exitCode: 0 })
+  await operation.catch(() => {})
+
+  assert.equal(settled.settled, true, 'a stuck sandbox.kill promise must not block cancellation forever')
+  assert.equal(settled.error?.name, 'SandboxTerminationError')
+  assert.equal(settled.error?.message, 'SANDBOX_KILL_FAILED')
+})
+
+test('Stop starts platform abort before sidecar shutdown settles', async () => {
+  const conversationId = 'conv-m08-native-stop-order'
+  const closeGate = deferred()
+  const abortStarted = deferred()
+  let response: Response | undefined
+
+  __setSidecarStarterForTests(async () => fakeSidecar(conversationId, async () => {
+    await closeGate.promise
+  }))
+
+  try {
+    const lease = await acquireDshWebSidecar({ conversation_id: conversationId })
+    lease.release()
+
+    const stopPending = onRequestPost({
+      request: { body: { conversation_id: conversationId } },
+      utils: {
+        async abortActiveRun() {
+          abortStarted.resolve()
+          return { aborted: true }
+        },
+      },
+    })
+
+    const abortBeganBeforeClose = await Promise.race([
+      abortStarted.promise.then(() => true),
+      wait(100).then(() => false),
+    ])
+    closeGate.resolve()
+    response = await stopPending
+
+    assert.equal(abortBeganBeforeClose, true, 'platform abort must start without waiting for sidecar shutdown')
+    assert.equal(response.status, 200)
+  } finally {
+    closeGate.resolve()
+    __setSidecarStarterForTests(undefined)
+    await stopDshWebSidecar(conversationId).catch(() => {})
+  }
+})
+
+test('Stop reports stable per-phase failures and aggregate failure', async () => {
+  const conversationId = 'conv-m08-native-stop-failure'
+  __setSidecarStarterForTests(async () => fakeSidecar(conversationId, async () => {
+    throw new Error('sensitive sidecar close detail')
+  }))
+
+  try {
+    const lease = await acquireDshWebSidecar({ conversation_id: conversationId })
+    lease.release()
+
+    const response = await onRequestPost({
+      request: { body: { conversation_id: conversationId } },
+      utils: {
+        async abortActiveRun() { return { aborted: false } },
+      },
+    })
+    const body = await response.json() as any
+
+    assert.equal(response.status, 200)
+    assert.equal(body.ok, false)
+    assert.deepEqual(body.sidecar, {
+      found: true,
+      closed: false,
+      error: 'SIDE_CAR_CLOSE_FAILED',
+    })
+    assert.deepEqual(body.platform, {
+      aborted: false,
+      error: 'PLATFORM_ABORT_FAILED',
+    })
+    assert.equal(JSON.stringify(body).includes('sensitive sidecar close detail'), false)
+  } finally {
+    __setSidecarStarterForTests(undefined)
+    await stopDshWebSidecar(conversationId).catch(() => {})
   }
 })
 
