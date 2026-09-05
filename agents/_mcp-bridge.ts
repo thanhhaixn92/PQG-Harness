@@ -5,6 +5,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { z } from 'zod'
 import { runWithSandboxCancellationScope } from './_sandbox-abort.ts'
+import { createModuleToolLifecycle, type ModuleToolLifecycle } from './modules.ts'
 import {
   listWorkspace,
   publishWorkspacePreview,
@@ -41,16 +42,6 @@ export function appendMcpRequestMetadata(
   return [...log, meta].slice(-MCP_REQUEST_LOG_LIMIT)
 }
 
-export interface LocalMcpBridge {
-  url: string
-  requestCount(): number
-  requestLog(): McpRequestMetadata[]
-  close(): Promise<void>
-}
-
-export type MakersContextProvider = () => any
-export type MakersPermissionMode = 'read-only' | 'workspace-write' | 'danger-full-access'
-
 type McpHandlerExtra = { signal?: AbortSignal }
 type McpToolResult = {
   content: Array<{ type: 'text'; text: string }>
@@ -61,6 +52,39 @@ type McpToolHandler = (
   extra: McpHandlerExtra,
   context: any,
 ) => Promise<McpToolResult>
+type McpToolDefinition = {
+  description: string
+  inputSchema?: Record<string, unknown>
+}
+
+export interface LocalMcpBridge {
+  url: string
+  requestCount(): number
+  requestLog(): McpRequestMetadata[]
+  registerModuleTool(
+    moduleId: string,
+    name: string,
+    def: McpToolDefinition,
+    handler: McpToolHandler,
+  ): void
+  setModuleEnabled(moduleId: string, enabled: boolean): void
+  removeModule(moduleId: string): void
+  close(): Promise<void>
+}
+
+export type MakersContextProvider = () => any
+export type MakersPermissionMode = 'read-only' | 'workspace-write' | 'danger-full-access'
+
+interface McpServerRuntime {
+  server: McpServer
+  modules: ModuleToolLifecycle
+  registerModuleTool(
+    moduleId: string,
+    name: string,
+    def: McpToolDefinition,
+    handler: McpToolHandler,
+  ): void
+}
 
 function toolName(tool: unknown): string {
   if (!tool || typeof tool !== 'object') return 'unknown'
@@ -135,15 +159,16 @@ function rejectCancelledRequest(response: ServerResponse, body: unknown): void {
 async function createMcpServer(
   getContext: MakersContextProvider,
   conversationId: string,
-): Promise<McpServer> {
+): Promise<McpServerRuntime> {
   const server = new McpServer(
     { name: 'edgeone-makers-bridge', version: '0.1.0' },
     { capabilities: { tools: {} } },
   )
+  const modules = createModuleToolLifecycle()
 
   const register = (
     name: string,
-    def: { description: string; inputSchema?: Record<string, unknown> },
+    def: McpToolDefinition,
     handler: McpToolHandler,
   ) => {
     const wrappedHandler = (args: any, extra: McpHandlerExtra) => {
@@ -154,7 +179,16 @@ async function createMcpServer(
         wrappedContext => handler(args, extra, wrappedContext),
       )
     }
-    server.registerTool(name, def as any, wrappedHandler as any)
+    return server.registerTool(name, def as any, wrappedHandler as any)
+  }
+
+  const registerModuleTool = (
+    moduleId: string,
+    name: string,
+    def: McpToolDefinition,
+    handler: McpToolHandler,
+  ): void => {
+    modules.add(moduleId, register(name, def, handler))
   }
 
   register('makers_context_probe', {
@@ -283,7 +317,7 @@ async function createMcpServer(
     }
   })
 
-  return server
+  return { server, modules, registerModuleTool }
 }
 
 async function handleMcpRequest(
@@ -303,7 +337,7 @@ export async function startLocalMcpBridge(
   getContext: MakersContextProvider,
   conversationId: string,
 ): Promise<LocalMcpBridge> {
-  const server = await createMcpServer(getContext, conversationId)
+  const { server, modules, registerModuleTool } = await createMcpServer(getContext, conversationId)
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: () => randomUUID(),
   })
@@ -392,6 +426,9 @@ export async function startLocalMcpBridge(
     url: `http://127.0.0.1:${(address as AddressInfo).port}/mcp`,
     requestCount: () => requests,
     requestLog: () => requestMetadata.map(entry => ({ ...entry })),
+    registerModuleTool,
+    setModuleEnabled: modules.setEnabled,
+    removeModule: modules.remove,
     close,
   }
 }
