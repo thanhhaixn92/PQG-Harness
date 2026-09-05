@@ -1,9 +1,10 @@
+import { randomUUID } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { z } from 'zod'
-import { registerActiveWorkspaceSandbox, resetWorkspaceStop } from './_active-sandbox.ts'
+import { withSandboxCancellation } from './_sandbox-abort.ts'
 import {
   listWorkspace,
   publishWorkspacePreview,
@@ -48,6 +49,12 @@ export interface LocalMcpBridge {
 export type MakersContextProvider = () => any
 export type MakersPermissionMode = 'read-only' | 'workspace-write' | 'danger-full-access'
 
+type McpHandlerExtra = { signal?: AbortSignal }
+type McpToolResult = {
+  content: Array<{ type: 'text'; text: string }>
+  isError?: boolean
+}
+
 function toolName(tool: unknown): string {
   if (!tool || typeof tool !== 'object') return 'unknown'
   const record = tool as Record<string, unknown>
@@ -71,9 +78,9 @@ async function createMcpServer(
   const register = (
     name: string,
     def: { description: string; inputSchema?: Record<string, unknown> },
-    handler: (args: any) => Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: boolean }>,
+    handler: (args: any, extra: McpHandlerExtra) => Promise<McpToolResult>,
   ) => {
-    server.registerTool(name, def as any, handler)
+    server.registerTool(name, def as any, handler as any)
   }
 
   register('makers_context_probe', {
@@ -102,8 +109,8 @@ async function createMcpServer(
   register('sandbox_probe', {
     description: 'Execute a deterministic command in the EdgeOne Makers sandbox and return the result.',
     inputSchema: {},
-  }, async () => {
-    const context = getContext()
+  }, async (_args, extra) => {
+    const context = withSandboxCancellation(getContext(), extra.signal)
     const result = await context.sandbox.commands.run(
       "printf 'DSH_MAKERS_SANDBOX_OK'",
       { timeout: 10 },
@@ -125,11 +132,9 @@ async function createMcpServer(
   register('sandbox_wait', {
     description: 'Wait in the EdgeOne Makers sandbox. Used only to validate cancellation.',
     inputSchema: { seconds: z.number().int().min(1).max(30) },
-  }, async ({ seconds }) => {
-    const context = getContext()
-    let releaseActiveSandbox = () => {}
+  }, async ({ seconds }, extra) => {
+    const context = withSandboxCancellation(getContext(), extra.signal)
     try {
-      releaseActiveSandbox = registerActiveWorkspaceSandbox(conversationId, context.sandbox)
       const result = await context.sandbox.commands.run(
         `sleep ${String(seconds)}; printf 'WAIT_FINISHED'`,
         { timeout: seconds + 5 },
@@ -140,16 +145,14 @@ async function createMcpServer(
       }
     } catch (error) {
       return { content: [{ type: 'text', text: error instanceof Error ? error.message : String(error) }], isError: true }
-    } finally {
-      releaseActiveSandbox()
     }
   })
 
   register('workspace_list_files', {
     description: 'List the current coding workspace. Paths are relative to the workspace root.',
     inputSchema: {},
-  }, async () => {
-    const context = getContext()
+  }, async (_args, extra) => {
+    const context = withSandboxCancellation(getContext(), extra.signal)
     const listing = await listWorkspace(context, conversationId)
     return {
       content: [{
@@ -162,8 +165,8 @@ async function createMcpServer(
   register('workspace_read_file', {
     description: 'Read one UTF-8 source file from the coding workspace using a relative path.',
     inputSchema: { path: z.string().min(1) },
-  }, async ({ path }) => {
-    const context = getContext()
+  }, async ({ path }, extra) => {
+    const context = withSandboxCancellation(getContext(), extra.signal)
     try {
       return { content: [{ type: 'text', text: JSON.stringify(await readWorkspaceFile(context, conversationId, path)) }] }
     } catch (error) {
@@ -174,8 +177,8 @@ async function createMcpServer(
   register('workspace_write_file', {
     description: 'Create or replace one complete UTF-8 source file in the coding workspace. Use one call per file. Read Only mode asks the user before this runs.',
     inputSchema: { path: z.string().min(1), content: z.string() },
-  }, async ({ path, content }) => {
-    const context = getContext()
+  }, async ({ path, content }, extra) => {
+    const context = withSandboxCancellation(getContext(), extra.signal)
     try {
       return { content: [{ type: 'text', text: JSON.stringify(await writeWorkspaceFile(context, conversationId, path, content)) }] }
     } catch (error) {
@@ -189,8 +192,8 @@ async function createMcpServer(
       command: z.string().min(1),
       timeout: z.number().int().min(1).max(300).optional(),
     },
-  }, async ({ command, timeout }) => {
-    const context = getContext()
+  }, async ({ command, timeout }, extra) => {
+    const context = withSandboxCancellation(getContext(), extra.signal)
     try {
       const result = await runWorkspaceCommand(context, conversationId, command, timeout)
       return {
@@ -205,8 +208,8 @@ async function createMcpServer(
   register('publish_preview', {
     description: 'Start the generated project and publish its preview. Call this after implementation and verification. Below Full access, the user is asked to confirm.',
     inputSchema: {},
-  }, async () => {
-    const context = getContext()
+  }, async (_args, extra) => {
+    const context = withSandboxCancellation(getContext(), extra.signal)
     try {
       return { content: [{ type: 'text', text: JSON.stringify(await publishWorkspacePreview(context, conversationId)) }] }
     } catch (error) {
@@ -218,8 +221,7 @@ async function createMcpServer(
 }
 
 async function handleMcpRequest(
-  getContext: MakersContextProvider,
-  conversationId: string,
+  transport: StreamableHTTPServerTransport,
   request: IncomingMessage,
   response: ServerResponse,
   parsedBody: unknown,
@@ -228,13 +230,6 @@ async function handleMcpRequest(
     response.writeHead(404).end('not found')
     return
   }
-  const server = await createMcpServer(getContext, conversationId)
-  const transport = new StreamableHTTPServerTransport({})
-  response.on('close', () => {
-    void transport.close()
-    void server.close()
-  })
-  await server.connect(transport)
   await transport.handleRequest(request, response, parsedBody)
 }
 
@@ -242,7 +237,12 @@ export async function startLocalMcpBridge(
   getContext: MakersContextProvider,
   conversationId: string,
 ): Promise<LocalMcpBridge> {
-  resetWorkspaceStop(conversationId)
+  const server = await createMcpServer(getContext, conversationId)
+  const transport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: () => randomUUID(),
+  })
+  await server.connect(transport)
+
   let requests = 0
   let requestMetadata: McpRequestMetadata[] = []
   const httpServer = createServer((request, response) => {
@@ -262,29 +262,51 @@ export async function startLocalMcpBridge(
         url: request.url || '',
         bodyBytes,
       })
-      await handleMcpRequest(getContext, conversationId, request, response, parsedBody)
+      await handleMcpRequest(transport, request, response, parsedBody)
     })().catch(error => {
       if (!response.headersSent) response.writeHead(500)
       response.end(error instanceof Error ? error.message : String(error))
     })
   })
 
-  await new Promise<void>((resolve, reject) => {
-    httpServer.once('error', reject)
-    httpServer.listen(0, '127.0.0.1', resolve)
-  })
+  try {
+    await new Promise<void>((resolve, reject) => {
+      httpServer.once('error', reject)
+      httpServer.listen(0, '127.0.0.1', resolve)
+    })
+  } catch (error) {
+    await server.close().catch(() => {})
+    throw error
+  }
+
   const address = httpServer.address()
   if (!address || typeof address === 'string') {
+    await server.close().catch(() => {})
     throw new Error('MCP bridge did not receive a TCP address')
+  }
+
+  let closePromise: Promise<void> | undefined
+  const close = (): Promise<void> => {
+    closePromise ??= (async () => {
+      let mcpError: unknown
+      try {
+        await server.close()
+      } catch (error) {
+        mcpError = error
+      }
+      await new Promise<void>((resolve, reject) => {
+        httpServer.close(error => error ? reject(error) : resolve())
+        httpServer.closeAllConnections?.()
+      })
+      if (mcpError !== undefined) throw mcpError
+    })()
+    return closePromise
   }
 
   return {
     url: `http://127.0.0.1:${(address as AddressInfo).port}/mcp`,
     requestCount: () => requests,
     requestLog: () => requestMetadata.map(entry => ({ ...entry })),
-    close: () => new Promise<void>((resolve, reject) => {
-      httpServer.close(error => error ? reject(error) : resolve())
-      httpServer.closeAllConnections?.()
-    }),
+    close,
   }
 }
