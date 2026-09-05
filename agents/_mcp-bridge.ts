@@ -27,12 +27,16 @@ export * from './_mcp-bridge-base.ts'
 export async function startLocalMcpBridge(
   getContext: MakersContextProvider,
   conversationId: string,
+  capturedStopBaseline?: SharedStopBaseline,
 ): Promise<LocalMcpBridge> {
-  let sharedStopBaseline: SharedStopBaseline = Object.freeze({ value: undefined })
-  try {
-    sharedStopBaseline = await captureSharedStopBaseline(getContext())
-  } catch (error) {
-    if (!(error instanceof Error && error.name === 'CancellationUnavailableError')) throw error
+  let sharedStopBaseline = capturedStopBaseline
+  if (sharedStopBaseline === undefined) {
+    sharedStopBaseline = Object.freeze({ value: undefined })
+    try {
+      sharedStopBaseline = await captureSharedStopBaseline(getContext())
+    } catch (error) {
+      if (!(error instanceof Error && error.name === 'CancellationUnavailableError')) throw error
+    }
   }
 
   return startLocalMcpBridgeBase(
