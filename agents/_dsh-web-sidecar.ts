@@ -6,7 +6,10 @@ import { dirname, join } from 'node:path'
 import { startLocalGatewayProxy, type LocalGatewayProxy } from './_gateway-proxy.ts'
 import { makersMcpPermissionSource } from './_makers-mcp-permission.mjs'
 import { startLocalMcpBridge, type LocalMcpBridge } from './_mcp-bridge.ts'
-import { M08_STOP_EPOCH_KEY } from './_sandbox-abort.ts'
+import {
+  captureSharedStopBaseline,
+  type SharedStopBaseline,
+} from './_sandbox-abort.ts'
 
 const require = createRequire(import.meta.url)
 
@@ -28,6 +31,7 @@ export interface DshWebSidecarLease {
 }
 
 type SidecarEntryState = 'starting' | 'ready' | 'stopping'
+type SidecarCloseReason = 'stop' | 'epoch'
 
 interface SidecarEntry {
   conversationId: string
@@ -37,10 +41,15 @@ interface SidecarEntry {
   activeUsers: number
   stopEpochTracked: boolean
   stopEpochBaseline: unknown
+  retiringForEpoch: boolean
   closePromise?: Promise<{ found: true; closed: boolean; error?: string }>
 }
 
-type SidecarStarter = (context: any, conversationId: string) => Promise<DshWebSidecar>
+type SidecarStarter = (
+  context: any,
+  conversationId: string,
+  capturedStopBaseline?: SharedStopBaseline,
+) => Promise<DshWebSidecar>
 
 const sidecars = new Map<string, SidecarEntry>()
 let sidecarStarterForTests: SidecarStarter | undefined
@@ -433,7 +442,11 @@ async function terminateChild(child: ChildProcess): Promise<void> {
   ])
 }
 
-async function startSidecarAttempt(context: any, conversationId: string): Promise<DshWebSidecar> {
+async function startSidecarAttempt(
+  context: any,
+  conversationId: string,
+  capturedStopBaseline?: SharedStopBaseline,
+): Promise<DshWebSidecar> {
   let gateway: LocalGatewayProxy | undefined
   let mcp: LocalMcpBridge | undefined
   let child: ChildProcess | undefined
@@ -443,7 +456,7 @@ async function startSidecarAttempt(context: any, conversationId: string): Promis
   try {
     const port = await freePort()
     gateway = await startLocalGatewayProxy(getContext, conversationId)
-    mcp = await startLocalMcpBridge(getContext, conversationId)
+    mcp = await startLocalMcpBridge(getContext, conversationId, capturedStopBaseline)
     const home = dshHomeFor(conversationId)
     const defaultModel = envString(context, 'AI_GATEWAY_MODEL') || DEFAULT_MAKERS_MODEL
     const deepseekApiKey = envString(context, 'DEEPSEEK_API_KEY')
@@ -534,12 +547,16 @@ async function startSidecarAttempt(context: any, conversationId: string): Promis
   }
 }
 
-async function startSidecar(context: any, conversationId: string): Promise<DshWebSidecar> {
+async function startSidecar(
+  context: any,
+  conversationId: string,
+  capturedStopBaseline?: SharedStopBaseline,
+): Promise<DshWebSidecar> {
   const starter = sidecarStarterForTests ?? startSidecarAttempt
   let lastError: unknown
   for (let attempt = 1; attempt <= SIDECAR_START_ATTEMPTS; attempt++) {
     try {
-      return await starter(context, conversationId)
+      return await starter(context, conversationId, capturedStopBaseline)
     } catch (error) {
       lastError = error
       if (attempt === SIDECAR_START_ATTEMPTS) break
@@ -549,32 +566,26 @@ async function startSidecar(context: any, conversationId: string): Promise<DshWe
   throw lastError instanceof Error ? lastError : new Error('DSH sidecar startup failed')
 }
 
-function cancellationState(context: any): any | undefined {
-  const state = context?.store?.state
-  return state && typeof state.get === 'function' ? state : undefined
-}
-
-async function captureSidecarStopEpoch(context: any): Promise<{ tracked: boolean; value: unknown }> {
-  const state = cancellationState(context)
-  if (!state) return { tracked: false, value: undefined }
+async function captureSidecarStopEpoch(
+  context: any,
+  conversationId: string,
+): Promise<{ tracked: boolean; value: unknown }> {
   try {
-    return { tracked: true, value: await state.get(M08_STOP_EPOCH_KEY) }
-  } catch {
+    const baseline = await captureSharedStopBaseline(context, conversationId)
+    return { tracked: true, value: baseline.value }
+  } catch (error) {
+    if (error instanceof Error && error.name === 'CancellationUnavailableError') {
+      return { tracked: false, value: null }
+    }
     throw new Error('SIDE_CAR_CANCELLATION_UNAVAILABLE')
   }
 }
 
 async function sidecarStopEpochChanged(context: any, entry: SidecarEntry): Promise<boolean> {
-  if (!entry.stopEpochTracked) return false
-  const state = cancellationState(context)
-  if (!state) throw new Error('SIDE_CAR_CANCELLATION_UNAVAILABLE')
-  let current: unknown
-  try {
-    current = await state.get(M08_STOP_EPOCH_KEY)
-  } catch {
-    throw new Error('SIDE_CAR_CANCELLATION_UNAVAILABLE')
-  }
-  return !Object.is(current, entry.stopEpochBaseline)
+  const current = await captureSidecarStopEpoch(context, entry.conversationId)
+  if (!entry.stopEpochTracked) return current.tracked
+  if (!current.tracked) throw new Error('SIDE_CAR_CANCELLATION_UNAVAILABLE')
+  return !Object.is(current.value, entry.stopEpochBaseline)
 }
 
 function createSidecarEntry(context: any, conversationId: string): SidecarEntry {
@@ -585,14 +596,18 @@ function createSidecarEntry(context: any, conversationId: string): SidecarEntry 
     lastUsedAt: Date.now(),
     activeUsers: 0,
     stopEpochTracked: false,
-    stopEpochBaseline: undefined,
+    stopEpochBaseline: null,
+    retiringForEpoch: false,
   } as SidecarEntry
 
   entry.pending = (async () => {
-    const fence = await captureSidecarStopEpoch(context)
+    const fence = await captureSidecarStopEpoch(context, conversationId)
     entry.stopEpochTracked = fence.tracked
     entry.stopEpochBaseline = fence.value
-    const sidecar = await startSidecar(context, conversationId)
+    const sharedFence = fence.tracked
+      ? Object.freeze({ value: fence.value })
+      : undefined
+    const sidecar = await startSidecar(context, conversationId, sharedFence)
     if (await sidecarStopEpochChanged(context, entry)) {
       try {
         await sidecar.close()
@@ -621,14 +636,22 @@ function createSidecarEntry(context: any, conversationId: string): SidecarEntry 
   return entry
 }
 
-function beginClose(entry: SidecarEntry): Promise<{ found: true; closed: boolean; error?: string }> {
+function beginClose(
+  entry: SidecarEntry,
+  reason: SidecarCloseReason = 'stop',
+): Promise<{ found: true; closed: boolean; error?: string }> {
+  if (entry.state !== 'stopping') entry.retiringForEpoch = reason === 'epoch'
+  else if (reason === 'stop') entry.retiringForEpoch = false
   entry.state = 'stopping'
   entry.closePromise ??= (async () => {
     try {
       const sidecar = await entry.pending
       await sidecar.close()
       return { found: true, closed: true } as const
-    } catch {
+    } catch (error) {
+      if (error instanceof Error && error.message === 'SIDE_CAR_STOPPED_DURING_START') {
+        return { found: true, closed: true } as const
+      }
       return { found: true, closed: false, error: 'SIDE_CAR_CLOSE_FAILED' } as const
     } finally {
       if (sidecars.get(entry.conversationId) === entry) {
@@ -637,6 +660,15 @@ function beginClose(entry: SidecarEntry): Promise<{ found: true; closed: boolean
     }
   })()
   return entry.closePromise
+}
+
+async function waitForEpochRetirement(
+  entry: SidecarEntry,
+): Promise<boolean> {
+  if (!entry.retiringForEpoch || !entry.closePromise) return false
+  const retired = await entry.closePromise
+  if (!retired.closed) throw new Error(retired.error || 'SIDE_CAR_CLOSE_FAILED')
+  return true
 }
 
 function sweepIdleSidecars(): void {
@@ -654,14 +686,20 @@ export async function acquireDshWebSidecar(context: any): Promise<DshWebSidecarL
 
   while (true) {
     let entry = sidecars.get(conversationId)
-    if (entry?.state === 'stopping') throw new Error('SIDE_CAR_STOPPING')
+    if (entry?.state === 'stopping') {
+      if (await waitForEpochRetirement(entry)) continue
+      throw new Error('SIDE_CAR_STOPPING')
+    }
     if (!entry) entry = createSidecarEntry(context, conversationId)
 
     const sidecar = await entry.pending
-    if (entry.state === 'stopping') throw new Error('SIDE_CAR_STOPPING')
+    if (entry.state === 'stopping') {
+      if (await waitForEpochRetirement(entry)) continue
+      throw new Error('SIDE_CAR_STOPPING')
+    }
 
     if (await sidecarStopEpochChanged(context, entry)) {
-      const retired = await beginClose(entry)
+      const retired = await beginClose(entry, 'epoch')
       if (!retired.closed) throw new Error(retired.error || 'SIDE_CAR_CLOSE_FAILED')
       continue
     }
@@ -697,5 +735,5 @@ export async function stopDshWebSidecar(
 ): Promise<{ found: boolean; closed: boolean; error?: string }> {
   const entry = sidecars.get(conversationId)
   if (!entry) return { found: false, closed: false }
-  return beginClose(entry)
+  return beginClose(entry, 'stop')
 }
