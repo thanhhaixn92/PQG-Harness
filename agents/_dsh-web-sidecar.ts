@@ -5,7 +5,8 @@ import { createServer } from 'node:net'
 import { dirname, join } from 'node:path'
 import { startLocalGatewayProxy, type LocalGatewayProxy } from './_gateway-proxy.ts'
 import { makersMcpPermissionSource } from './_makers-mcp-permission.mjs'
-import { startLocalMcpBridge, type LocalMcpBridge } from './_mcp-bridge.ts'
+import { startLocalMcpBridge, type ModuleMcpBridge } from './_mcp-bridge.ts'
+import { applyModulePolicyToBridge } from './_module-state.ts'
 
 const require = createRequire(import.meta.url)
 
@@ -15,7 +16,7 @@ export interface DshWebSidecar {
   port: number
   child: ChildProcess
   gateway: LocalGatewayProxy
-  mcp: LocalMcpBridge
+  mcp: ModuleMcpBridge
   lastUsedAt: number
   context: any
   close(): Promise<void>
@@ -432,7 +433,7 @@ async function terminateChild(child: ChildProcess): Promise<void> {
 
 async function startSidecarAttempt(context: any, conversationId: string): Promise<DshWebSidecar> {
   let gateway: LocalGatewayProxy | undefined
-  let mcp: LocalMcpBridge | undefined
+  let mcp: ModuleMcpBridge | undefined
   let child: ChildProcess | undefined
   let sidecar!: DshWebSidecar
   const getContext = (): any => sidecar?.context ?? context
@@ -441,6 +442,7 @@ async function startSidecarAttempt(context: any, conversationId: string): Promis
     const port = await freePort()
     gateway = await startLocalGatewayProxy(getContext, conversationId)
     mcp = await startLocalMcpBridge(getContext, conversationId)
+    await applyModulePolicyToBridge(context, mcp)
     const home = dshHomeFor(conversationId)
     const defaultModel = envString(context, 'AI_GATEWAY_MODEL') || DEFAULT_MAKERS_MODEL
     const deepseekApiKey = envString(context, 'DEEPSEEK_API_KEY')
@@ -598,6 +600,22 @@ function sweepIdleSidecars(): void {
     if (entry.state !== 'ready' || entry.activeUsers !== 0 || entry.lastUsedAt >= cutoff) continue
     void beginClose(entry)
   }
+}
+
+export async function applyModuleEnabledToLiveSidecars(
+  moduleId: string,
+  enabled: boolean,
+): Promise<void> {
+  const ready: Promise<void>[] = []
+  for (const entry of sidecars.values()) {
+    if (entry.state === 'stopping') continue
+    const apply = entry.pending.then(sidecar => {
+      sidecar.mcp.setModuleEnabled(moduleId, enabled)
+    })
+    if (entry.state === 'ready') ready.push(apply)
+    else void apply.catch(() => {})
+  }
+  if (ready.length > 0) await Promise.allSettled(ready)
 }
 
 export async function acquireDshWebSidecar(context: any): Promise<DshWebSidecarLease> {

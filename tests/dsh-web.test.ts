@@ -202,3 +202,25 @@ test('generated API routes expose static files the Makers scanner accepts', asyn
   assert.match(remoteRoute, /export async function onRequest/)
   assert.match(remoteRoute, /\.\.\/_proxy\.ts/)
 })
+
+test('PQG module settings contribution is prepared into the DSH Web graph', async () => {
+  const html = await readFile(new URL('../index.html', import.meta.url), 'utf8')
+  const bundle = await readFile(
+    new URL('../public/plugins/@pqg/module-settings/client.js', import.meta.url),
+    'utf8',
+  )
+  const source = await readFile(new URL('../src/pqg-module-settings-client.ts', import.meta.url), 'utf8')
+  assert.match(html, /"id":"@pqg\/module-settings"/)
+  assert.match(bundle, /window\.__ModuleLoader__\.load/)
+  assert.match(bundle, /@pqg\/module-settings/)
+  assert.match(bundle, /settings\.section/)
+  assert.match(bundle, /\/api\/pqg\.modules/)
+  assert.match(source, /Tiện ích/)
+  assert.match(source, /Chưa có tiện ích nào được cài đặt\./)
+})
+
+test('PQG module settings serializes policy writes from the toggle UI', async () => {
+  const source = await readFile(new URL('../src/pqg-module-settings-client.ts', import.meta.url), 'utf8')
+  assert.match(source, /if \(savingRef\.current \|\| savingId !== null\) return/)
+  assert.match(source, /const saving = savingId !== null/)
+})
