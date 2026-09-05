@@ -6,7 +6,12 @@ async function readJson(path) {
 }
 
 function hasExport(exportsField, key) {
-  return Boolean(exportsField && typeof exportsField === 'object' && key in exportsField)
+  return Boolean(
+    exportsField
+    && typeof exportsField === 'object'
+    && key in exportsField
+    && exportsField[key] !== null,
+  )
 }
 
 function moduleMetadata(pkg, packageName) {
@@ -29,7 +34,10 @@ function moduleMetadata(pkg, packageName) {
 
 export async function discoverPqgModules(rootDir = process.cwd()) {
   const rootPackage = await readJson(join(rootDir, 'package.json'))
-  const dependencyNames = Object.keys(rootPackage.dependencies ?? {})
+  const dependencyNames = [...new Set([
+    ...Object.keys(rootPackage.dependencies ?? {}),
+    ...Object.keys(rootPackage.optionalDependencies ?? {}),
+  ])]
   const modules = []
 
   for (const packageName of dependencyNames) {
