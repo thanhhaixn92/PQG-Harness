@@ -571,10 +571,10 @@ async function startSidecar(
 async function captureSidecarStopEpoch(
   context: any,
   conversationId: string,
-): Promise<{ tracked: boolean; value: unknown }> {
+): Promise<{ tracked: boolean; value: unknown; baseline?: SharedStopBaseline }> {
   try {
     const baseline = await captureSharedStopBaseline(context, conversationId)
-    return { tracked: true, value: baseline.value }
+    return { tracked: true, value: baseline.value, baseline }
   } catch (error) {
     if (error instanceof Error && error.name === 'CancellationUnavailableError') {
       return { tracked: false, value: null }
@@ -590,7 +590,24 @@ async function sidecarStopEpochChanged(context: any, entry: SidecarEntry): Promi
   return !Object.is(current.value, entry.stopEpochBaseline)
 }
 
-function createSidecarEntry(context: any, conversationId: string): SidecarEntry {
+function stopEpochTimestamp(value: unknown): number | undefined {
+  if (typeof value !== 'string') return undefined
+  const parts = value.split(':')
+  if (parts.length < 3) return undefined
+  const timestamp = Number(parts[parts.length - 2])
+  return Number.isSafeInteger(timestamp) && timestamp >= 0 ? timestamp : undefined
+}
+
+function stopEpochOvertookAdmission(value: unknown, admissionStartedAtMs: number): boolean {
+  const timestamp = stopEpochTimestamp(value)
+  return timestamp !== undefined && timestamp >= admissionStartedAtMs
+}
+
+function createSidecarEntry(
+  context: any,
+  conversationId: string,
+  admissionStartedAtMs: number,
+): SidecarEntry {
   const entry = {
     conversationId,
     state: 'starting' as SidecarEntryState,
@@ -605,12 +622,12 @@ function createSidecarEntry(context: any, conversationId: string): SidecarEntry 
 
   entry.pending = (async () => {
     const fence = await captureSidecarStopEpoch(context, conversationId)
+    if (fence.tracked && stopEpochOvertookAdmission(fence.value, admissionStartedAtMs)) {
+      throw new Error('SIDE_CAR_STOPPING')
+    }
     entry.stopEpochTracked = fence.tracked
     entry.stopEpochBaseline = fence.value
-    const sharedFence = fence.tracked
-      ? Object.freeze({ value: fence.value })
-      : undefined
-    const sidecar = await startSidecar(context, conversationId, sharedFence)
+    const sidecar = await startSidecar(context, conversationId, fence.baseline)
     if (await sidecarStopEpochChanged(context, entry)) {
       try {
         await sidecar.close()
@@ -678,8 +695,10 @@ async function waitForEpochRetirement(
   admissionSequence: number,
 ): Promise<boolean> {
   if (!entry.retiringForEpoch || !entry.closePromise) return false
-  const retired = await entry.closePromise
+  const closePromise = entry.closePromise
+  const retired = await closePromise
   if (!retired.closed) throw new Error(retired.error || 'SIDE_CAR_CLOSE_FAILED')
+  if (!entry.retiringForEpoch || entry.closePromise !== closePromise) return false
   if (entry.epochRetirementCutoff !== null && admissionSequence <= entry.epochRetirementCutoff) {
     throw new Error('SIDE_CAR_STOPPING')
   }
@@ -697,6 +716,7 @@ function sweepIdleSidecars(): void {
 export async function acquireDshWebSidecar(context: any): Promise<DshWebSidecarLease> {
   const conversationId = String(context.conversation_id || '').trim()
   if (!conversationId) throw new Error('makers-conversation-id is required for DSH Web.')
+  const admissionStartedAtMs = Date.now()
   const admissionSequence = ++acquireAdmissionSequence
   sweepIdleSidecars()
 
@@ -706,7 +726,7 @@ export async function acquireDshWebSidecar(context: any): Promise<DshWebSidecarL
       if (await waitForEpochRetirement(entry, admissionSequence)) continue
       throw new Error('SIDE_CAR_STOPPING')
     }
-    if (!entry) entry = createSidecarEntry(context, conversationId)
+    if (!entry) entry = createSidecarEntry(context, conversationId, admissionStartedAtMs)
 
     const sidecar = await entry.pending
     if (entry.state === 'stopping') {
