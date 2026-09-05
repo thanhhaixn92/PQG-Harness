@@ -146,14 +146,15 @@ async function createMcpServer(
     def: { description: string; inputSchema?: Record<string, unknown> },
     handler: McpToolHandler,
   ) => {
-    server.registerTool(name, def as any, (args: any, extra: McpHandlerExtra) => {
+    const wrappedHandler = (args: any, extra: McpHandlerExtra) => {
       const context = getContext()
       return runWithSandboxCancellationScope(
         context,
         extra.signal,
         wrappedContext => handler(args, extra, wrappedContext),
       )
-    })
+    }
+    server.registerTool(name, def as any, wrappedHandler as any)
   }
 
   register('makers_context_probe', {
