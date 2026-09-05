@@ -73,25 +73,35 @@ async function publishCancellationEpoch(context: any, conversationId: string): P
   const scopedConversationId = String(context?.conversation_id || '').trim()
   const state = context?.store?.state
   const metadataAvailable = typeof context?.store?.updateConversation === 'function'
+  const stateAvailable = scopedConversationId === conversationId
+    && state
+    && typeof state.set === 'function'
 
-  let metadataPublished = false
-  if (metadataAvailable) {
-    try {
-      metadataPublished = await publishConversationMetadataEpoch(context, conversationId, epoch)
-    } catch {
-      metadataPublished = false
-    }
-  }
+  const statePromise: Promise<boolean> = stateAvailable
+    ? (async () => {
+        try {
+          await state.set(M08_STOP_EPOCH_KEY, epoch)
+          return true
+        } catch {
+          return false
+        }
+      })()
+    : Promise.resolve(false)
 
-  let statePublished = false
-  if (scopedConversationId === conversationId && state && typeof state.set === 'function') {
-    try {
-      await state.set(M08_STOP_EPOCH_KEY, epoch)
-      statePublished = true
-    } catch {
-      statePublished = false
-    }
-  }
+  const metadataPromise: Promise<boolean> = metadataAvailable
+    ? (async () => {
+        try {
+          return await publishConversationMetadataEpoch(context, conversationId, epoch)
+        } catch {
+          return false
+        }
+      })()
+    : Promise.resolve(false)
+
+  const [statePublished, metadataPublished] = await Promise.all([
+    statePromise,
+    metadataPromise,
+  ])
 
   // When the explicit conversation channel exists it is authoritative because
   // long-lived MCP readers also prefer that channel. A scoped state write may
