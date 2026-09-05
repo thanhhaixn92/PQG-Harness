@@ -42,6 +42,7 @@ interface SidecarEntry {
   stopEpochTracked: boolean
   stopEpochBaseline: unknown
   retiringForEpoch: boolean
+  epochRetirementCutoff: number | null
   closePromise?: Promise<{ found: true; closed: boolean; error?: string }>
 }
 
@@ -53,6 +54,7 @@ type SidecarStarter = (
 
 const sidecars = new Map<string, SidecarEntry>()
 let sidecarStarterForTests: SidecarStarter | undefined
+let acquireAdmissionSequence = 0
 const SIDECAR_IDLE_MS = 25 * 60_000
 const SIDECAR_START_ATTEMPTS = 3
 const DSH_SETTINGS_FILE = 'settings.yaml'
@@ -598,6 +600,7 @@ function createSidecarEntry(context: any, conversationId: string): SidecarEntry 
     stopEpochTracked: false,
     stopEpochBaseline: null,
     retiringForEpoch: false,
+    epochRetirementCutoff: null,
   } as SidecarEntry
 
   entry.pending = (async () => {
@@ -639,9 +642,17 @@ function createSidecarEntry(context: any, conversationId: string): SidecarEntry 
 function beginClose(
   entry: SidecarEntry,
   reason: SidecarCloseReason = 'stop',
+  protectAdmittedRequests = false,
 ): Promise<{ found: true; closed: boolean; error?: string }> {
-  if (entry.state !== 'stopping') entry.retiringForEpoch = reason === 'epoch'
-  else if (reason === 'stop') entry.retiringForEpoch = false
+  if (entry.state !== 'stopping') {
+    entry.retiringForEpoch = reason === 'epoch'
+    entry.epochRetirementCutoff = reason === 'epoch' && protectAdmittedRequests
+      ? acquireAdmissionSequence
+      : null
+  } else if (reason === 'stop') {
+    entry.retiringForEpoch = false
+    entry.epochRetirementCutoff = null
+  }
   entry.state = 'stopping'
   entry.closePromise ??= (async () => {
     try {
@@ -664,10 +675,14 @@ function beginClose(
 
 async function waitForEpochRetirement(
   entry: SidecarEntry,
+  admissionSequence: number,
 ): Promise<boolean> {
   if (!entry.retiringForEpoch || !entry.closePromise) return false
   const retired = await entry.closePromise
   if (!retired.closed) throw new Error(retired.error || 'SIDE_CAR_CLOSE_FAILED')
+  if (entry.epochRetirementCutoff !== null && admissionSequence <= entry.epochRetirementCutoff) {
+    throw new Error('SIDE_CAR_STOPPING')
+  }
   return true
 }
 
@@ -682,26 +697,28 @@ function sweepIdleSidecars(): void {
 export async function acquireDshWebSidecar(context: any): Promise<DshWebSidecarLease> {
   const conversationId = String(context.conversation_id || '').trim()
   if (!conversationId) throw new Error('makers-conversation-id is required for DSH Web.')
+  const admissionSequence = ++acquireAdmissionSequence
   sweepIdleSidecars()
 
   while (true) {
     let entry = sidecars.get(conversationId)
     if (entry?.state === 'stopping') {
-      if (await waitForEpochRetirement(entry)) continue
+      if (await waitForEpochRetirement(entry, admissionSequence)) continue
       throw new Error('SIDE_CAR_STOPPING')
     }
     if (!entry) entry = createSidecarEntry(context, conversationId)
 
     const sidecar = await entry.pending
     if (entry.state === 'stopping') {
-      if (await waitForEpochRetirement(entry)) continue
+      if (await waitForEpochRetirement(entry, admissionSequence)) continue
       throw new Error('SIDE_CAR_STOPPING')
     }
 
+    const wasTracked = entry.stopEpochTracked
     if (await sidecarStopEpochChanged(context, entry)) {
-      const retired = await beginClose(entry, 'epoch')
-      if (!retired.closed) throw new Error(retired.error || 'SIDE_CAR_CLOSE_FAILED')
-      continue
+      void beginClose(entry, 'epoch', wasTracked)
+      if (await waitForEpochRetirement(entry, admissionSequence)) continue
+      throw new Error('SIDE_CAR_STOPPING')
     }
 
     entry.state = 'ready'
