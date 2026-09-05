@@ -14,7 +14,16 @@ export async function onRequest(context: any): Promise<Response> {
     )
   }
 
-  const preview = await currentPreview(context, conversationId)
+  let preview: Awaited<ReturnType<typeof currentPreview>>
+  try {
+    preview = await currentPreview(context, conversationId)
+  } catch {
+    return Response.json(
+      { published: false, error: 'PREVIEW_STATUS_UNAVAILABLE' },
+      { status: 503, headers: NO_STORE_HEADERS },
+    )
+  }
+
   if (!preview.previewUrl) {
     return Response.json(preview, {
       status: preview.published ? 503 : 404,
