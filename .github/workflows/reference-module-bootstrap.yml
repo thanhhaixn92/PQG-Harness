@@ -1,0 +1,102 @@
+name: reference-module-bootstrap
+
+on:
+  push:
+    branches: [feat/reference-module-phase-a]
+    paths: [.github/workflows/reference-module-bootstrap.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/reference-module-phase-a
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Sync package lock
+        run: npm install --package-lock-only --ignore-scripts
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Add reference client preparation seam
+        run: |
+          node <<'NODE'
+          const { readFileSync, writeFileSync } = require('node:fs')
+          const path = 'scripts/prepare-dsh-web.mjs'
+          let source = readFileSync(path, 'utf8')
+
+          const idNeedle = "const pqgModuleSettingsId = '@pqg/module-settings'\n"
+          if (!source.includes(idNeedle)) throw new Error('missing PQG settings id seam')
+          source = source.replace(
+            idNeedle,
+            `${idNeedle}const pqgReferenceModuleId = '@pqg/reference-module'\n`,
+          )
+
+          const clientPackagesNeedle = 'async function clientPackages() {\n'
+          if (!source.includes(clientPackagesNeedle)) throw new Error('missing clientPackages seam')
+          const prepareReferenceClient = `async function preparePqgReferenceModuleClient() {
+            const entry = join(root, 'packages', 'reference-module', 'src', 'client.tsx')
+            const source = await readFile(entry, 'utf8')
+            const transformed = await transformWithEsbuild(source, entry, {
+              loader: 'tsx',
+              target: 'es2022',
+              format: 'cjs',
+              sourcemap: false,
+              charset: 'utf8',
+            })
+            const bundled = [
+              \`window.__ModuleLoader__.load({ id: \${JSON.stringify(pqgReferenceModuleId)}, factory: (require) => { var module = { exports: {} }; var exports = module.exports;\`,
+              transformed.code.trimEnd(),
+              'return module.exports; } });',
+              '',
+            ].join('\\n')
+            const target = join(publicDir, 'plugins', ...pqgReferenceModuleId.split('/'), 'client.js')
+            await mkdir(dirname(target), { recursive: true })
+            await writeFile(target, bundled)
+          }
+
+          `
+          source = source.replace(clientPackagesNeedle, prepareReferenceClient + clientPackagesNeedle)
+
+          const entriesNeedle = `const entries = [
+            ...(await clientPackages()),
+            await preparePqgModuleSettingsClient(),
+          ].sort((left, right) => left.id.localeCompare(right.id))`
+          if (!source.includes(entriesNeedle)) throw new Error('missing entries seam')
+          source = source.replace(
+            entriesNeedle,
+            `await preparePqgReferenceModuleClient()
+          ${entriesNeedle}`,
+          )
+
+          writeFileSync(path, source)
+          NODE
+
+      - name: Prepare generated web artifacts
+        run: npm run prepare:dsh-web
+
+      - name: Verify quality before commit
+        run: |
+          npm run typecheck
+          npm run test:prepared
+          npm run build:prepared
+
+      - name: Commit bootstrap result and remove bootstrap workflow
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm .github/workflows/reference-module-bootstrap.yml
+          git add package-lock.json scripts/prepare-dsh-web.mjs public/plugins/@pqg/reference-module/client.js
+          git commit -m "feat: prepare reference module client"
+          git push origin HEAD:feat/reference-module-phase-a
