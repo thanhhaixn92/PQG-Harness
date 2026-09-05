@@ -1,3 +1,5 @@
+const SANDBOX_KILL_ATTEMPT_TIMEOUT_MS = 1_000
+
 function workspaceAbortError(): Error {
   const error = new Error('WORKSPACE_COMMAND_ABORTED')
   error.name = 'AbortError'
@@ -19,6 +21,20 @@ function sleep(milliseconds: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, milliseconds))
 }
 
+async function killSandboxWithDeadline(sandbox: any): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    await Promise.race([
+      Promise.resolve().then(() => sandbox.kill()),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error('sandbox kill timeout')), SANDBOX_KILL_ATTEMPT_TIMEOUT_MS)
+      }),
+    ])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
+}
+
 async function terminateSandbox(sandbox: any): Promise<void> {
   if (typeof sandbox?.kill !== 'function') {
     throw stableError('SandboxTerminationError', 'SANDBOX_KILL_UNAVAILABLE')
@@ -26,7 +42,7 @@ async function terminateSandbox(sandbox: any): Promise<void> {
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      await sandbox.kill()
+      await killSandboxWithDeadline(sandbox)
       return
     } catch {
       if (attempt === 0) await sleep(25)
@@ -41,9 +57,11 @@ async function runWithSandboxCancellation<T>(
   operation: () => Promise<T>,
 ): Promise<T> {
   if (!signal) return operation()
-  if (signal.aborted) throw workspaceAbortError()
+  if (signal.aborted) {
+    await terminateSandbox(sandbox)
+    throw workspaceAbortError()
+  }
 
-  let started = false
   let cancelled = false
   let killPromise: Promise<void> | undefined
   const killOnce = (): Promise<void> => {
@@ -60,10 +78,6 @@ async function runWithSandboxCancellation<T>(
   const onAbort = (): void => {
     if (cancelled) return
     cancelled = true
-    if (!started) {
-      rejectAbort(workspaceAbortError())
-      return
-    }
     void killOnce().then(
       () => rejectAbort(workspaceAbortError()),
       error => rejectAbort(error instanceof Error
@@ -76,8 +90,10 @@ async function runWithSandboxCancellation<T>(
   if (signal.aborted) onAbort()
 
   try {
-    if (cancelled) throw workspaceAbortError()
-    started = true
+    if (cancelled) {
+      await killOnce()
+      throw workspaceAbortError()
+    }
     const result = await Promise.race([operation(), abortPromise])
     if (signal.aborted || cancelled) {
       await killOnce()
@@ -86,12 +102,10 @@ async function runWithSandboxCancellation<T>(
     return result
   } catch (error) {
     if (signal.aborted || cancelled) {
-      if (started) {
-        try {
-          await killOnce()
-        } catch (killError) {
-          throw killError
-        }
+      try {
+        await killOnce()
+      } catch (killError) {
+        throw killError
       }
       if (error instanceof Error && error.name === 'SandboxTerminationError') throw error
       throw workspaceAbortError()
