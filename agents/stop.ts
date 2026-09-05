@@ -9,6 +9,34 @@ function newStopEpoch(context: any): string {
   return `${runId}:${Date.now()}:${Math.random().toString(36).slice(2)}`
 }
 
+function isMissingConversation(error: unknown): boolean {
+  const code = error && typeof error === 'object' && 'code' in error
+    ? String((error as { code?: unknown }).code || '')
+    : ''
+  const message = error instanceof Error ? error.message : String(error)
+  return code === 'MemoryNotFoundError' || /Conversation not found/i.test(message)
+}
+
+async function appendStopBootstrapMessage(context: any, conversationId: string): Promise<void> {
+  const appendMessage = context?.store?.appendMessage
+  if (typeof appendMessage !== 'function') throw new Error('CANCELLATION_STATE_UNAVAILABLE')
+  const payload = {
+    conversationId,
+    role: 'system' as const,
+    content: 'm08-stop',
+    metadata: { kind: 'm08-stop-bootstrap' },
+  }
+  try {
+    await appendMessage.call(context.store, payload)
+  } catch (firstError) {
+    try {
+      await appendMessage.call(context.store, conversationId, payload)
+    } catch {
+      throw firstError
+    }
+  }
+}
+
 async function publishConversationMetadataEpoch(
   context: any,
   conversationId: string,
@@ -21,10 +49,20 @@ async function publishConversationMetadataEpoch(
     await updateConversation.call(context.store, { conversationId, metadata })
     return true
   } catch (firstError) {
+    if (isMissingConversation(firstError)) {
+      await appendStopBootstrapMessage(context, conversationId)
+      await updateConversation.call(context.store, { conversationId, metadata })
+      return true
+    }
     try {
       await updateConversation.call(context.store, conversationId, { metadata })
       return true
-    } catch {
+    } catch (secondError) {
+      if (isMissingConversation(secondError)) {
+        await appendStopBootstrapMessage(context, conversationId)
+        await updateConversation.call(context.store, conversationId, { metadata })
+        return true
+      }
       throw firstError
     }
   }
