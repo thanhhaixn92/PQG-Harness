@@ -197,7 +197,7 @@ test('sandbox termination attempts are individually bounded', async () => {
   const controller = new AbortController()
   const commandStarted = deferred()
   const releaseCommand = deferred<any>()
-  const killGates: Array<ReturnType<typeof deferred>> = []
+  const killGates: Array<{ resolve: (value: void | PromiseLike<void>) => void }> = []
 
   const context = {
     sandbox: {
@@ -228,7 +228,7 @@ test('sandbox termination attempts are individually bounded', async () => {
     wait(2_300).then(() => ({ settled: false, error: undefined as Error | undefined })),
   ])
 
-  for (const gate of killGates) gate.resolve()
+  for (const gate of killGates) gate.resolve(undefined)
   releaseCommand.resolve({ stdout: '', stderr: '', exitCode: 0 })
   await operation.catch(() => {})
 
