@@ -8,15 +8,21 @@ import {
 export * from './_mcp-bridge-base.ts'
 
 /**
- * Reuse the reviewed MCP bridge unchanged while presenting it a runner context
- * whose sandbox command seam cooperates with the platform AbortSignal.
+ * The DSH MCP bridge is long-lived and outlives the HTTP request that most
+ * recently touched the sidecar. Therefore that request's AbortSignal is not a
+ * valid owner for tool cancellation. The bridge uses the conversation-scoped
+ * shared Stop epoch instead; the context selected at tool dispatch still owns
+ * the exact sandbox handle used by commands.run.
  */
 export async function startLocalMcpBridge(
   getContext: MakersContextProvider,
   conversationId: string,
 ): Promise<LocalMcpBridge> {
   return startLocalMcpBridgeBase(
-    () => withRunnerOwnedSandboxCancellation(getContext()),
+    () => withRunnerOwnedSandboxCancellation(getContext(), {
+      useRequestSignal: false,
+      requireSharedStop: true,
+    }),
     conversationId,
   )
 }
