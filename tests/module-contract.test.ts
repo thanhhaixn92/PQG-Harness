@@ -188,7 +188,7 @@ test('root installs a reference PQG module with both client and Makers adapters'
 
   const { discoverPqgModules } = await import(modulePath.href)
   const root = new URL('../', import.meta.url).pathname
-  const reference = (await discoverPqgModules(root)).find(module => module.id === 'reference')
+  const reference = (await discoverPqgModules(root)).find((module: { id: string }) => module.id === 'reference')
   assert.deepEqual(reference, {
     id: 'reference',
     label: 'Reference Module',
