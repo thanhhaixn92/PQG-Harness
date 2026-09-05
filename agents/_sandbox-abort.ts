@@ -5,6 +5,8 @@ export const M08_STOP_EPOCH_METADATA_KEY = 'pqgM08StopEpoch'
 
 export interface SharedStopBaseline {
   readonly value: unknown
+  readonly scopedStateTracked?: boolean
+  readonly scopedStateValue?: unknown
 }
 
 export interface SandboxCancellationOptions {
@@ -73,6 +75,14 @@ function sharedState(context: any): any | undefined {
   return state && typeof state.get === 'function' ? state : undefined
 }
 
+function scopedSharedState(context: any, conversationId?: string): any | undefined {
+  const state = sharedState(context)
+  if (!state) return undefined
+  if (!conversationId) return state
+  const scopedConversationId = String(context?.conversation_id || '').trim()
+  return scopedConversationId === conversationId ? state : undefined
+}
+
 function hasConversationMetadataChannel(context: any, conversationId?: string): boolean {
   return Boolean(
     conversationId
@@ -103,10 +113,14 @@ async function getConversationForCancellation(context: any, conversationId: stri
   }
 }
 
+async function readMetadataStopEpoch(context: any, conversationId: string): Promise<unknown> {
+  const conversation = await getConversationForCancellation(context, conversationId)
+  return normalizeStopEpoch(conversation?.metadata?.[M08_STOP_EPOCH_METADATA_KEY])
+}
+
 async function readStopEpoch(context: any, conversationId?: string): Promise<unknown> {
   if (hasConversationMetadataChannel(context, conversationId)) {
-    const conversation = await getConversationForCancellation(context, conversationId!)
-    return normalizeStopEpoch(conversation?.metadata?.[M08_STOP_EPOCH_METADATA_KEY])
+    return readMetadataStopEpoch(context, conversationId!)
   }
 
   const state = sharedState(context)
@@ -125,6 +139,25 @@ export async function captureSharedStopBaseline(
 ): Promise<SharedStopBaseline> {
   if (!hasSharedStopChannel(context, conversationId)) throw cancellationUnavailableError()
   try {
+    if (hasConversationMetadataChannel(context, conversationId)) {
+      const state = scopedSharedState(context, conversationId)
+      const stateRead = state
+        ? Promise.resolve(state.get(M08_STOP_EPOCH_KEY)).then(normalizeStopEpoch)
+        : undefined
+      void stateRead?.catch(() => {})
+      const value = await readMetadataStopEpoch(context, conversationId!)
+      if (!stateRead) return Object.freeze({ value })
+      try {
+        const scopedStateValue = await stateRead
+        return Object.freeze({
+          value,
+          scopedStateTracked: true,
+          scopedStateValue,
+        })
+      } catch {
+        return Object.freeze({ value })
+      }
+    }
     return Object.freeze({ value: await readStopEpoch(context, conversationId) })
   } catch {
     throw cancellationUnavailableError()
@@ -137,6 +170,31 @@ async function assertSharedStopBaselineCurrent(
   options: SandboxCancellationOptions,
 ): Promise<void> {
   try {
+    if (hasConversationMetadataChannel(context, options.conversationId)) {
+      const metadataRead = readMetadataStopEpoch(context, options.conversationId!)
+      void metadataRead.catch(() => {})
+      const state = scopedSharedState(context, options.conversationId)
+      if (state) {
+        const stateRead = Promise.resolve(state.get(M08_STOP_EPOCH_KEY)).then(normalizeStopEpoch)
+        void stateRead.catch(() => {})
+        try {
+          const currentState = await stateRead
+          const baselineState = baseline.scopedStateTracked === true
+            ? normalizeStopEpoch(baseline.scopedStateValue)
+            : normalizeStopEpoch(baseline.value)
+          if (!Object.is(currentState, baselineState)) throw workspaceAbortError()
+        } catch (error) {
+          if (error instanceof Error && error.name === 'AbortError') throw error
+          // Metadata remains authoritative when the optional scoped fast path is unavailable.
+        }
+      }
+      const currentMetadata = await metadataRead
+      if (!Object.is(currentMetadata, normalizeStopEpoch(baseline.value))) {
+        throw workspaceAbortError()
+      }
+      return
+    }
+
     const currentEpoch = await readStopEpoch(context, options.conversationId)
     if (!Object.is(currentEpoch, normalizeStopEpoch(baseline.value))) {
       throw workspaceAbortError()
@@ -218,22 +276,21 @@ export async function runWithSandboxAbort<T>(
     if (sharedStopAvailable) {
       if (options.sharedStopBaseline !== undefined) {
         baselineEpoch = normalizeStopEpoch(options.sharedStopBaseline.value)
-        let currentEpoch: unknown
         try {
-          currentEpoch = await readStopEpoch(context, options.conversationId)
-        } catch {
-          if (options.requireSharedStop === true) {
+          await assertSharedStopBaselineCurrent(context, options.sharedStopBaseline, options)
+        } catch (error) {
+          if (error instanceof Error && error.name === 'AbortError') {
+            sharedCancelled = true
             await killOnce()
-            throw cancellationUnavailableError()
+            throw error
           }
-          currentEpoch = baselineEpoch
+          if (error instanceof Error && error.name === 'CancellationUnavailableError') {
+            await killOnce()
+            throw error
+          }
+          throw error
         }
         await ensureSignalStillActive()
-        if (!Object.is(currentEpoch, baselineEpoch)) {
-          sharedCancelled = true
-          await killOnce()
-          throw workspaceAbortError()
-        }
       } else {
         try {
           baselineEpoch = await readStopEpoch(context, options.conversationId)
@@ -260,26 +317,33 @@ export async function runWithSandboxAbort<T>(
     const pollSharedStop = async (): Promise<void> => {
       if (!polling || !sharedStopAvailable || sharedCancelled || sharedFailure) return
       try {
-        const currentEpoch = await readStopEpoch(context, options.conversationId)
+        if (options.sharedStopBaseline !== undefined) {
+          await assertSharedStopBaselineCurrent(context, options.sharedStopBaseline, options)
+        } else {
+          const currentEpoch = await readStopEpoch(context, options.conversationId)
+          if (!Object.is(currentEpoch, baselineEpoch)) throw workspaceAbortError()
+        }
         if (!polling) return
-        if (!Object.is(currentEpoch, baselineEpoch)) {
+      } catch (error) {
+        if (!polling) return
+        if (error instanceof Error && error.name === 'AbortError') {
           sharedCancelled = true
           void killOnce().then(
             () => rejectShared(workspaceAbortError()),
-            error => rejectShared(error instanceof Error
-              ? error
+            killError => rejectShared(killError instanceof Error
+              ? killError
               : stableError('SandboxTerminationError', 'SANDBOX_KILL_FAILED')),
           )
           return
         }
-      } catch {
-        if (!polling) return
         if (options.requireSharedStop === true) {
-          sharedFailure = cancellationUnavailableError()
+          sharedFailure = error instanceof Error && error.name === 'CancellationUnavailableError'
+            ? error
+            : cancellationUnavailableError()
           void killOnce().then(
             () => rejectShared(sharedFailure!),
-            error => rejectShared(error instanceof Error
-              ? error
+            killError => rejectShared(killError instanceof Error
+              ? killError
               : stableError('SandboxTerminationError', 'SANDBOX_KILL_FAILED')),
           )
           return
@@ -310,22 +374,27 @@ export async function runWithSandboxAbort<T>(
       }
 
       if (sharedStopAvailable) {
-        let finalEpoch: unknown
         try {
-          finalEpoch = await readStopEpoch(context, options.conversationId)
-        } catch {
+          if (options.sharedStopBaseline !== undefined) {
+            await assertSharedStopBaselineCurrent(context, options.sharedStopBaseline, options)
+          } else {
+            const finalEpoch = await readStopEpoch(context, options.conversationId)
+            if (!Object.is(finalEpoch, baselineEpoch)) throw workspaceAbortError()
+          }
+        } catch (error) {
+          if (error instanceof Error && error.name === 'AbortError') {
+            sharedCancelled = true
+            return await ensureCancelled()
+          }
           if (options.requireSharedStop === true) {
             await killOnce()
-            throw cancellationUnavailableError()
+            throw error instanceof Error && error.name === 'CancellationUnavailableError'
+              ? error
+              : cancellationUnavailableError()
           }
-          finalEpoch = baselineEpoch
         }
 
         if (signal?.aborted || signalCancelled) {
-          return await ensureCancelled()
-        }
-        if (!Object.is(finalEpoch, baselineEpoch)) {
-          sharedCancelled = true
           return await ensureCancelled()
         }
       }
@@ -362,8 +431,8 @@ export async function runWithSandboxAbort<T>(
 /**
  * Return a view of the current context whose sandbox command executor is
  * cancellation-aware. Commands bind physical termination to the exact sandbox
- * handle; checkpoint persistence rechecks the same fixed Stop fence immediately
- * before the runtime persist call.
+ * handle; checkpoint persistence rechecks the same fixed Stop fence or owning
+ * request signal immediately before the runtime persist call.
  */
 export function withRunnerOwnedSandboxCancellation(
   context: any,
@@ -393,9 +462,22 @@ export function withRunnerOwnedSandboxCancellation(
   const wrappedSandbox = new Proxy(sandbox, {
     get(target, property) {
       if (property === 'commands') return wrappedCommands
-      if (property === 'persist' && originalPersist && options.sharedStopBaseline !== undefined) {
+      if (property === 'persist' && originalPersist) {
         return async (...args: any[]) => {
-          await assertSharedStopBaselineCurrent(context, options.sharedStopBaseline!, options)
+          const signal = options.useRequestSignal !== false
+            ? context?.request?.signal as AbortSignal | undefined
+            : undefined
+          if (signal?.aborted) {
+            await terminateSandbox(sandbox)
+            throw workspaceAbortError()
+          }
+          if (options.sharedStopBaseline !== undefined) {
+            await assertSharedStopBaselineCurrent(context, options.sharedStopBaseline, options)
+            if (signal?.aborted) {
+              await terminateSandbox(sandbox)
+              throw workspaceAbortError()
+            }
+          }
           return originalPersist(...args)
         }
       }
