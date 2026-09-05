@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -205,5 +206,47 @@ test('toggle propagates to every live sidecar in the current runtime', async () 
     await stopDshWebSidecar('project-a')
     await stopDshWebSidecar('project-b')
     __setSidecarStarterForTests(undefined)
+  }
+})
+
+test('Makers adapter loader isolates a broken installed adapter', async () => {
+  const adaptersPath = new URL('../agents/_module-adapters.ts', import.meta.url)
+  assert.equal(existsSync(adaptersPath), true, 'agents/_module-adapters.ts must load Makers adapters')
+  const { applyInstalledMakersModules } = await import(adaptersPath.href)
+  const root = await mkdtemp(join(tmpdir(), 'pqg-makers-adapters-'))
+  const registered: Array<[string, string]> = []
+
+  try {
+    await writeJson(join(root, 'package.json'), {
+      dependencies: {
+        '@pqg/plugin-broken': '1.0.0',
+        '@pqg/plugin-good': '1.0.0',
+      },
+    })
+    for (const [name, id] of [['plugin-broken', 'broken'], ['plugin-good', 'good']] as const) {
+      const packageDir = join(root, 'node_modules', '@pqg', name)
+      await mkdir(packageDir, { recursive: true })
+      await writeJson(join(packageDir, 'package.json'), {
+        name: `@pqg/${name}`,
+        type: 'module',
+        pqg: { module: { id, label: id, defaultEnabled: true } },
+        exports: { './makers': './makers.mjs' },
+      })
+      await writeFile(
+        join(packageDir, 'makers.mjs'),
+        id === 'broken'
+          ? 'export function apply() { throw new Error("broken adapter") }\n'
+          : 'export function apply({ moduleId, bridge }) { bridge.registerModuleTool(moduleId, "good_probe", { description: "good" }, async () => ({ content: [{ type: "text", text: "ok" }] })) }\n',
+      )
+    }
+
+    await applyInstalledMakersModules({}, {
+      registerModuleTool(moduleId: string, name: string) {
+        registered.push([moduleId, name])
+      },
+    } as any, root)
+    assert.deepEqual(registered, [['good', 'good_probe']])
+  } finally {
+    await rm(root, { recursive: true, force: true })
   }
 })

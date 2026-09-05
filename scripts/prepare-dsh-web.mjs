@@ -9,6 +9,7 @@ const publicDir = join(root, 'public')
 const modulesRoot = join(root, 'node_modules', '@deepseek-ai')
 const webDist = join(modulesRoot, 'dsh-web-frontend', 'dist')
 const pqgModuleSettingsId = '@pqg/module-settings'
+const pqgReferenceModuleId = '@pqg/reference-module'
 const excluded = new Set([
   // The Makers deployment has no native desktop directory chooser. The
   // native row is retained because the upstream Web composition selects it;
@@ -976,6 +977,27 @@ async function preparePqgModuleSettingsClient() {
   }
 }
 
+async function preparePqgReferenceModuleClient() {
+  const entry = join(root, 'packages', 'reference-module', 'src', 'client.tsx')
+  const source = await readFile(entry, 'utf8')
+  const transformed = await transformWithEsbuild(source, entry, {
+    loader: 'tsx',
+    target: 'es2022',
+    format: 'cjs',
+    sourcemap: false,
+    charset: 'utf8',
+  })
+  const bundled = [
+    `window.__ModuleLoader__.load({ id: ${JSON.stringify(pqgReferenceModuleId)}, factory: (require) => { var module = { exports: {} }; var exports = module.exports;`,
+    transformed.code.trimEnd(),
+    'return module.exports; } });',
+    '',
+  ].join('\n')
+  const target = join(publicDir, 'plugins', ...pqgReferenceModuleId.split('/'), 'client.js')
+  await mkdir(dirname(target), { recursive: true })
+  await writeFile(target, bundled)
+}
+
 async function clientPackages() {
   const rows = []
   for (const directory of await readdir(modulesRoot)) {
@@ -1320,6 +1342,7 @@ ${makersActionsHead}`
 await rm(publicDir, { recursive: true, force: true })
 await mkdir(publicDir, { recursive: true })
 await cp(webDist, publicDir, { recursive: true })
+await preparePqgReferenceModuleClient()
 const entries = [
   ...(await clientPackages()),
   await preparePqgModuleSettingsClient(),

@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
+import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
@@ -138,6 +140,44 @@ test('a failing module tool returns an MCP error without taking down Makers core
     const coreProbe = await client.callTool({ name: 'makers_context_probe', arguments: {} }) as any
     assert.notEqual(coreProbe.isError, true)
     assert.match(String(coreProbe.content?.[0]?.text || ''), /"ok":true/)
+  } finally {
+    await client.close().catch(() => {})
+    await bridge.close().catch(() => {})
+  }
+})
+
+test('installed reference Makers adapter toggles one probe tool on the existing bridge', async () => {
+  const adaptersPath = new URL('../agents/_module-adapters.ts', import.meta.url)
+  assert.equal(existsSync(adaptersPath), true, 'agents/_module-adapters.ts must load installed Makers adapters')
+  const { applyInstalledMakersModules } = await import(adaptersPath.href)
+  const root = fileURLToPath(new URL('../', import.meta.url))
+  const bridge = await startLocalMcpBridge(
+    () => ({ tools: { all: () => [] } }),
+    'conv-reference-module',
+  )
+  bridge.setModuleEnabled('reference', false)
+  await applyInstalledMakersModules({}, bridge, root)
+  const client = new Client({ name: 'reference-module-test', version: '1.0.0' }, { capabilities: {} })
+  await client.connect(new StreamableHTTPClientTransport(new URL(bridge.url)))
+
+  try {
+    const initial = (await client.listTools()).tools.map(tool => tool.name)
+    assert.ok(initial.includes('makers_context_probe'))
+    assert.equal(initial.includes('pqg_reference_probe'), false)
+
+    bridge.setModuleEnabled('reference', true)
+    const enabled = (await client.listTools()).tools.map(tool => tool.name)
+    assert.ok(enabled.includes('pqg_reference_probe'))
+    assert.ok(enabled.includes('makers_context_probe'))
+
+    const probe = await client.callTool({ name: 'pqg_reference_probe', arguments: {} }) as any
+    assert.notEqual(probe.isError, true)
+    assert.match(String(probe.content?.[0]?.text || ''), /"moduleId":"reference"/)
+
+    bridge.setModuleEnabled('reference', false)
+    const disabled = (await client.listTools()).tools.map(tool => tool.name)
+    assert.equal(disabled.includes('pqg_reference_probe'), false)
+    assert.ok(disabled.includes('makers_context_probe'))
   } finally {
     await client.close().catch(() => {})
     await bridge.close().catch(() => {})

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -177,4 +177,24 @@ test('rejects installed modules with malformed pqg.module metadata', async () =>
   } finally {
     await rm(root, { recursive: true, force: true })
   }
+})
+
+test('root installs a reference PQG module with both client and Makers adapters', async () => {
+  const rootPackage = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
+  assert.equal(
+    rootPackage.dependencies?.['@pqg/reference-module'],
+    'file:packages/reference-module',
+  )
+
+  const { discoverPqgModules } = await import(modulePath.href)
+  const root = new URL('../', import.meta.url).pathname
+  const reference = (await discoverPqgModules(root)).find((module: { id: string }) => module.id === 'reference')
+  assert.deepEqual(reference, {
+    id: 'reference',
+    label: 'Reference Module',
+    packageName: '@pqg/reference-module',
+    defaultEnabled: false,
+    client: true,
+    makers: true,
+  })
 })
