@@ -103,10 +103,12 @@ test('concurrent post-Stop acquires join one stale-sidecar retirement and share 
 
     const firstReplacement = acquire(makersContext)
     await closeStarted
-    const secondReplacement = acquire(makersContext)
+    const secondReplacement = acquire(makersContext).catch((error: unknown) => error)
     releaseClose()
 
-    const [first, second] = await Promise.all([firstReplacement, secondReplacement])
+    const first = await firstReplacement
+    const second = await secondReplacement
+    assert.ok(!(second instanceof Error), 'a concurrent post-Stop acquire must join retirement instead of failing')
     assert.equal(first.sidecar, second.sidecar)
     assert.notEqual(first.sidecar, initial.sidecar)
     assert.equal(starts, 2)
