@@ -69,7 +69,7 @@ test('first state-capable acquire retires a sidecar created before shared state 
   }
 })
 
-test('concurrent post-Stop acquires join one stale-sidecar retirement and share its replacement', async () => {
+test('concurrent post-Stop acquire admitted after retirement joins the replacement', async () => {
   const acquire = requiredFunction('acquireDshWebSidecar')
   const stop = requiredFunction('stopDshWebSidecar')
   const setStarter = requiredFunction('__setSidecarStarterForTests')
@@ -101,20 +101,20 @@ test('concurrent post-Stop acquires join one stale-sidecar retirement and share 
     initial.release()
     epoch = 'after-stop'
 
-    const firstReplacement = acquire(makersContext)
+    const retirementStarter = acquire(makersContext).catch((error: unknown) => error)
     await closeStarted
-    const secondReplacement = acquire(makersContext).catch((error: unknown) => error)
+    const postRetirementAcquire = acquire(makersContext).catch((error: unknown) => error)
     releaseClose()
 
-    const first = await firstReplacement
-    const second = await secondReplacement
-    assert.ok(!(second instanceof Error), 'a concurrent post-Stop acquire must join retirement instead of failing')
-    assert.equal(first.sidecar, second.sidecar)
-    assert.notEqual(first.sidecar, initial.sidecar)
+    const starterResult = await retirementStarter
+    const joinedResult = await postRetirementAcquire
+    assert.ok(starterResult instanceof Error, 'the acquire that observed Stop must fail closed')
+    assert.match(String(starterResult), /SIDE_CAR_STOPPING/)
+    assert.ok(!(joinedResult instanceof Error), 'an acquire admitted after retirement starts must join the replacement')
+    assert.notEqual(joinedResult.sidecar, initial.sidecar)
     assert.equal(starts, 2)
     assert.equal(closeCalls, 1)
-    first.release()
-    second.release()
+    joinedResult.release()
     await stop(conversationId)
   } finally {
     releaseClose()
