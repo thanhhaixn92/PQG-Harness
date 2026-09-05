@@ -37,30 +37,38 @@ async function publishCancellationEpoch(context: any, conversationId: string): P
   const metadataAvailable = typeof context?.store?.updateConversation === 'function'
 
   let metadataPublished = false
-  let metadataFailed = false
   if (metadataAvailable) {
     try {
       metadataPublished = await publishConversationMetadataEpoch(context, conversationId, epoch)
     } catch {
-      metadataFailed = true
+      metadataPublished = false
     }
   }
 
   let statePublished = false
-  let stateFailed = false
   if (scopedConversationId === conversationId && state && typeof state.set === 'function') {
     try {
       await state.set(M08_STOP_EPOCH_KEY, epoch)
       statePublished = true
     } catch {
-      stateFailed = true
+      statePublished = false
     }
   }
 
-  if (metadataPublished || statePublished) return { published: true }
+  // When the explicit conversation channel exists it is authoritative because
+  // long-lived MCP readers also prefer that channel. A scoped state write may
+  // reduce latency, but it must not turn an explicit-fence outage into success.
+  if (metadataAvailable) {
+    if (metadataPublished) return { published: true }
+    const error = new Error('CANCELLATION_STATE_UNAVAILABLE')
+    error.name = 'CancellationStateError'
+    throw error
+  }
+
+  if (statePublished) return { published: true }
 
   const error = new Error(
-    metadataFailed || stateFailed || scopedConversationId === conversationId
+    scopedConversationId === conversationId
       ? 'CANCELLATION_STATE_UNAVAILABLE'
       : 'CANCELLATION_SCOPE_MISMATCH',
   )
