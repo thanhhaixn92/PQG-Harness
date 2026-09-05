@@ -31,20 +31,19 @@ test('release checklist accounts for every Phase 1B P1 finding', async () => {
   assert.match(checklist, /CLOSED|BLOCKED|ACCEPTED RISK/)
 })
 
-test('release docs preserve blocked live gates and deployment safety', async () => {
+test('release docs preserve current verified and remaining live gates', async () => {
   const checklist = await text('docs/release/RELEASE_CHECKLIST.md')
-  const limitations = await text('docs/release/KNOWN_LIMITATIONS.md')
   const status = await text('PROJECT_STATUS.md')
-  const combined = `${checklist}\n${limitations}\n${status}`
 
-  assert.match(combined, /access\/auth[^\n]*(NOT VERIFIED|BLOCKED)/i)
-  assert.match(combined, /Preview[^\n]*BLOCKED/i)
-  assert.match(combined, /EdgeOne Git[^\n]*RECONNECTED/i)
-  assert.match(combined, /main[^\n]*(?:unprotected|protected:false|required checks off)/i)
-  assert.match(combined, /(?:do not merge|no Foundation change may be merged)[^\n]*main/i)
-  assert.match(combined, /Foundation Freeze[^\n]*(BLOCKED|not complete|not declared)/i)
-  assert.doesNotMatch(
-    combined,
-    /Foundation Freeze\s*(?:is|:|=)\s*\*{0,2}(?:COMPLETE|GREEN|PASS)\b/i,
-  )
+  assert.match(status, /M01[^\n]*(BLOCKED|pending)/i)
+  assert.match(status, /M08[^\n]*(PASS|CLOSED)/i)
+  assert.match(status, /realtime approval[^\n]*PASS/i)
+  assert.match(status, /Protect main[^\n]*ACTIVE/i)
+  assert.match(status, /Production[^\n]*build-meta[^\n]*(MATCH|verified)/i)
+
+  assert.match(checklist, /M01[^\n]*BLOCKED/i)
+  assert.match(checklist, /M08[^\n]*CLOSED/i)
+  assert.match(checklist, /M09[^\n]*CLOSED/i)
+  assert.match(checklist, /M13[^\n]*(CLOSED|PARTIAL|BLOCKED)/i)
+  assert.doesNotMatch(checklist, /main[^\n]*(?:unprotected|protected:false|required checks off)/i)
 })
