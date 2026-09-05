@@ -1,6 +1,7 @@
 import {
   captureSharedStopBaseline,
   withRunnerOwnedSandboxCancellation,
+  type SharedStopBaseline,
 } from './_sandbox-abort.ts'
 import {
   startLocalMcpBridge as startLocalMcpBridgeBase,
@@ -17,12 +18,23 @@ export * from './_mcp-bridge-base.ts'
  * fence when this bridge becomes live, then compare every later command to the
  * same fence. A Stop can therefore invalidate an existing bridge even before
  * its first tool command begins.
+ *
+ * Capability-only MCP probes may exist in test/startup contexts before the
+ * Makers state adapter is injected. Keep the bridge available in that case,
+ * but retain `requireSharedStop: true`: any sandbox command still fails closed
+ * unless the command-time context has the shared state channel.
  */
 export async function startLocalMcpBridge(
   getContext: MakersContextProvider,
   conversationId: string,
 ): Promise<LocalMcpBridge> {
-  const sharedStopBaseline = await captureSharedStopBaseline(getContext())
+  let sharedStopBaseline: SharedStopBaseline = Object.freeze({ value: undefined })
+  try {
+    sharedStopBaseline = await captureSharedStopBaseline(getContext())
+  } catch (error) {
+    if (!(error instanceof Error && error.name === 'CancellationUnavailableError')) throw error
+  }
+
   return startLocalMcpBridgeBase(
     () => withRunnerOwnedSandboxCancellation(getContext(), {
       useRequestSignal: false,
