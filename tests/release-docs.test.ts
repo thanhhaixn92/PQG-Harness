@@ -34,6 +34,8 @@ test('release checklist accounts for every Phase 1B P1 finding', async () => {
 test('release docs preserve current verified and remaining live gates', async () => {
   const checklist = await text('docs/release/RELEASE_CHECKLIST.md')
   const status = await text('PROJECT_STATUS.md')
+  const runbook = await text('RUNBOOK.md')
+  const limitations = await text('docs/release/KNOWN_LIMITATIONS.md')
 
   assert.match(status, /M01[^\n]*(BLOCKED|pending)/i)
   assert.match(status, /M08[^\n]*(PASS|CLOSED)/i)
@@ -46,4 +48,13 @@ test('release docs preserve current verified and remaining live gates', async ()
   assert.match(checklist, /M09[^\n]*CLOSED/i)
   assert.match(checklist, /M13[^\n]*(CLOSED|PARTIAL|BLOCKED)/i)
   assert.doesNotMatch(checklist, /main[^\n]*(?:unprotected|protected:false|required checks off)/i)
+
+  assert.match(runbook, /Protect main[^\n]*ACTIVE/i)
+  assert.match(runbook, /Production[^\n]*build-meta[^\n]*(MATCH|verified)/i)
+  assert.doesNotMatch(runbook, /must \*\*not\*\* merge\/promote Foundation changes through `main`/i)
+
+  assert.match(limitations, /M08[^\n]*(PASS|CLOSED)/i)
+  assert.match(limitations, /Protect main[^\n]*ACTIVE/i)
+  assert.match(limitations, /Production[^\n]*build-meta[^\n]*(MATCH|verified)/i)
+  assert.doesNotMatch(limitations, /required-quality enforcement is confirmed absent/i)
 })
