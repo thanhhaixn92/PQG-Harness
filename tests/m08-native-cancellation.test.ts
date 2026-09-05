@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js'
 import { startLocalMcpBridge } from '../agents/_mcp-bridge.ts'
 import { persistWorkspaceCheckpoint, workspaceRoot } from '../agents/_workspace.ts'
 import { onRequestPost } from '../agents/stop.ts'
@@ -11,6 +12,20 @@ const checkpoint = {
   sha256: 'sha256',
   etag: 'etag',
   persistedAt: '2026-09-05T00:00:00.000Z',
+}
+
+function deferred<T = void>(): {
+  promise: Promise<T>
+  resolve: (value: T | PromiseLike<T>) => void
+  reject: (reason?: unknown) => void
+} {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve
+    reject = promiseReject
+  })
+  return { promise, resolve, reject }
 }
 
 function wait(milliseconds: number): Promise<void> {
@@ -24,7 +39,7 @@ async function connectClient(url: string): Promise<Client> {
 }
 
 test('MCP cancellation terminates the exact sandbox owned by the in-flight tool call', async () => {
-  const started = Promise.withResolvers<void>()
+  const started = deferred()
   let currentContext: any
   let killedA = 0
   let killedB = 0
@@ -63,6 +78,7 @@ test('MCP cancellation terminates the exact sandbox owned by the in-flight tool 
     const controller = new AbortController()
     const call = client.callTool(
       { name: 'sandbox_wait', arguments: { seconds: 1 } },
+      CallToolResultSchema,
       { signal: controller.signal },
     )
     await started.promise
@@ -84,9 +100,9 @@ test('MCP cancellation terminates the exact sandbox owned by the in-flight tool 
 test('cancellation while waiting for the checkpoint queue prevents a later persist dispatch', async () => {
   const conversationId = 'conv-m08-native-persist-queue'
   const root = workspaceRoot(conversationId)
-  const firstPersistStarted = Promise.withResolvers<void>()
-  const releaseFirstPersist = Promise.withResolvers<typeof checkpoint>()
-  const commandRan = Promise.withResolvers<void>()
+  const firstPersistStarted = deferred()
+  const releaseFirstPersist = deferred<typeof checkpoint>()
+  const commandRan = deferred()
   let persistCalls = 0
 
   const context = {
@@ -123,6 +139,7 @@ test('cancellation while waiting for the checkpoint queue prevents a later persi
     const controller = new AbortController()
     const call = client.callTool(
       { name: 'workspace_run_command', arguments: { command: "printf 'OK'" } },
+      CallToolResultSchema,
       { signal: controller.signal },
     )
     await commandRan.promise
