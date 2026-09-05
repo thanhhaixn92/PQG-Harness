@@ -75,6 +75,33 @@ test('/stop publishes a cross-process fence without makers-conversation-id heade
   assert.equal(typeof metadataWrite?.metadata?.[M08_STOP_EPOCH_METADATA_KEY], 'string')
 })
 
+test('/stop fails closed when the authoritative explicit fence cannot be written', async () => {
+  const conversationId = 'conv-authoritative-outage'
+  let stateWrites = 0
+  const context = {
+    conversation_id: conversationId,
+    request: { body: { conversation_id: conversationId } },
+    store: {
+      state: {
+        async set() { stateWrites += 1 },
+      },
+      async updateConversation() {
+        throw new Error('metadata backend unavailable')
+      },
+    },
+    utils: {
+      async abortActiveRun() { return { aborted: true } },
+    },
+  }
+
+  const response = await stopRequest(context)
+  const body = await response.json() as any
+  assert.equal(stateWrites, 1, 'scoped state remains a low-latency best-effort path')
+  assert.equal(body.cancellation.published, false)
+  assert.equal(body.cancellation.error, 'CANCELLATION_STATE_UNAVAILABLE')
+  assert.equal(body.ok, false)
+})
+
 test('checkpoint persist rechecks the command Stop fence at the actual persistence boundary', async () => {
   let epoch: string | null = 'before-stop'
   let persistCalls = 0
