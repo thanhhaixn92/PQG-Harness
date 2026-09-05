@@ -597,7 +597,6 @@ function stopEpochTimestamp(value: unknown): number | undefined {
   const timestamp = Number(parts[parts.length - 2])
   return Number.isSafeInteger(timestamp) && timestamp >= 0 ? timestamp : undefined
 }
-
 function stopEpochOvertookAdmission(value: unknown, admissionStartedAtMs: number): boolean {
   const timestamp = stopEpochTimestamp(value)
   return timestamp !== undefined && timestamp >= admissionStartedAtMs
@@ -622,7 +621,16 @@ function createSidecarEntry(
 
   entry.pending = (async () => {
     const fence = await captureSidecarStopEpoch(context, conversationId)
-    if (fence.tracked && stopEpochOvertookAdmission(fence.value, admissionStartedAtMs)) {
+    const fastFenceValue = fence.baseline?.scopedStateTracked === true
+      ? fence.baseline.scopedStateValue
+      : undefined
+    if (
+      fence.tracked
+      && (
+        stopEpochOvertookAdmission(fence.value, admissionStartedAtMs)
+        || stopEpochOvertookAdmission(fastFenceValue, admissionStartedAtMs)
+      )
+    ) {
       throw new Error('SIDE_CAR_STOPPING')
     }
     entry.stopEpochTracked = fence.tracked
