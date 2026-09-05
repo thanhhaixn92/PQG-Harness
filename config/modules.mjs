@@ -34,14 +34,24 @@ function moduleMetadata(pkg, packageName) {
 
 export async function discoverPqgModules(rootDir = process.cwd()) {
   const rootPackage = await readJson(join(rootDir, 'package.json'))
+  const optionalNames = new Set(Object.keys(rootPackage.optionalDependencies ?? {}))
   const dependencyNames = [...new Set([
     ...Object.keys(rootPackage.dependencies ?? {}),
-    ...Object.keys(rootPackage.optionalDependencies ?? {}),
+    ...optionalNames,
   ])]
   const modules = []
 
   for (const packageName of dependencyNames) {
-    const dependencyPackage = await readJson(join(rootDir, 'node_modules', ...packageName.split('/'), 'package.json'))
+    let dependencyPackage
+    try {
+      dependencyPackage = await readJson(join(rootDir, 'node_modules', ...packageName.split('/'), 'package.json'))
+    } catch (error) {
+      const code = error && typeof error === 'object' && 'code' in error
+        ? String(error.code)
+        : ''
+      if (optionalNames.has(packageName) && code === 'ENOENT') continue
+      throw error
+    }
     const metadata = moduleMetadata(dependencyPackage, packageName)
     if (!metadata) continue
 
