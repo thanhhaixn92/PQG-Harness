@@ -7,8 +7,8 @@ export async function onRequestPost(context: any): Promise<Response> {
   }
 
   const [webResult, platformResult] = await Promise.allSettled([
-    stopDshWebSidecar(conversationId),
-    context.utils?.abortActiveRun?.(conversationId),
+    Promise.resolve().then(() => stopDshWebSidecar(conversationId)),
+    Promise.resolve().then(() => context.utils?.abortActiveRun?.(conversationId)),
   ])
 
   const sidecar = webResult.status === 'fulfilled'

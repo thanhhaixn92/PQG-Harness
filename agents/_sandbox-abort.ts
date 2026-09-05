@@ -126,6 +126,10 @@ export function withSandboxCancellation(context: any, signal?: AbortSignal): any
   const originalPersist = typeof sandbox.persist === 'function'
     ? sandbox.persist.bind(sandbox)
     : undefined
+  const originalRestore = typeof sandbox.restore === 'function'
+    ? sandbox.restore.bind(sandbox)
+    : undefined
+  const files = sandbox.files
 
   const wrappedCommands = new Proxy(commands, {
     get(target, property) {
@@ -140,14 +144,38 @@ export function withSandboxCancellation(context: any, signal?: AbortSignal): any
     },
   })
 
+  const wrappedFiles = files
+    ? new Proxy(files, {
+        get(target, property) {
+          if ((property === 'write' || property === 'makeDir') && typeof target[property] === 'function') {
+            const operation = target[property].bind(target)
+            return (...args: any[]) => runWithSandboxCancellation(
+              signal,
+              sandbox,
+              () => operation(...args),
+            )
+          }
+          return runtimeMember(target, property)
+        },
+      })
+    : undefined
+
   const wrappedSandbox = new Proxy(sandbox, {
     get(target, property) {
       if (property === 'commands') return wrappedCommands
+      if (property === 'files' && wrappedFiles) return wrappedFiles
       if (property === 'persist' && originalPersist) {
         return (...args: any[]) => runWithSandboxCancellation(
           signal,
           sandbox,
           () => originalPersist(...args),
+        )
+      }
+      if (property === 'restore' && originalRestore) {
+        return (...args: any[]) => runWithSandboxCancellation(
+          signal,
+          sandbox,
+          () => originalRestore(...args),
         )
       }
       return runtimeMember(target, property)
