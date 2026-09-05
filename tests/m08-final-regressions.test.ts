@@ -143,6 +143,45 @@ test('/stop bootstraps a missing conversation before publishing the explicit fen
   assert.equal(typeof metadataWrite?.metadata?.[M08_STOP_EPOCH_METADATA_KEY], 'string')
 })
 
+test('/stop starts the scoped state fence before a slow metadata write completes', async () => {
+  const conversationId = 'conv-stop-fast-state'
+  let stateStarted = false
+  let releaseMetadata!: () => void
+  let signalMetadataStarted!: () => void
+  const metadataGate = new Promise<void>(resolve => { releaseMetadata = resolve })
+  const metadataStarted = new Promise<void>(resolve => { signalMetadataStarted = resolve })
+  const context = {
+    conversation_id: conversationId,
+    request: { body: { conversation_id: conversationId } },
+    store: {
+      state: {
+        async set(key: string) {
+          assert.equal(key, M08_STOP_EPOCH_KEY)
+          stateStarted = true
+        },
+      },
+      async updateConversation() {
+        signalMetadataStarted()
+        await metadataGate
+      },
+    },
+    utils: {
+      async abortActiveRun() { return { aborted: true } },
+    },
+  }
+
+  const responsePending = stopRequest(context)
+  await metadataStarted
+  const stateStartedBeforeMetadataCompleted = stateStarted
+  releaseMetadata()
+  const response = await responsePending
+  const body = await response.json() as any
+
+  assert.equal(stateStartedBeforeMetadataCompleted, true)
+  assert.equal(body.cancellation.published, true)
+  assert.equal(body.ok, true)
+})
+
 test('checkpoint persist rechecks the command Stop fence at the actual persistence boundary', async () => {
   let epoch: string | null = 'before-stop'
   let persistCalls = 0
