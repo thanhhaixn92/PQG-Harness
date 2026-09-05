@@ -114,6 +114,6 @@ test('static preview stages a safe document root instead of serving the workspac
   assert.match(stage, /\.env/)
   assert.match(stage, /\.key/)
   assert.doesNotMatch(stage, /find -L/)
-  assert.match(start, /--directory \/tmp\/dsh-preview-static/)
+  assert.match(start, /--directory ['"]?\/tmp\/dsh-preview-static['"]?/)
   assert.doesNotMatch(start, /ln -sfn \. preview/)
 })
