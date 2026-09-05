@@ -1,5 +1,7 @@
 const SANDBOX_KILL_ATTEMPT_TIMEOUT_MS = 1_000
 
+const sandboxKillPromises = new WeakMap<AbortSignal, WeakMap<object, Promise<void>>>()
+
 function workspaceAbortError(): Error {
   const error = new Error('WORKSPACE_COMMAND_ABORTED')
   error.name = 'AbortError'
@@ -51,24 +53,36 @@ async function terminateSandbox(sandbox: any): Promise<void> {
   throw stableError('SandboxTerminationError', 'SANDBOX_KILL_FAILED')
 }
 
+function terminateSandboxOnce(signal: AbortSignal, sandbox: any): Promise<void> {
+  if (!sandbox || (typeof sandbox !== 'object' && typeof sandbox !== 'function')) {
+    return terminateSandbox(sandbox)
+  }
+  let bySandbox = sandboxKillPromises.get(signal)
+  if (!bySandbox) {
+    bySandbox = new WeakMap<object, Promise<void>>()
+    sandboxKillPromises.set(signal, bySandbox)
+  }
+  let pending = bySandbox.get(sandbox)
+  if (!pending) {
+    pending = terminateSandbox(sandbox)
+    bySandbox.set(sandbox, pending)
+  }
+  return pending
+}
+
 async function runWithSandboxCancellation<T>(
   signal: AbortSignal | undefined,
   sandbox: any,
   operation: () => Promise<T>,
 ): Promise<T> {
   if (!signal) return operation()
+  const killOnce = (): Promise<void> => terminateSandboxOnce(signal, sandbox)
   if (signal.aborted) {
-    await terminateSandbox(sandbox)
+    await killOnce()
     throw workspaceAbortError()
   }
 
   let cancelled = false
-  let killPromise: Promise<void> | undefined
-  const killOnce = (): Promise<void> => {
-    killPromise ??= terminateSandbox(sandbox)
-    return killPromise
-  }
-
   let rejectAbort!: (error: Error) => void
   const abortPromise = new Promise<never>((_resolve, reject) => {
     rejectAbort = reject
@@ -114,6 +128,21 @@ async function runWithSandboxCancellation<T>(
   } finally {
     signal.removeEventListener('abort', onAbort)
   }
+}
+
+export async function runWithSandboxCancellationScope<T>(
+  context: any,
+  signal: AbortSignal | undefined,
+  operation: (context: any) => Promise<T>,
+): Promise<T> {
+  const sandbox = context?.sandbox
+  if (!signal || !sandbox) return operation(context)
+  const wrappedContext = withSandboxCancellation(context, signal)
+  return runWithSandboxCancellation(
+    signal,
+    sandbox,
+    () => operation(wrappedContext),
+  )
 }
 
 export function withSandboxCancellation(context: any, signal?: AbortSignal): any {
