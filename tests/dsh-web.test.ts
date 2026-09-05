@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
@@ -223,4 +224,23 @@ test('PQG module settings serializes policy writes from the toggle UI', async ()
   const source = await readFile(new URL('../src/pqg-module-settings-client.ts', import.meta.url), 'utf8')
   assert.match(source, /if \(savingRef\.current \|\| savingId !== null\) return/)
   assert.match(source, /const saving = savingId !== null/)
+})
+
+test('reference module client is prepared without entering the rc.6 boot graph', async () => {
+  const bundlePath = new URL('../public/plugins/@pqg/reference-module/client.js', import.meta.url)
+  assert.equal(existsSync(bundlePath), true, 'reference client bundle must be prepared')
+  const bundle = await readFile(bundlePath, 'utf8')
+  const html = await readFile(new URL('../index.html', import.meta.url), 'utf8')
+  assert.match(bundle, /window\.__ModuleLoader__\.load/)
+  assert.match(bundle, /@pqg\/reference-module/)
+  assert.match(bundle, /settings\.section/)
+  assert.doesNotMatch(html, /"id":"@pqg\/reference-module"/)
+})
+
+test('sidecar seeds persisted module policy before applying Makers adapters', async () => {
+  const source = await readFile(new URL('../agents/_dsh-web-sidecar.ts', import.meta.url), 'utf8')
+  const policy = source.indexOf('await applyModulePolicyToBridge(context, mcp)')
+  const adapters = source.indexOf('await applyInstalledMakersModules(context, mcp)')
+  assert.ok(policy >= 0, 'sidecar must seed module policy')
+  assert.ok(adapters > policy, 'Makers adapters must load after policy seeding')
 })
