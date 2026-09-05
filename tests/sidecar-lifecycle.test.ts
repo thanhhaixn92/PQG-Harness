@@ -213,7 +213,7 @@ test('later acquire refreshes the sidecar to the latest Makers context', async (
   }
 })
 
-test('later acquire retires a stale sidecar after a cross-process Stop epoch change', async () => {
+test('later acquire rejects on a cross-process Stop epoch change and retry refreshes the sidecar', async () => {
   const acquire = requiredFunction('acquireDshWebSidecar')
   const stop = requiredFunction('stopDshWebSidecar')
   const setStarter = requiredFunction('__setSidecarStarterForTests')
@@ -249,16 +249,19 @@ test('later acquire retires a stale sidecar after a cross-process Stop epoch cha
     assert.deepEqual(first.sidecar.mcp.stopEpochBaseline, { value: 'before-stop' })
     first.release()
 
-    // Simulate Stop being published by another runtime process. The local
-    // sidecar registry is untouched, but the shared conversation epoch moves.
     epoch = 'after-stop'
 
-    const second = await acquire(makersContext)
-    assert.notEqual(second.sidecar, first.sidecar, 'a post-Stop request must not reuse the stale bridge')
+    const overtaken = await acquire(makersContext).catch((error: unknown) => error)
+    assert.ok(overtaken instanceof Error)
+    assert.match(String(overtaken), /SIDE_CAR_STOPPING/)
+    assert.equal(starts, 1, 'the request that observes Stop must not create the replacement')
+    assert.equal(closeCalls, 1, 'the stale DSH/MCP process must be retired before retry')
+
+    const retry = await acquire(makersContext)
+    assert.notEqual(retry.sidecar, first.sidecar, 'a retry after retirement must use a fresh bridge')
     assert.equal(starts, 2)
-    assert.equal(closeCalls, 1, 'the stale DSH/MCP process must be retired before reuse')
-    assert.deepEqual(second.sidecar.mcp.stopEpochBaseline, { value: 'after-stop' })
-    second.release()
+    assert.deepEqual(retry.sidecar.mcp.stopEpochBaseline, { value: 'after-stop' })
+    retry.release()
     await stop('conv-post-stop-refresh')
   } finally {
     setStarter(undefined)
