@@ -111,6 +111,16 @@ Preview publication metadata is not considered live by itself. Current preview s
 
 Future Support Agent memory, once modules begin, must remain logically separate from project workspace data and use an explicit small/versioned schema. That future module-layer design is outside the current Foundation implementation.
 
+## Plugin-ready module boundary
+
+PQG reuses the existing Cordis/DSH plugin lifecycle instead of introducing a second plugin framework. The root `package.json` dependency set is the installed-package source of truth; `config/modules.mjs` only recognizes direct dependencies that explicitly declare `pqg.module` metadata. Packages without that metadata remain ordinary dependencies and are invisible to the PQG module layer.
+
+The minimal module declaration is intentionally small: stable module `id`, Vietnamese-facing `label`, `defaultEnabled`, and optional DSH client/Makers adapter exports. Future business plugins remain responsible for their own domain data and dashboards. PQG Core must never depend on any business plugin being present, and uninstalling a package must not implicitly delete its business data.
+
+Runtime enable/disable, client contribution lifecycle, Agent capability exposure and durable module policy are separate follow-up layers. Cordis Loader/Fiber state and the MCP SDK remain the runtime authorities; PQG must not maintain a duplicate lifecycle truth.
+
+No Task, Writing, Planning, Document, Data, Memory, Workflow or Skill business plugin is shipped by this substrate.
+
 ## Build identity and supply chain
 
 `build:prepared` runs Vite and then writes `dist/build-meta.json` containing exact Git commit, Git tree, and package version. Invalid/unknown Git identities fail the build instead of emitting ambiguous deployment metadata.
