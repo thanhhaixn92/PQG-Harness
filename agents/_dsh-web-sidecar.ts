@@ -362,7 +362,7 @@ async function writeProfilePatch(
     '        api: openai-completions',
     `        baseURL: ${JSON.stringify(options.gatewayBaseUrl)}`,
     '        models:',
-    ...modelYaml(makersModelCatalog(options.defaultModel)),
+    ...modelYaml(makersModelCatalog(defaultModel)),
     '',
     '- insert:',
     '    - id: makers-mcp',
@@ -748,7 +748,7 @@ export async function acquireDshWebSidecar(context: any): Promise<DshWebSidecarL
 
     const wasTracked = entry.stopEpochTracked
     const stopEpochChanged = await sidecarStopEpochChanged(context, entry)
-    if (entry.state === 'stopping') {
+    if ((entry.state as SidecarEntryState) === 'stopping') {
       if (await waitForEpochRetirement(entry, admissionSequence)) continue
       throw new Error('SIDE_CAR_STOPPING')
     }
