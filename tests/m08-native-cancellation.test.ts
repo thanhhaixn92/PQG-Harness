@@ -32,6 +32,15 @@ function wait(milliseconds: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, milliseconds))
 }
 
+async function waitForRequestMetadata(bridge: { requestLog(): unknown[] }, previousLength: number): Promise<void> {
+  const deadline = Date.now() + 500
+  while (bridge.requestLog().length <= previousLength) {
+    if (Date.now() >= deadline) throw new Error('MCP cancellation request was not delivered')
+    await wait(5)
+  }
+  await new Promise(resolve => setImmediate(resolve))
+}
+
 async function connectClient(url: string): Promise<Client> {
   const client = new Client({ name: 'm08-test-client', version: '1.0.0' }, { capabilities: {} })
   await client.connect(new StreamableHTTPClientTransport(new URL(url)))
@@ -144,8 +153,10 @@ test('cancellation while waiting for the checkpoint queue prevents a later persi
     )
     await commandRan.promise
     await new Promise(resolve => setImmediate(resolve))
+    const requestLogLengthBeforeCancel = bridge.requestLog().length
     controller.abort(new Error('user stop'))
     await assert.rejects(call)
+    await waitForRequestMetadata(bridge, requestLogLengthBeforeCancel)
 
     releaseFirstPersist.resolve(checkpoint)
     await blockingPersist
