@@ -61,6 +61,10 @@ export interface LocalMcpBridge {
   url: string
   requestCount(): number
   requestLog(): McpRequestMetadata[]
+  close(): Promise<void>
+}
+
+export interface ModuleMcpBridge extends LocalMcpBridge {
   registerModuleTool(
     moduleId: string,
     name: string,
@@ -69,7 +73,6 @@ export interface LocalMcpBridge {
   ): void
   setModuleEnabled(moduleId: string, enabled: boolean): void
   removeModule(moduleId: string): void
-  close(): Promise<void>
 }
 
 export type MakersContextProvider = () => any
@@ -336,7 +339,7 @@ async function handleMcpRequest(
 export async function startLocalMcpBridge(
   getContext: MakersContextProvider,
   conversationId: string,
-): Promise<LocalMcpBridge> {
+): Promise<ModuleMcpBridge> {
   const { server, modules, registerModuleTool } = await createMcpServer(getContext, conversationId)
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: () => randomUUID(),
