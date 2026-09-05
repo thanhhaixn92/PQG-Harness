@@ -21,11 +21,25 @@ function fakeSidecar(conversationId: string, close: () => Promise<void>): any {
   }
 }
 
-test('platform abort starts without waiting for sidecar startup or shutdown', async () => {
+function cancellationStore(writes: Array<{ key: string; value: unknown }> = []) {
+  return {
+    writes,
+    store: {
+      state: {
+        async set(key: string, value: unknown) {
+          writes.push({ key, value })
+        },
+      },
+    },
+  }
+}
+
+test('platform abort and shared cancellation start without waiting for sidecar startup or shutdown', async () => {
   let releaseStart!: () => void
   const startGate = new Promise<void>(resolve => { releaseStart = resolve })
   let abortCalls = 0
   let closeCalls = 0
+  const cancellation = cancellationStore()
 
   __setSidecarStarterForTests(async (_context: any, conversationId: string) => {
     await startGate
@@ -37,6 +51,9 @@ test('platform abort starts without waiting for sidecar startup or shutdown', as
   await new Promise(resolve => setTimeout(resolve, 0))
 
   const responsePending = onRequestPost({
+    conversation_id: 'conv-stop-order',
+    run_id: 'run-stop-order',
+    store: cancellation.store,
     request: { body: { conversation_id: 'conv-stop-order' } },
     utils: {
       async abortActiveRun(conversationId: string) {
@@ -55,6 +72,7 @@ test('platform abort starts without waiting for sidecar startup or shutdown', as
   try {
     await new Promise(resolve => setTimeout(resolve, 0))
     assert.equal(abortCalls, 1, 'platform abort must start without waiting for sidecar close')
+    assert.equal(cancellation.writes.length, 1, 'shared cancellation must publish without waiting for sidecar close')
   } finally {
     releaseStart()
   }
@@ -65,6 +83,7 @@ test('platform abort starts without waiting for sidecar startup or shutdown', as
   const body = await response.json() as any
   assert.equal(response.status, 200)
   assert.equal(body.ok, true)
+  assert.deepEqual(body.cancellation, { published: true })
   assert.deepEqual(body.sidecar, { found: true, closed: true })
   assert.deepEqual(body.platform, { aborted: true })
   assert.deepEqual(body.sandbox, { delegated: true })
@@ -80,9 +99,13 @@ test('Stop returns stable non-secret outcomes when sidecar and platform abort fa
 
   const lease = await acquireDshWebSidecar({ conversation_id: 'conv-stop-errors' })
   lease.release()
+  const cancellation = cancellationStore()
 
   try {
     const response = await onRequestPost({
+      conversation_id: 'conv-stop-errors',
+      run_id: 'run-stop-errors',
+      store: cancellation.store,
       request: { body: { conversation_id: 'conv-stop-errors' } },
       utils: {
         async abortActiveRun() {
@@ -100,6 +123,7 @@ test('Stop returns stable non-secret outcomes when sidecar and platform abort fa
 
     assert.equal(response.status, 200)
     assert.equal(body.ok, false)
+    assert.deepEqual(body.cancellation, { published: true })
     assert.deepEqual(body.sidecar, {
       found: true,
       closed: false,
@@ -118,8 +142,12 @@ test('Stop returns stable non-secret outcomes when sidecar and platform abort fa
   }
 })
 
-test('Stop treats an idle target as a successful delegated no-op', async () => {
+test('Stop treats an idle target as a successful delegated no-op after publishing shared cancellation', async () => {
+  const cancellation = cancellationStore()
   const response = await onRequestPost({
+    conversation_id: 'conv-stop-idle-delegated',
+    run_id: 'run-stop-idle',
+    store: cancellation.store,
     request: { body: { conversation_id: 'conv-stop-idle-delegated' } },
     utils: {
       async abortActiveRun() {
@@ -136,7 +164,9 @@ test('Stop treats an idle target as a successful delegated no-op', async () => {
 
   assert.equal(response.status, 200)
   assert.equal(body.ok, true)
+  assert.deepEqual(body.cancellation, { published: true })
   assert.deepEqual(body.sidecar, { found: false, closed: false })
   assert.deepEqual(body.platform, { aborted: false })
   assert.deepEqual(body.sandbox, { delegated: true })
+  assert.equal(cancellation.writes.length, 1)
 })
