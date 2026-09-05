@@ -182,7 +182,13 @@ async function assertSharedStopBaselineCurrent(
           const baselineState = baseline.scopedStateTracked === true
             ? normalizeStopEpoch(baseline.scopedStateValue)
             : normalizeStopEpoch(baseline.value)
-          if (!Object.is(currentState, baselineState)) throw workspaceAbortError()
+          const authoritativeBaseline = normalizeStopEpoch(baseline.value)
+          if (
+            !Object.is(currentState, baselineState)
+            && !Object.is(currentState, authoritativeBaseline)
+          ) {
+            throw workspaceAbortError()
+          }
         } catch (error) {
           if (error instanceof Error && error.name === 'AbortError') throw error
           // Metadata remains authoritative when the optional scoped fast path is unavailable.
@@ -394,7 +400,11 @@ export async function runWithSandboxAbort<T>(
           }
         }
 
-        if (signal?.aborted || signalCancelled) {
+        if (sharedFailure) {
+          await killOnce()
+          throw sharedFailure
+        }
+        if (signal?.aborted || signalCancelled || sharedCancelled) {
           return await ensureCancelled()
         }
       }
@@ -463,23 +473,11 @@ export function withRunnerOwnedSandboxCancellation(
     get(target, property) {
       if (property === 'commands') return wrappedCommands
       if (property === 'persist' && originalPersist) {
-        return async (...args: any[]) => {
-          const signal = options.useRequestSignal !== false
-            ? context?.request?.signal as AbortSignal | undefined
-            : undefined
-          if (signal?.aborted) {
-            await terminateSandbox(sandbox)
-            throw workspaceAbortError()
-          }
-          if (options.sharedStopBaseline !== undefined) {
-            await assertSharedStopBaselineCurrent(context, options.sharedStopBaseline, options)
-            if (signal?.aborted) {
-              await terminateSandbox(sandbox)
-              throw workspaceAbortError()
-            }
-          }
-          return originalPersist(...args)
-        }
+        return (...args: any[]) => runWithSandboxAbort(
+          context,
+          () => originalPersist(...args),
+          { ...options, sandbox },
+        )
       }
       return runtimeMember(target, property)
     },
