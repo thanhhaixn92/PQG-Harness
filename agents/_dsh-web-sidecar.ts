@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path'
 import { startLocalGatewayProxy, type LocalGatewayProxy } from './_gateway-proxy.ts'
 import { makersMcpPermissionSource } from './_makers-mcp-permission.mjs'
 import { startLocalMcpBridge, type ModuleMcpBridge } from './_mcp-bridge.ts'
+import { applyInstalledMakersModules } from './_module-adapters.ts'
 import { applyModulePolicyToBridge } from './_module-state.ts'
 
 const require = createRequire(import.meta.url)
@@ -443,6 +444,7 @@ async function startSidecarAttempt(context: any, conversationId: string): Promis
     gateway = await startLocalGatewayProxy(getContext, conversationId)
     mcp = await startLocalMcpBridge(getContext, conversationId)
     await applyModulePolicyToBridge(context, mcp)
+    await applyInstalledMakersModules(context, mcp)
     const home = dshHomeFor(conversationId)
     const defaultModel = envString(context, 'AI_GATEWAY_MODEL') || DEFAULT_MAKERS_MODEL
     const deepseekApiKey = envString(context, 'DEEPSEEK_API_KEY')
