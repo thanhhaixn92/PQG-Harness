@@ -2,11 +2,13 @@ import { createHash } from 'node:crypto'
 import { cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { transformWithEsbuild } from 'vite'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const publicDir = join(root, 'public')
 const modulesRoot = join(root, 'node_modules', '@deepseek-ai')
 const webDist = join(modulesRoot, 'dsh-web-frontend', 'dist')
+const pqgModuleSettingsId = '@pqg/module-settings'
 const excluded = new Set([
   // The Makers deployment has no native desktop directory chooser. The
   // native row is retained because the upstream Web composition selects it;
@@ -942,6 +944,38 @@ function patchSessionLogExportBundle(source) {
   )
 }
 
+async function preparePqgModuleSettingsClient() {
+  const entry = join(root, 'src', 'pqg-module-settings-client.ts')
+  const source = await readFile(entry, 'utf8')
+  const transformed = await transformWithEsbuild(source, entry, {
+    loader: 'ts',
+    target: 'es2022',
+    format: 'cjs',
+    sourcemap: false,
+    charset: 'utf8',
+  })
+  const bundled = [
+    `window.__ModuleLoader__.load({ id: ${JSON.stringify(pqgModuleSettingsId)}, factory: (require) => { var module = { exports: {} }; var exports = module.exports;`,
+    transformed.code.trimEnd(),
+    'return module.exports; } });',
+    '',
+  ].join('\n')
+  const target = join(publicDir, 'plugins', ...pqgModuleSettingsId.split('/'), 'client.js')
+  await mkdir(dirname(target), { recursive: true })
+  await writeFile(target, bundled)
+  const rev = hash(bundled)
+  return {
+    id: pqgModuleSettingsId,
+    url: `/plugins/${pqgModuleSettingsId}/client.js?rev=${rev}`,
+    rev,
+    inject: [
+      '@deepseek-ai/dsh-client-runtime',
+      '@deepseek-ai/dsh-client-ui-settings',
+      '@deepseek-ai/dsh-client-ui-slots',
+    ],
+  }
+}
+
 async function clientPackages() {
   const rows = []
   for (const directory of await readdir(modulesRoot)) {
@@ -1286,7 +1320,10 @@ ${makersActionsHead}`
 await rm(publicDir, { recursive: true, force: true })
 await mkdir(publicDir, { recursive: true })
 await cp(webDist, publicDir, { recursive: true })
-const entries = await clientPackages()
+const entries = [
+  ...(await clientPackages()),
+  await preparePqgModuleSettingsClient(),
+].sort((left, right) => left.id.localeCompare(right.id))
 if (entries.length < 30) throw new Error(`Expected the DSH Web roster, found only ${String(entries.length)} bundles.`)
 const graph = { rev: hash(JSON.stringify(entries)), entries }
 const shellHtml = await readFile(join(webDist, 'index.html'), 'utf8')
