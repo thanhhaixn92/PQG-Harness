@@ -597,6 +597,7 @@ function stopEpochTimestamp(value: unknown): number | undefined {
   const timestamp = Number(parts[parts.length - 2])
   return Number.isSafeInteger(timestamp) && timestamp >= 0 ? timestamp : undefined
 }
+
 function stopEpochOvertookAdmission(value: unknown, admissionStartedAtMs: number): boolean {
   const timestamp = stopEpochTimestamp(value)
   return timestamp !== undefined && timestamp >= admissionStartedAtMs
