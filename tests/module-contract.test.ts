@@ -62,3 +62,78 @@ test('discovers only direct dependencies that declare pqg.module metadata', asyn
     await rm(root, { recursive: true, force: true })
   }
 })
+
+test('discovers pqg modules from optional root dependencies', async () => {
+  const { discoverPqgModules } = await import(modulePath.href)
+  const root = await mkdtemp(join(tmpdir(), 'pqg-optional-module-'))
+
+  try {
+    await writeJson(join(root, 'package.json'), {
+      optionalDependencies: {
+        '@pqg/plugin-writing': '1.0.0',
+      },
+    })
+    await mkdir(join(root, 'node_modules', '@pqg', 'plugin-writing'), { recursive: true })
+    await writeJson(join(root, 'node_modules', '@pqg', 'plugin-writing', 'package.json'), {
+      name: '@pqg/plugin-writing',
+      pqg: {
+        module: {
+          id: 'writing',
+          label: 'Bài viết',
+          defaultEnabled: true,
+        },
+      },
+    })
+
+    assert.deepEqual(await discoverPqgModules(root), [{
+      id: 'writing',
+      label: 'Bài viết',
+      packageName: '@pqg/plugin-writing',
+      defaultEnabled: true,
+      client: false,
+      makers: false,
+    }])
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('treats null adapter export mappings as unavailable', async () => {
+  const { discoverPqgModules } = await import(modulePath.href)
+  const root = await mkdtemp(join(tmpdir(), 'pqg-null-exports-'))
+
+  try {
+    await writeJson(join(root, 'package.json'), {
+      dependencies: {
+        '@pqg/plugin-data': '1.0.0',
+      },
+    })
+    await mkdir(join(root, 'node_modules', '@pqg', 'plugin-data'), { recursive: true })
+    await writeJson(join(root, 'node_modules', '@pqg', 'plugin-data', 'package.json'), {
+      name: '@pqg/plugin-data',
+      pqg: {
+        module: {
+          id: 'data',
+          label: 'Dữ liệu',
+          defaultEnabled: false,
+        },
+      },
+      dsh: { client: { platform: 'web' } },
+      exports: {
+        './client': null,
+        './makers': null,
+      },
+    })
+
+    assert.deepEqual(await discoverPqgModules(root), [{
+      id: 'data',
+      label: 'Dữ liệu',
+      packageName: '@pqg/plugin-data',
+      defaultEnabled: false,
+      client: false,
+      makers: false,
+    }])
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
