@@ -1,0 +1,22 @@
+{
+  "name": "@pqg/reference-module",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./client": "./src/client.tsx",
+    "./makers": "./src/makers.ts"
+  },
+  "pqg": {
+    "module": {
+      "id": "reference",
+      "label": "Reference Module",
+      "defaultEnabled": false
+    }
+  },
+  "dsh": {
+    "client": {
+      "platform": "web"
+    }
+  }
+}
