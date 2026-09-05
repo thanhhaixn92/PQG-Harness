@@ -158,12 +158,22 @@ test('pre-aborted runner does not dispatch a sandbox command', async () => {
   assert.equal(persistCalls, 0)
 })
 
-test('Stop delegates runner cancellation and never kills the Stop-request sandbox', async () => {
+test('Stop delegates sandbox kill to the active command and publishes shared cancellation', async () => {
   let stopRequestSandboxKills = 0
   let abortCalls = 0
+  const writes: Array<{ key: string; value: unknown }> = []
 
   const response = await onRequestPost({
+    conversation_id: 'conv-stop-delegated',
+    run_id: 'run-stop-delegated',
     request: { body: { conversation_id: 'conv-stop-delegated' } },
+    store: {
+      state: {
+        async set(key: string, value: unknown) {
+          writes.push({ key, value })
+        },
+      },
+    },
     utils: {
       async abortActiveRun(conversationId: string) {
         assert.equal(conversationId, 'conv-stop-delegated')
@@ -182,7 +192,10 @@ test('Stop delegates runner cancellation and never kills the Stop-request sandbo
   assert.equal(response.status, 200)
   assert.equal(abortCalls, 1)
   assert.equal(stopRequestSandboxKills, 0)
+  assert.equal(writes.length, 1)
+  assert.equal(writes[0]?.key, 'pqg:m08:stop-epoch')
   assert.equal(body.ok, true)
+  assert.deepEqual(body.cancellation, { published: true })
   assert.deepEqual(body.platform, { aborted: true })
   assert.deepEqual(body.sandbox, { delegated: true })
 })
