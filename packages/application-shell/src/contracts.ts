@@ -1,3 +1,5 @@
+import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+
 export type SupportPanelState = 'collapsed' | 'compact' | 'expanded'
 
 export interface ShellNavigationOwner {
@@ -62,7 +64,7 @@ export type ShellApprovalOutcome = 'allowed-once' | 'rejected'
 
 export interface ShellApprovalRequest {
   key: string
-  sessionId: string
+  sessionId: SessionId
   toolName: string
   reason?: string
   callId?: string
@@ -79,12 +81,6 @@ export interface ShellSystemServices {
   subscribeNotifications(listener: (notification: ShellNotification) => void): () => void
   currentApproval(): ShellApprovalRequest | undefined
   answerApproval(approval: ShellApprovalRequest, outcome: ShellApprovalOutcome): Promise<void>
-}
-
-declare module '@deepseek-ai/cordis' {
-  interface Context {
-    pqgShell: ShellSystemServices
-  }
 }
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
