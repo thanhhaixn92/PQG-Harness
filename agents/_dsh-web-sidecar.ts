@@ -8,6 +8,7 @@ import { makersMcpPermissionSource } from './_makers-mcp-permission.mjs'
 import { startLocalMcpBridge, type ModuleMcpBridge } from './_mcp-bridge.ts'
 import { applyInstalledMakersModules } from './_module-adapters.ts'
 import { applyModulePolicyToBridge } from './_module-state.ts'
+import { ensureWorkspace } from './_workspace.ts'
 
 const require = createRequire(import.meta.url)
 
@@ -41,6 +42,24 @@ interface SidecarEntry {
 }
 
 type SidecarStarter = (context: any, conversationId: string) => Promise<DshWebSidecar>
+
+type DshRpcResponse<T> = {
+  result?:
+    | { ok: true; value: T }
+    | { ok: false; error?: { message?: string } }
+}
+
+type DshWorkspaceView = {
+  workspaceId: string
+  path: string
+  sessionIds: string[]
+}
+
+type DshSessionSummary = {
+  sessionId: string
+  cwd?: string
+  blank?: boolean
+}
 
 const sidecars = new Map<string, SidecarEntry>()
 let sidecarStarterForTests: SidecarStarter | undefined
@@ -378,7 +397,11 @@ async function writeProfilePatch(
   ].join('\n'))
 }
 
-async function callRpc(port: number, method: string, payload: Record<string, unknown>): Promise<void> {
+async function callRpcResult<T>(
+  port: number,
+  method: string,
+  payload: Record<string, unknown>,
+): Promise<T> {
   const deadline = Date.now() + 30_000
   let lastError: unknown
   while (Date.now() < deadline) {
@@ -395,15 +418,48 @@ async function callRpc(port: number, method: string, payload: Record<string, unk
       continue
     }
     if (response.ok) {
-      const result = await response.json() as { result?: { ok?: boolean; error?: { message?: string } } }
-      if (result.result?.ok === true) return
-      throw new Error(result.result?.error?.message || `DSH sidecar ${method} failed`)
+      const rpc = await response.json() as DshRpcResponse<T>
+      if (rpc.result?.ok === true) return rpc.result.value
+      throw new Error(rpc.result?.error?.message || `DSH sidecar ${method} failed`)
     }
     lastError = new Error(`DSH sidecar ${method} failed with HTTP ${String(response.status)}`)
     if (![404, 502, 503].includes(response.status)) throw lastError
     await new Promise(resolve => setTimeout(resolve, 250))
   }
   throw lastError instanceof Error ? lastError : new Error(`DSH sidecar ${method} did not become ready`)
+}
+
+async function callRpc(port: number, method: string, payload: Record<string, unknown>): Promise<void> {
+  await callRpcResult<unknown>(port, method, payload)
+}
+
+export async function ensureDshWorkspaceSession(port: number, workspacePath: string): Promise<string> {
+  const created = await callRpcResult<{ workspace: DshWorkspaceView; created: boolean }>(
+    port,
+    'workspace.create',
+    { path: workspacePath },
+  )
+  const workspace = created?.workspace
+  if (!workspace?.workspaceId || !workspace.path || !Array.isArray(workspace.sessionIds)) {
+    throw new Error('DSH sidecar workspace.create returned an invalid workspace')
+  }
+
+  const sessions = await callRpcResult<{ items: DshSessionSummary[] }>(port, 'session.list', {})
+  const reusable = Array.isArray(sessions?.items)
+    ? sessions.items.find(session =>
+        session.blank === true
+        && session.cwd === workspace.path
+        && workspace.sessionIds.includes(session.sessionId))
+    : undefined
+  if (reusable?.sessionId) return reusable.sessionId
+
+  const next = await callRpcResult<{ sessionId: string }>(
+    port,
+    'session.create',
+    { workspaceId: workspace.workspaceId },
+  )
+  if (!next?.sessionId) throw new Error('DSH sidecar session.create returned an invalid session')
+  return next.sessionId
 }
 
 async function waitForReady(child: ChildProcess, port: number): Promise<void> {
@@ -447,6 +503,7 @@ async function startSidecarAttempt(context: any, conversationId: string): Promis
   const getContext = (): any => sidecar?.context ?? context
 
   try {
+    await ensureWorkspace(context, conversationId)
     const port = await freePort()
     gateway = await startLocalGatewayProxy(getContext, conversationId)
     mcp = await startLocalMcpBridge(getContext, conversationId)
@@ -491,7 +548,7 @@ async function startSidecarAttempt(context: any, conversationId: string): Promis
     await waitForReady(child, port)
     const workspacePath = join(home, 'workspace')
     await mkdir(workspacePath, { recursive: true })
-    await callRpc(port, 'workspace.create', { path: workspacePath })
+    await ensureDshWorkspaceSession(port, workspacePath)
 
     const runningChild = child
     const runningGateway = gateway
