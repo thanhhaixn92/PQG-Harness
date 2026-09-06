@@ -127,3 +127,29 @@ test('rejects non-boolean per-module metadata overrides', async () => {
 
   await assert.rejects(readModulePolicy(context), /module policy/i)
 })
+
+test('setModuleEnabled returns the persisted override without a post-write read', async () => {
+  const { MODULE_POLICY_CONVERSATION_ID, setModuleEnabled } = await import(policyModule.href)
+  let reads = 0
+  const context = {
+    store: {
+      async getConversation() {
+        reads += 1
+        if (reads === 1) return { metadata: {} }
+        throw new Error('transient post-write read failure')
+      },
+      async updateConversation({ metadata }: { metadata: Record<string, unknown> }) {
+        return {
+          conversationId: MODULE_POLICY_CONVERSATION_ID,
+          metadata,
+        }
+      },
+    },
+  }
+
+  assert.deepEqual(await setModuleEnabled(context, 'task', false), {
+    version: 1,
+    enabled: { task: false },
+  })
+  assert.equal(reads, 1)
+})
