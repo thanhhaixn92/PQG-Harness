@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import * as sidecarModule from '../agents/_dsh-web-sidecar.ts'
+import { ensureWorkspace } from '../agents/_workspace.ts'
 
 const sidecarApi = sidecarModule as typeof sidecarModule & Record<string, any>
 
@@ -31,6 +32,127 @@ function fakeSidecar(conversationId: string, onClose: () => void): any {
 test('WP3 lifecycle API exposes acquire lease and starter seam', () => {
   requiredFunction('acquireDshWebSidecar')
   requiredFunction('__setSidecarStarterForTests')
+})
+
+test('fresh Makers workspace provisioning does not persist before a mutation', async () => {
+  const written = new Map<string, string>()
+  let persistCalls = 0
+  const makersContext = {
+    sandbox: {
+      files: {
+        async makeDir() {},
+        async exists() { return false },
+        async write(path: string, content: string) { written.set(path, content) },
+      },
+      async restore() { return { restored: false, reason: 'not_found' } },
+      async persist() {
+        persistCalls += 1
+        return { size: 0, sha256: '', etag: '', persistedAt: '' }
+      },
+    },
+  }
+
+  const root = await ensureWorkspace(makersContext, 'conv-provision-only')
+
+  assert.equal(root, 'projects/conv-provision-only/workspace')
+  assert.equal(persistCalls, 0)
+  assert.equal(written.get(`${root}/.pqg-workspace-ready`), 'v1\n')
+})
+
+test('DSH bootstrap reuses the existing blank session for its internal workspace', async () => {
+  const ensureDshWorkspaceSession = requiredFunction('ensureDshWorkspaceSession')
+  const originalFetch = globalThis.fetch
+  const calls: Array<{ method: string; payload: Record<string, unknown> }> = []
+  const workspacePath = '/tmp/dsh-makers-web/conv/workspace'
+
+  globalThis.fetch = async (_input: string | URL | Request, init?: RequestInit) => {
+    const request = JSON.parse(String(init?.body)) as { method: string; payload: Record<string, unknown> }
+    calls.push({ method: request.method, payload: request.payload })
+    if (request.method === 'workspace.create') {
+      return Response.json({
+        rpcId: 'rpc-workspace',
+        result: {
+          ok: true,
+          value: {
+            workspace: {
+              workspaceId: 'ws-1',
+              path: workspacePath,
+              title: 'workspace',
+              sessionIds: ['blank-1'],
+              createdAt: '2026-09-06T00:00:00.000Z',
+              updatedAt: '2026-09-06T00:00:00.000Z',
+            },
+            created: false,
+          },
+        },
+      })
+    }
+    if (request.method === 'session.list') {
+      return Response.json({
+        rpcId: 'rpc-list',
+        result: {
+          ok: true,
+          value: {
+            items: [{ sessionId: 'blank-1', cwd: workspacePath, blank: true }],
+          },
+        },
+      })
+    }
+    throw new Error(`unexpected RPC ${request.method}`)
+  }
+
+  try {
+    assert.equal(await ensureDshWorkspaceSession(1234, workspacePath), 'blank-1')
+    assert.deepEqual(calls.map(call => call.method), ['workspace.create', 'session.list'])
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('DSH bootstrap creates one blank session when the internal workspace has none to reuse', async () => {
+  const ensureDshWorkspaceSession = requiredFunction('ensureDshWorkspaceSession')
+  const originalFetch = globalThis.fetch
+  const calls: Array<{ method: string; payload: Record<string, unknown> }> = []
+  const workspacePath = '/tmp/dsh-makers-web/conv/workspace'
+
+  globalThis.fetch = async (_input: string | URL | Request, init?: RequestInit) => {
+    const request = JSON.parse(String(init?.body)) as { method: string; payload: Record<string, unknown> }
+    calls.push({ method: request.method, payload: request.payload })
+    if (request.method === 'workspace.create') {
+      return Response.json({
+        rpcId: 'rpc-workspace',
+        result: {
+          ok: true,
+          value: {
+            workspace: {
+              workspaceId: 'ws-1',
+              path: workspacePath,
+              title: 'workspace',
+              sessionIds: [],
+              createdAt: '2026-09-06T00:00:00.000Z',
+              updatedAt: '2026-09-06T00:00:00.000Z',
+            },
+            created: true,
+          },
+        },
+      })
+    }
+    if (request.method === 'session.list') {
+      return Response.json({ rpcId: 'rpc-list', result: { ok: true, value: { items: [] } } })
+    }
+    if (request.method === 'session.create') {
+      assert.deepEqual(request.payload, { workspaceId: 'ws-1' })
+      return Response.json({ rpcId: 'rpc-create', result: { ok: true, value: { sessionId: 'new-1' } } })
+    }
+    throw new Error(`unexpected RPC ${request.method}`)
+  }
+
+  try {
+    assert.equal(await ensureDshWorkspaceSession(1234, workspacePath), 'new-1')
+    assert.deepEqual(calls.map(call => call.method), ['workspace.create', 'session.list', 'session.create'])
+  } finally {
+    globalThis.fetch = originalFetch
+  }
 })
 
 test('two concurrent acquires share one startup and leases release safely', async () => {
