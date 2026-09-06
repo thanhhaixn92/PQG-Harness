@@ -69,6 +69,24 @@ export interface ShellApprovalRequest {
   risk: 'requires-confirmation'
 }
 
+export interface ShellSystemServices {
+  registerSearchProvider(provider: ShellSearchProvider): () => void
+  search(query: string): Promise<readonly ShellSearchMatch[]>
+  registerSupportProvider(provider: ShellSupportProvider): () => void
+  supportFor(activeId: string): ShellSupportContext | undefined
+  subscribe(listener: () => void): () => void
+  notify(notification: ShellNotification): void
+  subscribeNotifications(listener: (notification: ShellNotification) => void): () => void
+  currentApproval(): ShellApprovalRequest | undefined
+  answerApproval(approval: ShellApprovalRequest, outcome: ShellApprovalOutcome): Promise<void>
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    pqgShell: ShellSystemServices
+  }
+}
+
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
     'pqg.shell.navigation': {
