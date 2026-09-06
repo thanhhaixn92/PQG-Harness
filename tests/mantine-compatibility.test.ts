@@ -7,7 +7,6 @@ import vm from 'node:vm'
 import { gzipSync } from 'node:zlib'
 
 const require = createRequire(import.meta.url)
-const root = new URL('../', import.meta.url)
 const bundleUrl = new URL('../public/plugins/@pqg/mantine-spike/client.js', import.meta.url)
 const cssUrl = new URL('../public/plugins/@pqg/mantine-spike/styles.css', import.meta.url)
 const allowedReactExternals = new Set([
@@ -33,7 +32,7 @@ test('prepared Mantine client is in the DSH graph with layered CSS', async () =>
   assert.match(html, /data-pqg-mantine-spike/)
   assert.match(html, /\/plugins\/@pqg\/mantine-spike\/styles\.css\?rev=/)
   assert.match(css, /@layer\s+mantine/)
-  assert.match(css, /\.mantine-Button-root/)
+  assert.match(css, /--mantine-primary-color-filled/)
 })
 
 test('bundle resolves React only from the DSH platform singleton and renders through the slot lifecycle', async () => {
