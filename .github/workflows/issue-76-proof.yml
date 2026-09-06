@@ -144,7 +144,7 @@ jobs:
           if (!await evaluate('getComputedStyle(document.querySelector("[data-pqg-support-drawer]")).getPropertyValue("--mantine-color-blue-filled").trim().length > 0')) throw new Error('Support Drawer lost scoped Mantine CSS variables')
           await evaluate('Array.from(document.querySelectorAll("button")).find(button => button.textContent?.trim() === "Đóng")?.click()')
           await waitFor('document.querySelector("[data-pqg-support-state]") === null', 'closed mobile support drawer')
-          await evaluate('document.querySelector("button[aria-label=\"Mở điều hướng\"]").click()')
+          await evaluate(`document.querySelector('button[aria-label="Mở điều hướng"]').click()`)
           await waitFor('document.querySelector("[data-pqg-reference-nav]")?.getBoundingClientRect().width > 0', 'mobile navigation')
 
           const fatal = observedErrors.filter(text => /root.*no registration|no registration.*root|slot.*collision|collision.*slot|activation.*(?:fail|error)|activate.*(?:fail|error)|process is not defined|ReferenceError/i.test(text))
