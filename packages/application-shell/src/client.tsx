@@ -6,7 +6,7 @@ type RootProps = PropsRuntime<'root'> & PropsRenderSlots<'pqg.shell.proof'>
 
 const inject = ['slots']
 
-function PqgApplicationShellProof({ renderSlot }: RootProps): unknown {
+function PqgApplicationShellProof({ renderSlot }: RootProps) {
   return renderSlot('pqg.shell.proof', {}, { fallback: null })
 }
 
