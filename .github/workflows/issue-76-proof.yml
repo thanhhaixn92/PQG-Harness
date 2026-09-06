@@ -42,109 +42,104 @@ jobs:
                   "const pqgReferenceModuleId = '@pqg/reference-module'\nconst pqgApplicationShellId = '@pqg/application-shell'\nconst pqgMantineSpikeId = '@pqg/mantine-spike'",
               )
 
-              patch_fn = r'''function patchLayoutBundleForPqgRoot(source) {
-            const shippedRootEffect = `\t\t\tconst layout = new LayoutController();
-          \t\t\tctx.effect(() => {
-          \t\t\t\tconst disposeService = ctx.reflect.provide("layout", layout);
-          \t\t\t\tconst disposeRegistration = ctx.slots.register({
-          \t\t\t\t\tname: "root",
-          \t\t\t\t\tchildren: {
-          \t\t\t\t\t\t"sidebar": {
-          \t\t\t\t\t\t\tkind: "single",
-          \t\t\t\t\t\t\tscope: "root"
-          \t\t\t\t\t\t},
-          \t\t\t\t\t\t"conversation": {
-          \t\t\t\t\t\t\tkind: "single",
-          \t\t\t\t\t\t\tscope: "session-maybe"
-          \t\t\t\t\t\t},
-          \t\t\t\t\t\t"details": {
-          \t\t\t\t\t\t\tkind: "single",
-          \t\t\t\t\t\t\tscope: "session"
-          \t\t\t\t\t\t},
-          \t\t\t\t\t\t"shell.overlay": {
-          \t\t\t\t\t\t\tkind: "list",
-          \t\t\t\t\t\t\tscope: "root"
-          \t\t\t\t\t\t}
-          \t\t\t\t\t},
-          \t\t\t\t\tstore: createLayoutStore,
-          \t\t\t\t\tinject: (actions) => {
-          \t\t\t\t\t\tlayout.attachPanels(actions);
-          \t\t\t\t\t\treturn {};
-          \t\t\t\t\t}
-          \t\t\t\t}, AppFrame);
-          \t\t\t\treturn () => {
-          \t\t\t\t\tdisposeRegistration();
-          \t\t\t\t\tdisposeService();
-          \t\t\t\t};
-          \t\t\t}, "ui-layout: service + root registration");
-          `
-            if (!source.includes(shippedRootEffect)) {
-              throw new Error('Published DSH ui-layout bundle no longer matches the PQG root ownership patch point.')
-            }
-            return source.replace(shippedRootEffect, '')
-          }
-
-          '''
+              patch_fn = (
+                  "function patchLayoutBundleForPqgRoot(source) {\n"
+                  "  const shippedRootEffect = [\n"
+                  "    '\\t\\t\\tconst layout = new LayoutController();',\n"
+                  "    '\\t\\t\\tctx.effect(() => {',\n"
+                  "    '\\t\\t\\t\\tconst disposeService = ctx.reflect.provide(\"layout\", layout);',\n"
+                  "    '\\t\\t\\t\\tconst disposeRegistration = ctx.slots.register({',\n"
+                  "    '\\t\\t\\t\\t\\tname: \"root\",',\n"
+                  "    '\\t\\t\\t\\t\\tchildren: {',\n"
+                  "    '\\t\\t\\t\\t\\t\\t\"sidebar\": {',\n"
+                  "    '\\t\\t\\t\\t\\t\\t\\tkind: \"single\",',\n"
+                  "    '\\t\\t\\t\\t\\t\\t\\tscope: \"root\"',\n"
+                  "    '\\t\\t\\t\\t\\t\\t},',\n"
+                  "    '\\t\\t\\t\\t\\t\\t\"conversation\": {',\n"
+                  "    '\\t\\t\\t\\t\\t\\t\\tkind: \"single\",',\n"
+                  "    '\\t\\t\\t\\t\\t\\t\\tscope: \"session-maybe\"',\n"
+                  "    '\\t\\t\\t\\t\\t\\t},',\n"
+                  "    '\\t\\t\\t\\t\\t\\t\"details\": {',\n"
+                  "    '\\t\\t\\t\\t\\t\\t\\tkind: \"single\",',\n"
+                  "    '\\t\\t\\t\\t\\t\\t\\tscope: \"session\"',\n"
+                  "    '\\t\\t\\t\\t\\t\\t},',\n"
+                  "    '\\t\\t\\t\\t\\t\\t\"shell.overlay\": {',\n"
+                  "    '\\t\\t\\t\\t\\t\\t\\tkind: \"list\",',\n"
+                  "    '\\t\\t\\t\\t\\t\\t\\tscope: \"root\"',\n"
+                  "    '\\t\\t\\t\\t\\t\\t}',\n"
+                  "    '\\t\\t\\t\\t\\t},',\n"
+                  "    '\\t\\t\\t\\t\\tstore: createLayoutStore,',\n"
+                  "    '\\t\\t\\t\\t\\tinject: (actions) => {',\n"
+                  "    '\\t\\t\\t\\t\\t\\tlayout.attachPanels(actions);',\n"
+                  "    '\\t\\t\\t\\t\\t\\treturn {};',\n"
+                  "    '\\t\\t\\t\\t\\t}',\n"
+                  "    '\\t\\t\\t\\t}, AppFrame);',\n"
+                  "    '\\t\\t\\t\\treturn () => {',\n"
+                  "    '\\t\\t\\t\\t\\tdisposeRegistration();',\n"
+                  "    '\\t\\t\\t\\t\\tdisposeService();',\n"
+                  "    '\\t\\t\\t\\t};',\n"
+                  "    '\\t\\t\\t}, \"ui-layout: service + root registration\");',\n"
+                  "    '',\n"
+                  "  ].join('\\n')\n"
+                  "  if (!source.includes(shippedRootEffect)) {\n"
+                  "    throw new Error('Published DSH ui-layout bundle no longer matches the PQG root ownership patch point.')\n"
+                  "  }\n"
+                  "  return source.replace(shippedRootEffect, '')\n"
+                  "}\n\n"
+              )
               replace_once(
                   'layout patch function insertion',
                   'async function preparePqgModuleSettingsClient() {',
                   patch_fn + 'async function preparePqgModuleSettingsClient() {',
               )
 
-              ref_tail = '''  const target = join(publicDir, 'plugins', ...pqgReferenceModuleId.split('/'), 'client.js')
-          await mkdir(dirname(target), { recursive: true })
-          await writeFile(target, bundled)
-          }
-
-          async function preparePqgMantineSpikeClient() {'''
-              ref_replacement = '''  const target = join(publicDir, 'plugins', ...pqgReferenceModuleId.split('/'), 'client.js')
-          await mkdir(dirname(target), { recursive: true })
-          await writeFile(target, bundled)
-          const rev = hash(bundled)
-          return {
-            id: pqgReferenceModuleId,
-            url: `/plugins/${pqgReferenceModuleId}/client.js?rev=${rev}`,
-            rev,
-            inject: [
-              '@deepseek-ai/dsh-client-runtime',
-              '@deepseek-ai/dsh-client-ui-slots',
-            ],
-          }
-          }
-
-          async function preparePqgApplicationShellClient() {
-            const entry = join(root, 'packages', 'application-shell', 'src', 'client.tsx')
-            const source = await readFile(entry, 'utf8')
-            const transformed = await transformWithEsbuild(source, entry, {
-              loader: 'tsx',
-              target: 'es2022',
-              format: 'cjs',
-              sourcemap: false,
-              charset: 'utf8',
-            })
-            const bundled = [
-              `window.__ModuleLoader__.load({ id: ${JSON.stringify(pqgApplicationShellId)}, factory: (require) => { var module = { exports: {} }; var exports = module.exports;`,
-              transformed.code.trimEnd(),
-              'return module.exports; } });',
-              '',
-            ].join('\\n')
-            const target = join(publicDir, 'plugins', ...pqgApplicationShellId.split('/'), 'client.js')
-            await mkdir(dirname(target), { recursive: true })
-            await writeFile(target, bundled)
-            const rev = hash(bundled)
-            return {
-              id: pqgApplicationShellId,
-              url: `/plugins/${pqgApplicationShellId}/client.js?rev=${rev}`,
-              rev,
-              inject: [
-                '@deepseek-ai/dsh-client-runtime',
-                '@deepseek-ai/dsh-client-ui-slots',
-              ],
-            }
-          }
-
-          async function preparePqgMantineSpikeClient() {'''
-              replace_once('reference/application shell bundle preparation', ref_tail, ref_replacement)
+              ref_anchor = "  await writeFile(target, bundled)\n}\n\nasync function preparePqgMantineSpikeClient() {"
+              ref_replacement = (
+                  "  await writeFile(target, bundled)\n"
+                  "  const rev = hash(bundled)\n"
+                  "  return {\n"
+                  "    id: pqgReferenceModuleId,\n"
+                  "    url: `/plugins/${pqgReferenceModuleId}/client.js?rev=${rev}`,\n"
+                  "    rev,\n"
+                  "    inject: [\n"
+                  "      '@deepseek-ai/dsh-client-runtime',\n"
+                  "      '@deepseek-ai/dsh-client-ui-slots',\n"
+                  "    ],\n"
+                  "  }\n"
+                  "}\n\n"
+                  "async function preparePqgApplicationShellClient() {\n"
+                  "  const entry = join(root, 'packages', 'application-shell', 'src', 'client.tsx')\n"
+                  "  const source = await readFile(entry, 'utf8')\n"
+                  "  const transformed = await transformWithEsbuild(source, entry, {\n"
+                  "    loader: 'tsx',\n"
+                  "    target: 'es2022',\n"
+                  "    format: 'cjs',\n"
+                  "    sourcemap: false,\n"
+                  "    charset: 'utf8',\n"
+                  "  })\n"
+                  "  const bundled = [\n"
+                  "    `window.__ModuleLoader__.load({ id: ${JSON.stringify(pqgApplicationShellId)}, factory: (require) => { var module = { exports: {} }; var exports = module.exports;`,\n"
+                  "    transformed.code.trimEnd(),\n"
+                  "    'return module.exports; } });',\n"
+                  "    '',\n"
+                  "  ].join('\\n')\n"
+                  "  const target = join(publicDir, 'plugins', ...pqgApplicationShellId.split('/'), 'client.js')\n"
+                  "  await mkdir(dirname(target), { recursive: true })\n"
+                  "  await writeFile(target, bundled)\n"
+                  "  const rev = hash(bundled)\n"
+                  "  return {\n"
+                  "    id: pqgApplicationShellId,\n"
+                  "    url: `/plugins/${pqgApplicationShellId}/client.js?rev=${rev}`,\n"
+                  "    rev,\n"
+                  "    inject: [\n"
+                  "      '@deepseek-ai/dsh-client-runtime',\n"
+                  "      '@deepseek-ai/dsh-client-ui-slots',\n"
+                  "    ],\n"
+                  "  }\n"
+                  "}\n\n"
+                  "async function preparePqgMantineSpikeClient() {"
+              )
+              replace_once('reference/application shell bundle preparation', ref_anchor, ref_replacement)
 
               replace_once(
                   'ui-layout patch call',
@@ -233,15 +228,9 @@ jobs:
               return
             }
             if (message.method === 'Page.loadEventFired') loadedResolve()
-            if (message.method === 'Runtime.exceptionThrown') {
-              observedErrors.push(message.params?.exceptionDetails?.text ?? JSON.stringify(message.params))
-            }
-            if (message.method === 'Log.entryAdded' && message.params?.entry?.level === 'error') {
-              observedErrors.push(message.params.entry.text)
-            }
-            if (message.method === 'Runtime.consoleAPICalled' && message.params?.type === 'error') {
-              observedErrors.push((message.params.args ?? []).map(arg => arg.value ?? arg.description ?? '').join(' '))
-            }
+            if (message.method === 'Runtime.exceptionThrown') observedErrors.push(message.params?.exceptionDetails?.text ?? JSON.stringify(message.params))
+            if (message.method === 'Log.entryAdded' && message.params?.entry?.level === 'error') observedErrors.push(message.params.entry.text)
+            if (message.method === 'Runtime.consoleAPICalled' && message.params?.type === 'error') observedErrors.push((message.params.args ?? []).map(arg => arg.value ?? arg.description ?? '').join(' '))
           })
 
           const send = (method, params = {}) => new Promise((resolve, reject) => {
