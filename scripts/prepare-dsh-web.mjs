@@ -997,6 +997,33 @@ function patchLayoutBundleForPqgRoot(source) {
   return source.replace(shippedRootEffect, '')
 }
 
+async function patchWebShellForPqgRoot() {
+  const indexHtml = await readFile(join(publicDir, 'index.html'), 'utf8')
+  const assetMatch = indexHtml.match(/<script[^>]+src="\/assets\/([^\"]+\.js)"/)
+  if (!assetMatch) {
+    throw new Error('Published DSH Web index no longer exposes the expected module asset.')
+  }
+  const target = join(publicDir, 'assets', assetMatch[1])
+  let source = await readFile(target, 'utf8')
+  const appShellInject = 'const Fl="@deepseek-ai/dsh-client-app-shell",w8="app-shell",x8=["slots","sessions","layout"];function _8(n){'
+  if (!source.includes(appShellInject)) {
+    throw new Error('Published DSH Web shell no longer matches the PQG app-shell layout guard patch point.')
+  }
+  source = source.replace(
+    appShellInject,
+    'const Fl="@deepseek-ai/dsh-client-app-shell",w8="app-shell",x8=["slots","sessions"];function _8(n){',
+  )
+  const bootSweep = 'for(const s of r.loader.entries()){const u=s.options.name;if(s.fiber===void 0){'
+  if (!source.includes(bootSweep)) {
+    throw new Error('Published DSH Web shell no longer matches the PQG parked presentation boot patch point.')
+  }
+  source = source.replace(
+    bootSweep,
+    'for(const s of r.loader.entries()){const u=s.options.name;if((u==="@deepseek-ai/dsh-client-ui-sidebar"||u==="@deepseek-ai/dsh-client-ui-conversation")&&s.fiber!==void 0&&u3[s.fiber.state]==="pending"){const p=Object.keys(s.fiber.inject).filter(h=>r.get(h)===void 0);if(p.length===1&&p[0]==="layout")continue}if(s.fiber===void 0){',
+  )
+  await writeFile(target, source)
+}
+
 async function preparePqgModuleSettingsClient() {
   const entry = join(root, 'src', 'pqg-module-settings-client.ts')
   const source = await readFile(entry, 'utf8')
@@ -1490,6 +1517,7 @@ ${makersActionsHead}`
 await rm(publicDir, { recursive: true, force: true })
 await mkdir(publicDir, { recursive: true })
 await cp(webDist, publicDir, { recursive: true })
+await patchWebShellForPqgRoot()
 const referenceModule = await preparePqgReferenceModuleClient()
 const applicationShell = await preparePqgApplicationShellClient()
 const mantineSpike = await preparePqgMantineSpikeClient()
