@@ -86,3 +86,22 @@ test('API proxy buffers session.export as a binary stream so Makers does not UTF
   assert.doesNotMatch(exportBlock.slice(0, 600), /headers\.set\('content-length'/)
   assert.match(source, /requestSearch/)
 })
+
+test('typecheck covers PQG middleware and module TypeScript sources', async () => {
+  const config = JSON.parse(await readFile(new URL('../tsconfig.json', import.meta.url), 'utf8'))
+  const include = config.include as string[]
+
+  assert.ok(include.includes('middleware.ts'))
+  assert.ok(include.includes('src/**/*.tsx'))
+  assert.ok(include.includes('packages/**/*.ts'))
+  assert.ok(include.includes('packages/**/*.tsx'))
+})
+
+test('quality workflow executes the exact EdgeOne production build command', async () => {
+  const edgeone = JSON.parse(await readFile(new URL('../edgeone.json', import.meta.url), 'utf8'))
+  const workflow = await readFile(new URL('../.github/workflows/quality.yml', import.meta.url), 'utf8')
+
+  assert.equal(edgeone.buildCommand, 'npm run build:makers')
+  assert.match(workflow, /run:\s+npm run build:makers/)
+  assert.doesNotMatch(workflow, /run:\s+npm run build:prepared/)
+})
