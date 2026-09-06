@@ -182,6 +182,28 @@ test('an active lease prevents idle reap until the lease is released', async () 
   }
 })
 
+test('idle sidecar closes after timeout without another acquire', async t => {
+  const acquire = requiredFunction('acquireDshWebSidecar')
+  const setStarter = requiredFunction('__setSidecarStarterForTests')
+  let closeCalls = 0
+
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 1_000 })
+  setStarter(async (_ctx: any, conversationId: string) =>
+    fakeSidecar(conversationId, () => { closeCalls += 1 }))
+
+  try {
+    const lease = await acquire(context('conv-idle-self-reap'))
+    lease.release()
+
+    t.mock.timers.tick(25 * 60_000 + 1)
+    await Promise.resolve()
+
+    assert.equal(closeCalls, 1)
+  } finally {
+    setStarter(undefined)
+  }
+})
+
 test('later acquire refreshes the sidecar to the latest Makers context', async () => {
   const acquire = requiredFunction('acquireDshWebSidecar')
   const stop = requiredFunction('stopDshWebSidecar')
