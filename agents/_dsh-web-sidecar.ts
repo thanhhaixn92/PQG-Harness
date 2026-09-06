@@ -36,6 +36,7 @@ interface SidecarEntry {
   pending: Promise<DshWebSidecar>
   lastUsedAt: number
   activeUsers: number
+  idleTimer?: ReturnType<typeof setTimeout>
   closePromise?: Promise<{ found: true; closed: boolean; error?: string }>
 }
 
@@ -527,10 +528,14 @@ async function startSidecarAttempt(context: any, conversationId: string): Promis
       if (!entry || entry.state === 'stopping') return
       void entry.pending.then(value => {
         if (value === sidecar && sidecars.get(conversationId) === entry) {
+          cancelIdleTimer(entry)
           sidecars.delete(conversationId)
         }
       }).catch(() => {
-        if (sidecars.get(conversationId) === entry) sidecars.delete(conversationId)
+        if (sidecars.get(conversationId) === entry) {
+          cancelIdleTimer(entry)
+          sidecars.delete(conversationId)
+        }
       })
     })
 
@@ -579,6 +584,7 @@ function createSidecarEntry(context: any, conversationId: string): SidecarEntry 
     },
     error => {
       if (sidecars.get(conversationId) === entry && entry.state !== 'stopping') {
+        cancelIdleTimer(entry)
         sidecars.delete(conversationId)
       }
       throw error
@@ -588,7 +594,42 @@ function createSidecarEntry(context: any, conversationId: string): SidecarEntry 
   return entry
 }
 
+function cancelIdleTimer(entry: SidecarEntry): void {
+  if (entry.idleTimer === undefined) return
+  clearTimeout(entry.idleTimer)
+  entry.idleTimer = undefined
+}
+
+function armIdleTimer(entry: SidecarEntry): void {
+  cancelIdleTimer(entry)
+  if (
+    sidecars.get(entry.conversationId) !== entry
+    || entry.state !== 'ready'
+    || entry.activeUsers !== 0
+  ) return
+
+  const delay = Math.max(1, entry.lastUsedAt + SIDECAR_IDLE_MS - Date.now() + 1)
+  const timer = setTimeout(() => {
+    if (entry.idleTimer === timer) entry.idleTimer = undefined
+    if (
+      sidecars.get(entry.conversationId) !== entry
+      || entry.state !== 'ready'
+      || entry.activeUsers !== 0
+    ) return
+
+    const cutoff = Date.now() - SIDECAR_IDLE_MS
+    if (entry.lastUsedAt >= cutoff) {
+      armIdleTimer(entry)
+      return
+    }
+    void beginClose(entry)
+  }, delay)
+  entry.idleTimer = timer
+  ;(timer as { unref?: () => void }).unref?.()
+}
+
 function beginClose(entry: SidecarEntry): Promise<{ found: true; closed: boolean; error?: string }> {
+  cancelIdleTimer(entry)
   entry.state = 'stopping'
   entry.closePromise ??= (async () => {
     try {
@@ -638,10 +679,12 @@ export async function acquireDshWebSidecar(context: any): Promise<DshWebSidecarL
   let entry = sidecars.get(conversationId)
   if (entry?.state === 'stopping') throw new Error('SIDE_CAR_STOPPING')
   if (!entry) entry = createSidecarEntry(context, conversationId)
+  else if (entry.state === 'ready') cancelIdleTimer(entry)
 
   const sidecar = await entry.pending
   if (entry.state === 'stopping') throw new Error('SIDE_CAR_STOPPING')
 
+  cancelIdleTimer(entry)
   entry.state = 'ready'
   entry.activeUsers += 1
   entry.lastUsedAt = Date.now()
@@ -657,6 +700,7 @@ export async function acquireDshWebSidecar(context: any): Promise<DshWebSidecarL
       entry!.activeUsers = Math.max(0, entry!.activeUsers - 1)
       entry!.lastUsedAt = Date.now()
       sidecar.lastUsedAt = entry!.lastUsedAt
+      armIdleTimer(entry!)
     },
   }
 }
