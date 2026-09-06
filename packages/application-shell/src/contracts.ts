@@ -18,7 +18,7 @@ export interface ShellSearchResult {
   label: string
   description?: string
   keywords?: readonly string[]
-  targetId?: string
+  targetId: string
 }
 
 export interface ShellSearchMatch extends ShellSearchResult {
