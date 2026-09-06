@@ -1,0 +1,26 @@
+name: issue-76-proof
+
+on:
+  push:
+    branches: [feature/76-application-shell]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-76-proof
+  cancel-in-progress: true
+
+jobs:
+  proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run prepare:dsh-web
+      - run: node --experimental-strip-types --test tests/application-shell-contract.test.ts
