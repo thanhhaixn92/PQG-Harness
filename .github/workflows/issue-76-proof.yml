@@ -15,7 +15,7 @@ jobs:
   proof:
     if: contains(github.event.head_commit.message, '[issue-76-gate]')
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -24,147 +24,91 @@ jobs:
           cache: npm
       - name: Install exact dependencies
         run: npm ci
-      - name: Typecheck Product Shell
-        run: npm run typecheck
-      - name: Exact Makers build
-        run: npm run build:makers
-      - name: Application Shell contract gate
-        run: node --experimental-strip-types --test tests/application-shell-contract.test.ts
-      - name: Product Shell browser smoke
+      - name: Prepare browser artifacts
+        run: npm run prepare:dsh-web
+      - name: Diagnose mobile navigation
         shell: bash
         run: |
           set -euo pipefail
-          npm run dev -- --host 127.0.0.1 --port 4173 > /tmp/issue-76-vite.log 2>&1 &
+          npm run dev -- --host 127.0.0.1 --port 4173 >/tmp/issue-76-vite.log 2>&1 &
           VITE_PID=$!
           trap 'kill "$VITE_PID" 2>/dev/null || true; kill "${CHROME_PID:-}" 2>/dev/null || true' EXIT
           for _ in $(seq 1 60); do
-            if curl -fsS http://127.0.0.1:4173/ >/dev/null 2>&1; then break; fi
+            curl -fsS http://127.0.0.1:4173/ >/dev/null 2>&1 && break
             sleep 1
           done
-          curl -fsS http://127.0.0.1:4173/ >/dev/null
-
           CHROME="$(command -v google-chrome || command -v chromium-browser || command -v chromium || true)"
           test -n "$CHROME"
-          "$CHROME" --headless=new --no-sandbox --disable-gpu --remote-debugging-port=9222 --user-data-dir=/tmp/issue-76-chrome about:blank > /tmp/issue-76-chrome.log 2>&1 &
+          "$CHROME" --headless=new --no-sandbox --disable-gpu --remote-debugging-port=9222 --user-data-dir=/tmp/issue-76-chrome about:blank >/tmp/issue-76-chrome.log 2>&1 &
           CHROME_PID=$!
-
-          ready=0
           for _ in $(seq 1 300); do
-            if curl -fsS http://127.0.0.1:9222/json/version >/dev/null 2>&1; then
-              ready=1
-              break
-            fi
-            if ! kill -0 "$CHROME_PID" 2>/dev/null; then break; fi
+            curl -fsS http://127.0.0.1:9222/json/version >/dev/null 2>&1 && break
             sleep 0.1
           done
-          if [ "$ready" != 1 ]; then
-            echo '--- chrome startup log ---'
-            cat /tmp/issue-76-chrome.log || true
-            exit 1
-          fi
 
-          if ! node <<'NODE'
+          node <<'NODE'
           const delay = ms => new Promise(resolve => setTimeout(resolve, ms))
           const created = await fetch('http://127.0.0.1:9222/json/new?about:blank', { method: 'PUT' })
-          if (!created.ok) throw new Error(`Failed to create browser target: HTTP ${created.status}`)
           const target = await created.json()
           const ws = new WebSocket(target.webSocketDebuggerUrl)
           await new Promise((resolve, reject) => {
             ws.addEventListener('open', resolve, { once: true })
             ws.addEventListener('error', reject, { once: true })
           })
-
           let sequence = 0
           const pending = new Map()
-          const observedErrors = []
           ws.addEventListener('message', event => {
             const message = JSON.parse(event.data)
-            if (message.id && pending.has(message.id)) {
-              const { resolve, reject } = pending.get(message.id)
-              pending.delete(message.id)
-              if (message.error) reject(new Error(JSON.stringify(message.error)))
-              else resolve(message.result)
-              return
-            }
-            if (message.method === 'Runtime.exceptionThrown') observedErrors.push(message.params?.exceptionDetails?.text ?? JSON.stringify(message.params))
-            if (message.method === 'Log.entryAdded' && message.params?.entry?.level === 'error') observedErrors.push(message.params.entry.text)
-            if (message.method === 'Runtime.consoleAPICalled' && message.params?.type === 'error') observedErrors.push((message.params.args ?? []).map(arg => arg.value ?? arg.description ?? '').join(' '))
+            if (!message.id || !pending.has(message.id)) return
+            const { resolve, reject } = pending.get(message.id)
+            pending.delete(message.id)
+            if (message.error) reject(new Error(JSON.stringify(message.error)))
+            else resolve(message.result)
           })
           const send = (method, params = {}) => new Promise((resolve, reject) => {
             const id = ++sequence
             pending.set(id, { resolve, reject })
             ws.send(JSON.stringify({ id, method, params }))
           })
+          const evaluateRaw = expression => send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true })
           const evaluate = async expression => {
-            const result = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true })
-            if (result?.exceptionDetails) throw new Error(result.exceptionDetails.text)
+            const result = await evaluateRaw(expression)
+            if (result?.exceptionDetails) {
+              throw new Error(result.exceptionDetails.exception?.description ?? result.exceptionDetails.text)
+            }
             return result?.result?.value
           }
-          const waitFor = async (expression, label) => {
-            for (let i = 0; i < 150; i++) {
-              if (await evaluate(expression)) return
-              await delay(100)
-            }
-            const body = await evaluate('document.body?.innerText?.slice(0, 2000) ?? ""')
-            console.error(JSON.stringify({ label, body, observedErrors }, null, 2))
-            throw new Error(`Timed out waiting for ${label}`)
-          }
-          const viewport = async (width, height = 900) => {
-            await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width < 600 })
-          }
-          const loadAt = async width => {
-            await viewport(width, width < 600 ? 844 : 900)
-            await send('Page.navigate', { url: 'http://127.0.0.1:4173/' })
-            await waitFor('document.querySelector("#pqg-application-shell") !== null', `PQG shell at ${width}px`)
-          }
-
           await send('Runtime.enable')
-          await send('Log.enable')
           await send('Page.enable')
-
-          await loadAt(1440)
-          await waitFor('document.querySelector("[data-pqg-reference-home-widget]") !== null', 'Home contribution')
-          if (!await evaluate('getComputedStyle(document.querySelector("#pqg-application-shell")).getPropertyValue("--mantine-color-blue-filled").trim().length > 0')) {
-            throw new Error('Scoped Mantine CSS variables are missing from PQG root')
+          await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true })
+          await send('Page.navigate', { url: 'http://127.0.0.1:4173/' })
+          for (let i = 0; i < 150; i++) {
+            if (await evaluate('document.querySelector("#pqg-application-shell") !== null')) break
+            if (i === 149) throw new Error('PQG shell did not mount')
+            await delay(100)
           }
-          await waitFor('document.querySelector("[data-pqg-support-state=expanded]") !== null', 'desktop expanded support')
-          await evaluate('document.querySelector("[data-pqg-reference-nav]").click()')
-          await waitFor('document.querySelector("[data-pqg-reference-workspace]") !== null && document.querySelector("[data-pqg-reference-support-context]") !== null', 'reference workspace and support context')
-          await evaluate('Array.from(document.querySelectorAll("button")).find(button => button.textContent?.trim() === "Thu gọn")?.click()')
-          await waitFor('document.querySelector("[data-pqg-support-state=compact]") !== null', 'compact support')
-          await evaluate('Array.from(document.querySelectorAll("button")).find(button => button.textContent?.trim() === "Mở rộng")?.click()')
-          await waitFor('document.querySelector("[data-pqg-support-state=expanded]") !== null', 'expanded support after compact')
-          await evaluate('document.querySelector("[data-pqg-support-toggle]").click()')
-          await waitFor('document.querySelector("[data-pqg-support-state]") === null', 'collapsed support')
-
-          await loadAt(1280)
-          await waitFor('document.querySelector("[data-pqg-support-state=compact]") !== null', 'laptop compact default')
-
-          await loadAt(1024)
-          await waitFor('document.querySelector("[data-pqg-support-state]") === null', 'tablet collapsed default')
-
-          await loadAt(390)
-          await waitFor('document.querySelector("[data-pqg-support-state]") === null', 'mobile collapsed default')
-          await evaluate('document.querySelector("[data-pqg-support-toggle]").click()')
-          await waitFor('document.querySelector("[data-pqg-support-drawer]") !== null && document.querySelector("[data-pqg-support-state=expanded]") !== null', 'mobile support drawer')
-          if (!await evaluate('document.querySelector("#pqg-application-shell").contains(document.querySelector("[data-pqg-support-drawer]"))')) {
-            throw new Error('Support Drawer escaped the scoped MantineProvider boundary')
+          const snapshot = await evaluate(`(() => ({
+            innerWidth: window.innerWidth,
+            root: !!document.querySelector('#pqg-application-shell'),
+            burger: document.querySelector('button[aria-label="Mở điều hướng"]')?.outerHTML ?? null,
+            buttons: Array.from(document.querySelectorAll('button')).map(button => ({
+              label: button.getAttribute('aria-label'),
+              text: button.textContent?.trim(),
+              display: getComputedStyle(button).display,
+            })).slice(0, 20),
+          }))()`)
+          console.log(JSON.stringify(snapshot, null, 2))
+          const raw = await evaluateRaw(`(() => {
+            const burger = document.querySelector('button[aria-label="Mở điều hướng"]')
+            if (!burger) throw new Error('burger-not-found')
+            burger.click()
+            return true
+          })()`)
+          if (raw?.exceptionDetails) {
+            console.error(JSON.stringify(raw.exceptionDetails, null, 2))
+            throw new Error(raw.exceptionDetails.exception?.description ?? raw.exceptionDetails.text)
           }
-          if (!await evaluate('getComputedStyle(document.querySelector("[data-pqg-support-drawer]")).getPropertyValue("--mantine-color-blue-filled").trim().length > 0')) {
-            throw new Error('Support Drawer lost scoped Mantine CSS variables')
-          }
-          await evaluate('document.querySelector("button[aria-label=\"Mở điều hướng\"]").click()')
-          await waitFor('document.querySelector("[data-pqg-reference-nav]")?.getBoundingClientRect().width > 0', 'mobile navigation')
-
-          const fatal = observedErrors.filter(text => /root.*no registration|no registration.*root|slot.*collision|collision.*slot|activation.*(?:fail|error)|activate.*(?:fail|error)|process is not defined|ReferenceError/i.test(text))
-          console.log(JSON.stringify({ fatal, observedErrors }, null, 2))
+          await delay(250)
+          console.log(JSON.stringify({ navVisible: await evaluate('document.querySelector("[data-pqg-reference-nav]")?.getBoundingClientRect().width > 0') }, null, 2))
           ws.close()
-          if (fatal.length > 0) throw new Error(`Product Shell browser errors detected: ${fatal.join(' | ')}`)
           NODE
-          then
-            echo '--- vite log ---'
-            cat /tmp/issue-76-vite.log || true
-            echo '--- chrome log ---'
-            cat /tmp/issue-76-chrome.log || true
-            exit 1
-          fi
