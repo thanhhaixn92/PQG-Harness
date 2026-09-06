@@ -5,7 +5,10 @@
   "type": "module",
   "exports": {
     "./client": "./src/client.tsx",
-    "./contracts": "./src/contracts.ts"
+    "./contracts": "./src/contracts.ts",
+    "./copy": "./src/copy.ts",
+    "./states": "./src/states.tsx",
+    "./tokens": "./src/tokens.ts"
   },
   "dsh": {
     "client": {

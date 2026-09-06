@@ -1,7 +1,52 @@
-export {}
+export type SupportPanelState = 'collapsed' | 'compact' | 'expanded'
+
+export interface ShellNavigationOwner {
+  activeId: string
+  navigate(targetId: string): void
+}
+
+export interface ShellWorkspaceOwner {
+  activeId: string
+}
+
+export interface ShellSearchOwner {
+  query: string
+}
+
+export interface ShellSupportOwner {
+  activeId: string
+}
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
-    'pqg.shell.proof': { kind: 'list'; scope: 'root' }
+    'pqg.shell.navigation': {
+      kind: 'list'
+      scope: 'root'
+      owner: ShellNavigationOwner
+    }
+    'pqg.shell.workspace': {
+      kind: 'chain'
+      scope: 'root'
+      owner: ShellWorkspaceOwner
+    }
+    'pqg.shell.home.widget': {
+      kind: 'list'
+      scope: 'root'
+    }
+    'pqg.shell.search.provider': {
+      kind: 'list'
+      scope: 'root'
+      owner: ShellSearchOwner
+    }
+    'pqg.shell.support.context': {
+      kind: 'list'
+      scope: 'root'
+      owner: ShellSupportOwner
+    }
+    'pqg.shell.support.suggestion': {
+      kind: 'list'
+      scope: 'root'
+      owner: ShellSupportOwner
+    }
   }
 }

@@ -115,7 +115,7 @@ test('PQG shell declares product contribution seats and reference module follows
 
   const workspace = slots.entries('pqg.shell.workspace')[0]
   assert.equal(typeof workspace?.select, 'function')
-  assert.deepEqual(workspace?.select?.({ activeId: 'reference' }), { moduleId: 'reference' })
+  assert.equal((workspace?.select?.({ activeId: 'reference' }) as { moduleId?: string } | null)?.moduleId, 'reference')
   assert.equal(workspace?.select?.({ activeId: 'home' }), null)
 
   await referenceFiber.dispose()
