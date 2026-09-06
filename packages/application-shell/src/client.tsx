@@ -123,6 +123,7 @@ function PqgApplicationShell({ renderSlot, renderSlotChain }: RootProps) {
   }, [])
 
   const narrow = width < pqgShellTokens.tabletBreakpoint
+  const mobileNav = width < pqgShellTokens.mobileNavBreakpoint
   const navigate = (targetId: string) => {
     setActiveId(targetId)
     setMobileNavOpened(false)
@@ -179,12 +180,12 @@ function PqgApplicationShell({ renderSlot, renderSlotChain }: RootProps) {
             React.createElement(
               Group,
               { gap: 'sm', wrap: 'nowrap' },
-              React.createElement(Burger, {
+              mobileNav ? React.createElement(Burger, {
                 opened: mobileNavOpened,
                 onClick: () => setMobileNavOpened((opened) => !opened),
                 size: 'sm',
                 'aria-label': 'Mở điều hướng',
-              }),
+              }) : null,
               React.createElement('div', null,
                 React.createElement(Text, { fw: 800, size: 'lg', lh: 1.1 }, pqgCopy.brand),
                 React.createElement(Text, { c: 'dimmed', size: 'xs' }, pqgCopy.workspace),
@@ -226,7 +227,7 @@ function PqgApplicationShell({ renderSlot, renderSlotChain }: RootProps) {
           ),
           renderSlotChain('pqg.shell.workspace', { activeId }, { fallback: mainFallback }),
         ),
-        React.createElement(AppShell.Aside, null, supportState === 'collapsed' ? null : supportContent),
+        React.createElement(AppShell.Aside, null, !narrow && supportState !== 'collapsed' ? supportContent : null),
         React.createElement(
           Drawer,
           {
@@ -238,7 +239,7 @@ function PqgApplicationShell({ renderSlot, renderSlotChain }: RootProps) {
             withinPortal: false,
             'data-pqg-support-drawer': true,
           },
-          supportContent,
+          narrow ? supportContent : null,
         ),
       ),
     ),
