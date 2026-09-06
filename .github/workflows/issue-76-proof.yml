@@ -7,6 +7,7 @@ on:
 permissions:
   contents: read
 
+# Temporary read-only Product Shell verification. Removed after the final gate.
 concurrency:
   group: issue-76-proof
   cancel-in-progress: true
