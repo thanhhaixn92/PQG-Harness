@@ -15,7 +15,7 @@ jobs:
   proof:
     if: contains(github.event.head_commit.message, '[issue-76-gate]')
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -24,8 +24,12 @@ jobs:
           cache: npm
       - name: Install exact dependencies
         run: npm ci
-      - name: Prepare Product Shell browser artifacts
-        run: npm run prepare:dsh-web
+      - name: Typecheck Product Shell
+        run: npm run typecheck
+      - name: Exact Makers build
+        run: npm run build:makers
+      - name: Application Shell contract gate
+        run: node --experimental-strip-types --test tests/application-shell-contract.test.ts
       - name: Product Shell browser smoke
         shell: bash
         run: |
