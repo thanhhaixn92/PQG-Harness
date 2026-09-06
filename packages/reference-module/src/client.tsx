@@ -1,25 +1,20 @@
-export {}
-
-type ClientContext = {
-  slots: {
-    inject(name: string, register: () => unknown): unknown
-    register(options: Record<string, unknown>, component: () => unknown): unknown
-  }
-}
+import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type {} from '../../application-shell/src/contracts.ts'
 
 const inject = ['slots']
 
-function ReferenceModuleSection(): string {
-  return 'Reference Module'
+function ReferenceShellProof(_props: PropsRuntime<'pqg.shell.proof'>): string {
+  return 'PQG shell proof contribution'
 }
 
 function apply(ctx: ClientContext): void {
-  ctx.slots.inject('settings.section', () => ctx.slots.register({
-    name: 'settings.section',
-    id: 'pqg-reference-module',
-    order: 19,
-    label: () => 'Reference Module',
-  }, ReferenceModuleSection))
+  ctx.slots.inject('pqg.shell.proof', () => ctx.slots.register({
+    name: 'pqg.shell.proof',
+    id: 'pqg-reference-proof',
+    order: 0,
+    label: 'Reference proof',
+  }, ReferenceShellProof))
 }
 
 module.exports = { inject, apply }
