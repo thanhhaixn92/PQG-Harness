@@ -10,6 +10,7 @@ const modulesRoot = join(root, 'node_modules', '@deepseek-ai')
 const webDist = join(modulesRoot, 'dsh-web-frontend', 'dist')
 const pqgModuleSettingsId = '@pqg/module-settings'
 const pqgReferenceModuleId = '@pqg/reference-module'
+const pqgApplicationShellId = '@pqg/application-shell'
 const pqgMantineSpikeId = '@pqg/mantine-spike'
 const reactPlatformExternals = new Set([
   'react',
@@ -952,6 +953,50 @@ function patchSessionLogExportBundle(source) {
   )
 }
 
+function patchLayoutBundleForPqgRoot(source) {
+  const shippedRootEffect = [
+    '\t\t\tconst layout = new LayoutController();',
+    '\t\t\tctx.effect(() => {',
+    '\t\t\t\tconst disposeService = ctx.reflect.provide("layout", layout);',
+    '\t\t\t\tconst disposeRegistration = ctx.slots.register({',
+    '\t\t\t\t\tname: "root",',
+    '\t\t\t\t\tchildren: {',
+    '\t\t\t\t\t\t"sidebar": {',
+    '\t\t\t\t\t\t\tkind: "single",',
+    '\t\t\t\t\t\t\tscope: "root"',
+    '\t\t\t\t\t\t},',
+    '\t\t\t\t\t\t"conversation": {',
+    '\t\t\t\t\t\t\tkind: "single",',
+    '\t\t\t\t\t\t\tscope: "session-maybe"',
+    '\t\t\t\t\t\t},',
+    '\t\t\t\t\t\t"details": {',
+    '\t\t\t\t\t\t\tkind: "single",',
+    '\t\t\t\t\t\t\tscope: "session"',
+    '\t\t\t\t\t\t},',
+    '\t\t\t\t\t\t"shell.overlay": {',
+    '\t\t\t\t\t\t\tkind: "list",',
+    '\t\t\t\t\t\t\tscope: "root"',
+    '\t\t\t\t\t\t}',
+    '\t\t\t\t\t},',
+    '\t\t\t\t\tstore: createLayoutStore,',
+    '\t\t\t\t\tinject: (actions) => {',
+    '\t\t\t\t\t\tlayout.attachPanels(actions);',
+    '\t\t\t\t\t\treturn {};',
+    '\t\t\t\t\t}',
+    '\t\t\t\t}, AppFrame);',
+    '\t\t\t\treturn () => {',
+    '\t\t\t\t\tdisposeRegistration();',
+    '\t\t\t\t\tdisposeService();',
+    '\t\t\t\t};',
+    '\t\t\t}, "ui-layout: service + root registration");',
+    '',
+  ].join('\n')
+  if (!source.includes(shippedRootEffect)) {
+    throw new Error('Published DSH ui-layout bundle no longer matches the PQG root ownership patch point.')
+  }
+  return source.replace(shippedRootEffect, '')
+}
+
 async function preparePqgModuleSettingsClient() {
   const entry = join(root, 'src', 'pqg-module-settings-client.ts')
   const source = await readFile(entry, 'utf8')
@@ -1003,6 +1048,47 @@ async function preparePqgReferenceModuleClient() {
   const target = join(publicDir, 'plugins', ...pqgReferenceModuleId.split('/'), 'client.js')
   await mkdir(dirname(target), { recursive: true })
   await writeFile(target, bundled)
+  const rev = hash(bundled)
+  return {
+    id: pqgReferenceModuleId,
+    url: `/plugins/${pqgReferenceModuleId}/client.js?rev=${rev}`,
+    rev,
+    inject: [
+      '@deepseek-ai/dsh-client-runtime',
+      '@deepseek-ai/dsh-client-ui-slots',
+    ],
+  }
+}
+
+async function preparePqgApplicationShellClient() {
+  const entry = join(root, 'packages', 'application-shell', 'src', 'client.tsx')
+  const source = await readFile(entry, 'utf8')
+  const transformed = await transformWithEsbuild(source, entry, {
+    loader: 'tsx',
+    target: 'es2022',
+    format: 'cjs',
+    sourcemap: false,
+    charset: 'utf8',
+  })
+  const bundled = [
+    `window.__ModuleLoader__.load({ id: ${JSON.stringify(pqgApplicationShellId)}, factory: (require) => { var module = { exports: {} }; var exports = module.exports;`,
+    transformed.code.trimEnd(),
+    'return module.exports; } });',
+    '',
+  ].join('\n')
+  const target = join(publicDir, 'plugins', ...pqgApplicationShellId.split('/'), 'client.js')
+  await mkdir(dirname(target), { recursive: true })
+  await writeFile(target, bundled)
+  const rev = hash(bundled)
+  return {
+    id: pqgApplicationShellId,
+    url: `/plugins/${pqgApplicationShellId}/client.js?rev=${rev}`,
+    rev,
+    inject: [
+      '@deepseek-ai/dsh-client-runtime',
+      '@deepseek-ai/dsh-client-ui-slots',
+    ],
+  }
 }
 
 async function preparePqgMantineSpikeClient() {
@@ -1074,6 +1160,7 @@ async function clientPackages() {
     if (manifest.name === '@deepseek-ai/dsh-client-ui-permission-presets') source = patchPermissionPresetsBundle(source)
     if (manifest.name === '@deepseek-ai/dsh-client-ui-conversation') source = patchConversationBundle(source)
     if (manifest.name === '@deepseek-ai/dsh-client-ui-workspace') source = patchWorkspaceBundle(source)
+    if (manifest.name === '@deepseek-ai/dsh-client-ui-layout') source = patchLayoutBundleForPqgRoot(source)
     if (manifest.name === '@deepseek-ai/dsh-client-ui-settings') source = patchSettingsBundle(source)
     if (manifest.name === '@deepseek-ai/dsh-client-ui-settings-models') source = patchSettingsModelsBundle(source)
     if (manifest.name === '@deepseek-ai/dsh-client-ui-model-selection') source = patchModelSelectionBundle(source)
@@ -1403,10 +1490,13 @@ ${makersActionsHead}`
 await rm(publicDir, { recursive: true, force: true })
 await mkdir(publicDir, { recursive: true })
 await cp(webDist, publicDir, { recursive: true })
-await preparePqgReferenceModuleClient()
+const referenceModule = await preparePqgReferenceModuleClient()
+const applicationShell = await preparePqgApplicationShellClient()
 const mantineSpike = await preparePqgMantineSpikeClient()
 const entries = [
   ...(await clientPackages()),
+  applicationShell,
+  referenceModule,
   await preparePqgModuleSettingsClient(),
   mantineSpike.entry,
 ].sort((left, right) => left.id.localeCompare(right.id))
