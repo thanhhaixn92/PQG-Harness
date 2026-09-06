@@ -213,7 +213,7 @@ function ApprovalView({
 }) {
   const approval = services.currentApproval()
   const [busy, setBusy] = React.useState(false)
-  const [error, setError] = React.useState<string | undefined>()
+  const [error, setError] = React.useState<string | undefined>(undefined)
 
   React.useEffect(() => {
     setBusy(false)
@@ -485,22 +485,28 @@ function PqgApplicationShell({ renderSlot, renderSlotChain, services, useSession
 
 function apply(ctx: ClientContext): void {
   const services = createShellSystemServices(ctx.sessions)
-  ctx.provide('pqgShell', services)
 
   function ApplicationShellRoot(props: RootProps) {
     return React.createElement(PqgApplicationShell, { ...props, services })
   }
 
-  ctx.slots.register({
-    name: 'root',
-    children: {
-      'pqg.shell.navigation': { kind: 'list', scope: 'root' },
-      'pqg.shell.workspace': { kind: 'chain', scope: 'root' },
-      'pqg.shell.home.widget': { kind: 'list', scope: 'root' },
-      'pqg.shell.support.context': { kind: 'list', scope: 'root' },
-      'pqg.shell.support.suggestion': { kind: 'list', scope: 'root' },
-    },
-  }, ApplicationShellRoot)
+  ctx.effect(() => {
+    const disposeService = ctx.reflect.provide('pqgShell', services)
+    const disposeRegistration = ctx.slots.register({
+      name: 'root',
+      children: {
+        'pqg.shell.navigation': { kind: 'list', scope: 'root' },
+        'pqg.shell.workspace': { kind: 'chain', scope: 'root' },
+        'pqg.shell.home.widget': { kind: 'list', scope: 'root' },
+        'pqg.shell.support.context': { kind: 'list', scope: 'root' },
+        'pqg.shell.support.suggestion': { kind: 'list', scope: 'root' },
+      },
+    }, ApplicationShellRoot)
+    return () => {
+      disposeRegistration()
+      void disposeService()
+    }
+  }, 'pqg-shell: system services + root registration')
 }
 
 module.exports = { inject, apply }
