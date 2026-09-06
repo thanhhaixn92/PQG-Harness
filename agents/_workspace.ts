@@ -247,7 +247,6 @@ async function initializeWorkspace(context: any, conversationId: string, root: s
     return
   }
 
-  await persistWorkspaceCheckpoint(context, conversationId, root)
   await markWorkspaceReady(context, root)
 }
 
