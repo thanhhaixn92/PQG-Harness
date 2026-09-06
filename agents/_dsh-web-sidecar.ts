@@ -612,7 +612,7 @@ export async function applyModuleEnabledToLiveSidecars(
   for (const entry of sidecars.values()) {
     if (entry.state === 'stopping') continue
     const apply = entry.pending.then(sidecar => {
-      sidecar.mcp.setModuleEnabled(moduleId, enabled)
+      return sidecar.mcp.setModuleEnabled(moduleId, enabled)
     })
     if (entry.state === 'ready') ready.push(apply)
     else void apply.catch(() => {})
