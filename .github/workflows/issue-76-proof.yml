@@ -27,20 +27,27 @@ jobs:
         shell: bash
         run: |
           node <<'NODE'
-          const { readFileSync } = require('node:fs')
-          for (const name of [
-            'dsh-client-app-shell',
-            'dsh-client-ui-sidebar',
-            'dsh-client-ui-conversation',
-          ]) {
+          const { readFileSync, readdirSync } = require('node:fs')
+          const { join } = require('node:path')
+
+          for (const name of ['dsh-client-ui-sidebar', 'dsh-client-ui-conversation']) {
             const path = `node_modules/@deepseek-ai/${name}/lib/client.js`
             const source = readFileSync(path, 'utf8')
             console.log(`--- ${name} ---`)
             for (const pattern of [/const inject =[^;]+;/g, /ctx\.layout[^;\n]*/g, /layout\.[A-Za-z]+\([^)]*\)/g]) {
               for (const match of source.matchAll(pattern)) console.log(match[0])
             }
-            const apply = source.indexOf('function apply(ctx)')
-            if (apply >= 0) console.log(source.slice(apply, apply + 1800))
+          }
+
+          const assets = 'node_modules/@deepseek-ai/dsh-web-frontend/dist/assets'
+          for (const file of readdirSync(assets).filter(file => file.endsWith('.js'))) {
+            const path = join(assets, file)
+            const source = readFileSync(path, 'utf8')
+            const needle = '@deepseek-ai/dsh-client-app-shell'
+            const index = source.indexOf(needle)
+            if (index < 0) continue
+            console.log(`--- web asset ${file} app-shell ---`)
+            console.log(source.slice(Math.max(0, index - 2200), index + 3200))
           }
           NODE
       - name: Prepare DSH Web proof bundles
