@@ -36,7 +36,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npx vite preview --host 127.0.0.1 --port 4173 > /tmp/issue-76-vite.log 2>&1 &
+          npm run dev -- --host 127.0.0.1 --port 4173 > /tmp/issue-76-vite.log 2>&1 &
           VITE_PID=$!
           trap 'kill "$VITE_PID" 2>/dev/null || true; kill "${CHROME_PID:-}" 2>/dev/null || true' EXIT
           for _ in $(seq 1 60); do
