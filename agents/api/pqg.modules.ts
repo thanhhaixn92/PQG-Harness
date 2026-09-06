@@ -40,10 +40,9 @@ export async function onRequest(context: any): Promise<Response> {
     return errorResponse(400, 'invalid-request', 'Module id and enabled state are required')
   }
 
+  let module
   try {
-    const module = await setInstalledModuleEnabled(context, record.id, record.enabled)
-    await applyModuleEnabledToLiveSidecars(module.id, module.enabled)
-    return Response.json({ module })
+    module = await setInstalledModuleEnabled(context, record.id, record.enabled)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     if (/not installed/i.test(message)) {
@@ -51,4 +50,15 @@ export async function onRequest(context: any): Promise<Response> {
     }
     throw error
   }
+
+  try {
+    await applyModuleEnabledToLiveSidecars(module.id, module.enabled)
+  } catch {
+    return errorResponse(
+      503,
+      'module-runtime-propagation-failed',
+      'Không thể đồng bộ trạng thái tiện ích với phiên đang chạy',
+    )
+  }
+  return Response.json({ module })
 }
