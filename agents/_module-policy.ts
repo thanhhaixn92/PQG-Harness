@@ -74,7 +74,7 @@ export async function readModulePolicy(context: any): Promise<PqgModulePolicy> {
   }
 }
 
-async function writeModuleOverride(context: any, moduleId: string, enabled: boolean): Promise<void> {
+async function writeModuleOverride(context: any, moduleId: string, enabled: boolean): Promise<any> {
   if (!context?.store) throw new Error('PQG module policy store is unavailable')
   try {
     await getConversation(context)
@@ -99,10 +99,10 @@ async function writeModuleOverride(context: any, moduleId: string, enabled: bool
 
   const metadata = { [moduleOverrideKey(moduleId)]: enabled }
   try {
-    await context.store.updateConversation({ conversationId: MODULE_POLICY_CONVERSATION_ID, metadata })
+    return await context.store.updateConversation({ conversationId: MODULE_POLICY_CONVERSATION_ID, metadata })
   } catch (firstError) {
     try {
-      await context.store.updateConversation(MODULE_POLICY_CONVERSATION_ID, { metadata })
+      return await context.store.updateConversation(MODULE_POLICY_CONVERSATION_ID, { metadata })
     } catch {
       throw firstError
     }
@@ -116,8 +116,23 @@ export async function setModuleEnabled(
 ): Promise<PqgModulePolicy> {
   const id = moduleId.trim()
   if (!id) throw new Error('moduleId is required')
-  await writeModuleOverride(context, id, enabled)
-  return readModulePolicy(context)
+  const updated = await writeModuleOverride(context, id, enabled)
+  const metadata = updated?.metadata
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+    return { version: 1, enabled: { [id]: enabled } }
+  }
+
+  const states: Record<string, boolean> = {}
+  if (Object.prototype.hasOwnProperty.call(metadata, MODULE_POLICY_METADATA_KEY)) {
+    Object.assign(states, parsePolicy(metadata[MODULE_POLICY_METADATA_KEY]).enabled)
+  }
+  for (const [key, state] of Object.entries(metadata as Record<string, unknown>)) {
+    if (!key.startsWith(MODULE_OVERRIDE_PREFIX)) continue
+    if (typeof state !== 'boolean') throw new Error('PQG module policy is corrupt')
+    states[key.slice(MODULE_OVERRIDE_PREFIX.length)] = state
+  }
+  states[id] = enabled
+  return { version: 1, enabled: states }
 }
 
 export function effectiveModuleEnabled(module: PqgModuleDefinition, policy: PqgModulePolicy): boolean {
