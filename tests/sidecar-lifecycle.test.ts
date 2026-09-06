@@ -204,6 +204,130 @@ test('idle sidecar closes after timeout without another acquire', async t => {
   }
 })
 
+test('active lease is not reaped by idle timer', async t => {
+  const acquire = requiredFunction('acquireDshWebSidecar')
+  const stop = requiredFunction('stopDshWebSidecar')
+  const setStarter = requiredFunction('__setSidecarStarterForTests')
+  let closeCalls = 0
+
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 1_000 })
+  setStarter(async (_ctx: any, conversationId: string) =>
+    fakeSidecar(conversationId, () => { closeCalls += 1 }))
+
+  try {
+    const lease = await acquire(context('conv-active-timer'))
+
+    t.mock.timers.tick(25 * 60_000 + 1)
+    await Promise.resolve()
+
+    assert.equal(closeCalls, 0)
+    lease.release()
+    await stop('conv-active-timer')
+  } finally {
+    setStarter(undefined)
+  }
+})
+
+test('reacquire before deadline cancels the old idle timer', async t => {
+  const acquire = requiredFunction('acquireDshWebSidecar')
+  const stop = requiredFunction('stopDshWebSidecar')
+  const setStarter = requiredFunction('__setSidecarStarterForTests')
+  let starts = 0
+  let closeCalls = 0
+
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 1_000 })
+  setStarter(async (_ctx: any, conversationId: string) => {
+    starts += 1
+    return fakeSidecar(conversationId, () => { closeCalls += 1 })
+  })
+
+  try {
+    const first = await acquire(context('conv-reacquire-cancel'))
+    const sidecar = first.sidecar
+    first.release()
+
+    t.mock.timers.tick(25 * 60_000 - 1)
+    const second = await acquire(context('conv-reacquire-cancel'))
+    t.mock.timers.tick(2)
+    await Promise.resolve()
+
+    assert.equal(second.sidecar, sidecar)
+    assert.equal(starts, 1)
+    assert.equal(closeCalls, 0)
+
+    second.release()
+    await stop('conv-reacquire-cancel')
+  } finally {
+    setStarter(undefined)
+  }
+})
+
+test('release after reacquire rearms idle reap', async t => {
+  const acquire = requiredFunction('acquireDshWebSidecar')
+  const setStarter = requiredFunction('__setSidecarStarterForTests')
+  let starts = 0
+  let closeCalls = 0
+
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 1_000 })
+  setStarter(async (_ctx: any, conversationId: string) => {
+    starts += 1
+    return fakeSidecar(conversationId, () => { closeCalls += 1 })
+  })
+
+  try {
+    const first = await acquire(context('conv-reacquire-rearm'))
+    const sidecar = first.sidecar
+    first.release()
+
+    t.mock.timers.tick(25 * 60_000 - 1)
+    const second = await acquire(context('conv-reacquire-rearm'))
+    t.mock.timers.tick(2)
+    await Promise.resolve()
+    assert.equal(closeCalls, 0)
+    assert.equal(second.sidecar, sidecar)
+    assert.equal(starts, 1)
+
+    second.release()
+    t.mock.timers.tick(25 * 60_000 + 1)
+    await Promise.resolve()
+
+    assert.equal(closeCalls, 1)
+  } finally {
+    setStarter(undefined)
+  }
+})
+
+test('stop racing the idle timer closes once and leaves no stale entry', async t => {
+  const acquire = requiredFunction('acquireDshWebSidecar')
+  const stop = requiredFunction('stopDshWebSidecar')
+  const setStarter = requiredFunction('__setSidecarStarterForTests')
+  let closeCalls = 0
+  let stopPromise: Promise<{ found: boolean; closed: boolean; error?: string }> | undefined
+
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 1_000 })
+  setStarter(async (_ctx: any, conversationId: string) =>
+    fakeSidecar(conversationId, () => { closeCalls += 1 }))
+
+  try {
+    const lease = await acquire(context('conv-stop-timer-race'))
+    lease.release()
+    setTimeout(() => {
+      stopPromise = stop('conv-stop-timer-race')
+    }, 25 * 60_000 + 1)
+
+    t.mock.timers.tick(25 * 60_000 + 1)
+    assert.ok(stopPromise)
+    const result = await stopPromise
+    assert.equal(result.found, true)
+    assert.equal(closeCalls, 1)
+
+    const after = await stop('conv-stop-timer-race')
+    assert.deepEqual(after, { found: false, closed: false })
+  } finally {
+    setStarter(undefined)
+  }
+})
+
 test('later acquire refreshes the sidecar to the latest Makers context', async () => {
   const acquire = requiredFunction('acquireDshWebSidecar')
   const stop = requiredFunction('stopDshWebSidecar')
