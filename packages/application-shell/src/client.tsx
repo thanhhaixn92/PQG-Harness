@@ -18,7 +18,7 @@ import type { PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-
 import { pqgCopy } from './copy.ts'
 import type { SupportPanelState } from './contracts.ts'
 import type {} from './contracts.ts'
-import { EmptyState, UnavailableState } from './states.tsx'
+import { EmptyState, UnavailableState } from './states.ts'
 import { pqgShellTokens } from './tokens.ts'
 
 type ShellSeat =
