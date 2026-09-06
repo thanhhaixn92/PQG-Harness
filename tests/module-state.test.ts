@@ -260,7 +260,7 @@ test('module PUT returns 503 when ready sidecar propagation fails after persiste
   try {
     const lease = await acquireDshWebSidecar(context)
     lease.release()
-    context.request = new Request('http://localhost/api/pqg.modules', {
+    ;(context as any).request = new Request('http://localhost/api/pqg.modules', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ id: 'reference', enabled: true }),
