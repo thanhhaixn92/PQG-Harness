@@ -2,6 +2,7 @@ import type { PqgModuleDefinition } from '../config/modules.mjs'
 
 export const MODULE_POLICY_CONVERSATION_ID = 'pqg-internal-module-policy-v1'
 const MODULE_POLICY_METADATA_KEY = 'pqgModulePolicy'
+const MODULE_OVERRIDE_PREFIX = 'pqgModuleEnabled:'
 
 export interface PqgModulePolicy {
   version: 1
@@ -9,6 +10,10 @@ export interface PqgModulePolicy {
 }
 
 const EMPTY_POLICY: PqgModulePolicy = { version: 1, enabled: {} }
+
+function moduleOverrideKey(moduleId: string): string {
+  return `${MODULE_OVERRIDE_PREFIX}${moduleId}`
+}
 
 function isMissingConversation(error: unknown): boolean {
   const code = error && typeof error === 'object' && 'code' in error
@@ -31,14 +36,17 @@ async function getConversation(context: any): Promise<any> {
 }
 
 function parsePolicy(value: unknown): PqgModulePolicy {
-  if (!value || typeof value !== 'object') return EMPTY_POLICY
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('PQG module policy is corrupt')
+  }
   const record = value as Record<string, unknown>
   if (record.version !== 1 || !record.enabled || typeof record.enabled !== 'object' || Array.isArray(record.enabled)) {
-    return EMPTY_POLICY
+    throw new Error('PQG module policy is corrupt')
   }
   const enabled: Record<string, boolean> = {}
   for (const [id, state] of Object.entries(record.enabled as Record<string, unknown>)) {
-    if (typeof state === 'boolean') enabled[id] = state
+    if (typeof state !== 'boolean') throw new Error('PQG module policy is corrupt')
+    enabled[id] = state
   }
   return { version: 1, enabled }
 }
@@ -47,14 +55,26 @@ export async function readModulePolicy(context: any): Promise<PqgModulePolicy> {
   if (!context?.store) return EMPTY_POLICY
   try {
     const conversation = await getConversation(context)
-    return parsePolicy(conversation?.metadata?.[MODULE_POLICY_METADATA_KEY])
+    const metadata = conversation?.metadata
+    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return EMPTY_POLICY
+
+    const enabled: Record<string, boolean> = {}
+    if (Object.prototype.hasOwnProperty.call(metadata, MODULE_POLICY_METADATA_KEY)) {
+      Object.assign(enabled, parsePolicy(metadata[MODULE_POLICY_METADATA_KEY]).enabled)
+    }
+    for (const [key, state] of Object.entries(metadata as Record<string, unknown>)) {
+      if (!key.startsWith(MODULE_OVERRIDE_PREFIX)) continue
+      if (typeof state !== 'boolean') throw new Error('PQG module policy is corrupt')
+      enabled[key.slice(MODULE_OVERRIDE_PREFIX.length)] = state
+    }
+    return { version: 1, enabled }
   } catch (error) {
     if (isMissingConversation(error)) return EMPTY_POLICY
     throw error
   }
 }
 
-async function writeModulePolicy(context: any, policy: PqgModulePolicy): Promise<void> {
+async function writeModuleOverride(context: any, moduleId: string, enabled: boolean): Promise<any> {
   if (!context?.store) throw new Error('PQG module policy store is unavailable')
   try {
     await getConversation(context)
@@ -77,12 +97,12 @@ async function writeModulePolicy(context: any, policy: PqgModulePolicy): Promise
     }
   }
 
-  const metadata = { [MODULE_POLICY_METADATA_KEY]: policy }
+  const metadata = { [moduleOverrideKey(moduleId)]: enabled }
   try {
-    await context.store.updateConversation({ conversationId: MODULE_POLICY_CONVERSATION_ID, metadata })
+    return await context.store.updateConversation({ conversationId: MODULE_POLICY_CONVERSATION_ID, metadata })
   } catch (firstError) {
     try {
-      await context.store.updateConversation(MODULE_POLICY_CONVERSATION_ID, { metadata })
+      return await context.store.updateConversation(MODULE_POLICY_CONVERSATION_ID, { metadata })
     } catch {
       throw firstError
     }
@@ -96,13 +116,23 @@ export async function setModuleEnabled(
 ): Promise<PqgModulePolicy> {
   const id = moduleId.trim()
   if (!id) throw new Error('moduleId is required')
-  const current = await readModulePolicy(context)
-  const next: PqgModulePolicy = {
-    version: 1,
-    enabled: { ...current.enabled, [id]: enabled },
+  const updated = await writeModuleOverride(context, id, enabled)
+  const metadata = updated?.metadata
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+    return { version: 1, enabled: { [id]: enabled } }
   }
-  await writeModulePolicy(context, next)
-  return next
+
+  const states: Record<string, boolean> = {}
+  if (Object.prototype.hasOwnProperty.call(metadata, MODULE_POLICY_METADATA_KEY)) {
+    Object.assign(states, parsePolicy(metadata[MODULE_POLICY_METADATA_KEY]).enabled)
+  }
+  for (const [key, state] of Object.entries(metadata as Record<string, unknown>)) {
+    if (!key.startsWith(MODULE_OVERRIDE_PREFIX)) continue
+    if (typeof state !== 'boolean') throw new Error('PQG module policy is corrupt')
+    states[key.slice(MODULE_OVERRIDE_PREFIX.length)] = state
+  }
+  states[id] = enabled
+  return { version: 1, enabled: states }
 }
 
 export function effectiveModuleEnabled(module: PqgModuleDefinition, policy: PqgModulePolicy): boolean {

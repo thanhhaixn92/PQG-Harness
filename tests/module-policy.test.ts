@@ -21,7 +21,10 @@ function fakeContext() {
           conversations.set(conversationId, { metadata: {} })
         },
         async updateConversation({ conversationId, metadata }: { conversationId: string; metadata: Record<string, unknown> }) {
-          conversations.set(conversationId, { metadata })
+          const current = conversations.get(conversationId)
+          conversations.set(conversationId, {
+            metadata: { ...current?.metadata, ...metadata },
+          })
         },
       },
     },
@@ -56,12 +59,97 @@ test('module policy defaults to package metadata and persists explicit overrides
   assert.equal(MODULE_POLICY_CONVERSATION_ID, 'pqg-internal-module-policy-v1')
 })
 
-test('invalid stored module policy falls back to package defaults', async () => {
+test('concurrent writes for different modules preserve both overrides', async () => {
+  const {
+    MODULE_POLICY_CONVERSATION_ID,
+    readModulePolicy,
+    setModuleEnabled,
+  } = await import(policyModule.href)
+  const { context, conversations } = fakeContext()
+  conversations.set(MODULE_POLICY_CONVERSATION_ID, { metadata: {} })
+
+  await Promise.all([
+    setModuleEnabled(context, 'task', false),
+    setModuleEnabled(context, 'reference', true),
+  ])
+
+  assert.deepEqual(await readModulePolicy(context), {
+    version: 1,
+    enabled: { task: false, reference: true },
+  })
+})
+
+test('reads legacy pqgModulePolicy metadata', async () => {
+  const { MODULE_POLICY_CONVERSATION_ID, readModulePolicy } = await import(policyModule.href)
+  const { context, conversations } = fakeContext()
+  conversations.set(MODULE_POLICY_CONVERSATION_ID, {
+    metadata: { pqgModulePolicy: { version: 1, enabled: { task: true } } },
+  })
+
+  assert.deepEqual(await readModulePolicy(context), {
+    version: 1,
+    enabled: { task: true },
+  })
+})
+
+test('per-module metadata override wins over legacy policy', async () => {
+  const { MODULE_POLICY_CONVERSATION_ID, readModulePolicy } = await import(policyModule.href)
+  const { context, conversations } = fakeContext()
+  conversations.set(MODULE_POLICY_CONVERSATION_ID, {
+    metadata: {
+      pqgModulePolicy: { version: 1, enabled: { task: true } },
+      'pqgModuleEnabled:task': false,
+    },
+  })
+
+  assert.deepEqual(await readModulePolicy(context), {
+    version: 1,
+    enabled: { task: false },
+  })
+})
+
+test('rejects unsupported legacy policy versions', async () => {
   const { MODULE_POLICY_CONVERSATION_ID, readModulePolicy } = await import(policyModule.href)
   const { context, conversations } = fakeContext()
   conversations.set(MODULE_POLICY_CONVERSATION_ID, {
     metadata: { pqgModulePolicy: { version: 99, enabled: { task: true } } },
   })
 
-  assert.deepEqual(await readModulePolicy(context), { version: 1, enabled: {} })
+  await assert.rejects(readModulePolicy(context), /module policy/i)
+})
+
+test('rejects non-boolean per-module metadata overrides', async () => {
+  const { MODULE_POLICY_CONVERSATION_ID, readModulePolicy } = await import(policyModule.href)
+  const { context, conversations } = fakeContext()
+  conversations.set(MODULE_POLICY_CONVERSATION_ID, {
+    metadata: { 'pqgModuleEnabled:task': 'false' },
+  })
+
+  await assert.rejects(readModulePolicy(context), /module policy/i)
+})
+
+test('setModuleEnabled returns the persisted override without a post-write read', async () => {
+  const { MODULE_POLICY_CONVERSATION_ID, setModuleEnabled } = await import(policyModule.href)
+  let reads = 0
+  const context = {
+    store: {
+      async getConversation() {
+        reads += 1
+        if (reads === 1) return { metadata: {} }
+        throw new Error('transient post-write read failure')
+      },
+      async updateConversation({ metadata }: { metadata: Record<string, unknown> }) {
+        return {
+          conversationId: MODULE_POLICY_CONVERSATION_ID,
+          metadata,
+        }
+      },
+    },
+  }
+
+  assert.deepEqual(await setModuleEnabled(context, 'task', false), {
+    version: 1,
+    enabled: { task: false },
+  })
+  assert.equal(reads, 1)
 })

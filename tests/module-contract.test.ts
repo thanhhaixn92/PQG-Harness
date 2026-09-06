@@ -179,6 +179,42 @@ test('rejects installed modules with malformed pqg.module metadata', async () =>
   }
 })
 
+test('rejects duplicate pqg.module.id across direct dependencies', async () => {
+  const { discoverPqgModules } = await import(modulePath.href)
+  const root = await mkdtemp(join(tmpdir(), 'pqg-duplicate-module-id-'))
+
+  try {
+    await writeJson(join(root, 'package.json'), {
+      dependencies: {
+        '@pqg/plugin-task-a': '1.0.0',
+        '@pqg/plugin-task-b': '1.0.0',
+      },
+    })
+    for (const packageName of ['@pqg/plugin-task-a', '@pqg/plugin-task-b']) {
+      const packageDir = join(root, 'node_modules', ...packageName.split('/'))
+      await mkdir(packageDir, { recursive: true })
+      await writeJson(join(packageDir, 'package.json'), {
+        name: packageName,
+        pqg: { module: { id: 'task', label: packageName, defaultEnabled: true } },
+      })
+    }
+
+    await assert.rejects(
+      discoverPqgModules(root),
+      error => {
+        const message = error instanceof Error ? error.message : String(error)
+        assert.match(message, /duplicate.*module.*id/i)
+        assert.match(message, /task/)
+        assert.match(message, /@pqg\/plugin-task-a/)
+        assert.match(message, /@pqg\/plugin-task-b/)
+        return true
+      },
+    )
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
 test('root installs a reference PQG module with both client and Makers adapters', async () => {
   const rootPackage = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
   assert.equal(
