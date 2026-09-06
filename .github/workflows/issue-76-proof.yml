@@ -22,9 +22,14 @@ jobs:
           node-version: '24'
           cache: npm
       - name: Install exact dependencies
+        shell: bash
         run: |
+          set -euo pipefail
           npm ci
-          npm install --no-save --package-lock=false @deepseek-ai/dsh-client-ui-renderer@0.1.0-rc.6
+          RENDERER_TGZ="$(npm pack --silent @deepseek-ai/dsh-client-ui-renderer@0.1.0-rc.6)"
+          mkdir -p node_modules/@deepseek-ai/dsh-client-ui-renderer
+          tar -xzf "$RENDERER_TGZ" -C node_modules/@deepseek-ai/dsh-client-ui-renderer --strip-components=1
+          rm "$RENDERER_TGZ"
       - name: Prepare DSH Web proof bundles
         run: npm run prepare:dsh-web
       - name: Lifecycle composition proof
