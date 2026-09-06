@@ -5,7 +5,7 @@ on:
     branches: [feature/76-application-shell]
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: issue-76-proof
@@ -14,13 +14,264 @@ concurrency:
 jobs:
   proof:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: feature/76-application-shell
+      - name: Apply exact PQG root ownership patch
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          path = Path('scripts/prepare-dsh-web.mjs')
+          source = path.read_text()
+
+          def replace_once(label, old, new):
+              global source
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly one patch point, found {count}')
+              source = source.replace(old, new, 1)
+
+          if 'function patchLayoutBundleForPqgRoot(source)' not in source:
+              replace_once(
+                  'application shell id',
+                  "const pqgReferenceModuleId = '@pqg/reference-module'\nconst pqgMantineSpikeId = '@pqg/mantine-spike'",
+                  "const pqgReferenceModuleId = '@pqg/reference-module'\nconst pqgApplicationShellId = '@pqg/application-shell'\nconst pqgMantineSpikeId = '@pqg/mantine-spike'",
+              )
+
+              patch_fn = r'''function patchLayoutBundleForPqgRoot(source) {
+            const shippedRootEffect = `\t\t\tconst layout = new LayoutController();
+          \t\t\tctx.effect(() => {
+          \t\t\t\tconst disposeService = ctx.reflect.provide("layout", layout);
+          \t\t\t\tconst disposeRegistration = ctx.slots.register({
+          \t\t\t\t\tname: "root",
+          \t\t\t\t\tchildren: {
+          \t\t\t\t\t\t"sidebar": {
+          \t\t\t\t\t\t\tkind: "single",
+          \t\t\t\t\t\t\tscope: "root"
+          \t\t\t\t\t\t},
+          \t\t\t\t\t\t"conversation": {
+          \t\t\t\t\t\t\tkind: "single",
+          \t\t\t\t\t\t\tscope: "session-maybe"
+          \t\t\t\t\t\t},
+          \t\t\t\t\t\t"details": {
+          \t\t\t\t\t\t\tkind: "single",
+          \t\t\t\t\t\t\tscope: "session"
+          \t\t\t\t\t\t},
+          \t\t\t\t\t\t"shell.overlay": {
+          \t\t\t\t\t\t\tkind: "list",
+          \t\t\t\t\t\t\tscope: "root"
+          \t\t\t\t\t\t}
+          \t\t\t\t\t},
+          \t\t\t\t\tstore: createLayoutStore,
+          \t\t\t\t\tinject: (actions) => {
+          \t\t\t\t\t\tlayout.attachPanels(actions);
+          \t\t\t\t\t\treturn {};
+          \t\t\t\t\t}
+          \t\t\t\t}, AppFrame);
+          \t\t\t\treturn () => {
+          \t\t\t\t\tdisposeRegistration();
+          \t\t\t\t\tdisposeService();
+          \t\t\t\t};
+          \t\t\t}, "ui-layout: service + root registration");
+          `
+            if (!source.includes(shippedRootEffect)) {
+              throw new Error('Published DSH ui-layout bundle no longer matches the PQG root ownership patch point.')
+            }
+            return source.replace(shippedRootEffect, '')
+          }
+
+          '''
+              replace_once(
+                  'layout patch function insertion',
+                  'async function preparePqgModuleSettingsClient() {',
+                  patch_fn + 'async function preparePqgModuleSettingsClient() {',
+              )
+
+              ref_tail = '''  const target = join(publicDir, 'plugins', ...pqgReferenceModuleId.split('/'), 'client.js')
+          await mkdir(dirname(target), { recursive: true })
+          await writeFile(target, bundled)
+          }
+
+          async function preparePqgMantineSpikeClient() {'''
+              ref_replacement = '''  const target = join(publicDir, 'plugins', ...pqgReferenceModuleId.split('/'), 'client.js')
+          await mkdir(dirname(target), { recursive: true })
+          await writeFile(target, bundled)
+          const rev = hash(bundled)
+          return {
+            id: pqgReferenceModuleId,
+            url: `/plugins/${pqgReferenceModuleId}/client.js?rev=${rev}`,
+            rev,
+            inject: [
+              '@deepseek-ai/dsh-client-runtime',
+              '@deepseek-ai/dsh-client-ui-slots',
+            ],
+          }
+          }
+
+          async function preparePqgApplicationShellClient() {
+            const entry = join(root, 'packages', 'application-shell', 'src', 'client.tsx')
+            const source = await readFile(entry, 'utf8')
+            const transformed = await transformWithEsbuild(source, entry, {
+              loader: 'tsx',
+              target: 'es2022',
+              format: 'cjs',
+              sourcemap: false,
+              charset: 'utf8',
+            })
+            const bundled = [
+              `window.__ModuleLoader__.load({ id: ${JSON.stringify(pqgApplicationShellId)}, factory: (require) => { var module = { exports: {} }; var exports = module.exports;`,
+              transformed.code.trimEnd(),
+              'return module.exports; } });',
+              '',
+            ].join('\\n')
+            const target = join(publicDir, 'plugins', ...pqgApplicationShellId.split('/'), 'client.js')
+            await mkdir(dirname(target), { recursive: true })
+            await writeFile(target, bundled)
+            const rev = hash(bundled)
+            return {
+              id: pqgApplicationShellId,
+              url: `/plugins/${pqgApplicationShellId}/client.js?rev=${rev}`,
+              rev,
+              inject: [
+                '@deepseek-ai/dsh-client-runtime',
+                '@deepseek-ai/dsh-client-ui-slots',
+              ],
+            }
+          }
+
+          async function preparePqgMantineSpikeClient() {'''
+              replace_once('reference/application shell bundle preparation', ref_tail, ref_replacement)
+
+              replace_once(
+                  'ui-layout patch call',
+                  "    if (manifest.name === '@deepseek-ai/dsh-client-ui-workspace') source = patchWorkspaceBundle(source)\n    if (manifest.name === '@deepseek-ai/dsh-client-ui-settings') source = patchSettingsBundle(source)",
+                  "    if (manifest.name === '@deepseek-ai/dsh-client-ui-workspace') source = patchWorkspaceBundle(source)\n    if (manifest.name === '@deepseek-ai/dsh-client-ui-layout') source = patchLayoutBundleForPqgRoot(source)\n    if (manifest.name === '@deepseek-ai/dsh-client-ui-settings') source = patchSettingsBundle(source)",
+              )
+
+              replace_once(
+                  'boot graph entries',
+                  "await preparePqgReferenceModuleClient()\nconst mantineSpike = await preparePqgMantineSpikeClient()\nconst entries = [\n  ...(await clientPackages()),\n  await preparePqgModuleSettingsClient(),\n  mantineSpike.entry,\n]",
+                  "const referenceModule = await preparePqgReferenceModuleClient()\nconst applicationShell = await preparePqgApplicationShellClient()\nconst mantineSpike = await preparePqgMantineSpikeClient()\nconst entries = [\n  ...(await clientPackages()),\n  applicationShell,\n  referenceModule,\n  await preparePqgModuleSettingsClient(),\n  mantineSpike.entry,\n]",
+              )
+
+              path.write_text(source)
+          PY
+          git diff --check
+          git diff -- scripts/prepare-dsh-web.mjs
+          if ! git diff --quiet -- scripts/prepare-dsh-web.mjs; then
+            git config user.name github-actions[bot]
+            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+            git add scripts/prepare-dsh-web.mjs
+            git commit -m 'feat: establish PQG root ownership proof'
+            git push origin HEAD:feature/76-application-shell
+          fi
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: npm
-      - run: npm ci
-      - run: npm run prepare:dsh-web
-      - run: node --experimental-strip-types --test tests/application-shell-contract.test.ts
+      - name: Install exact dependencies
+        run: npm ci
+      - name: Prepare DSH Web proof bundles
+        run: npm run prepare:dsh-web
+      - name: Lifecycle composition proof
+        run: node --experimental-strip-types --test tests/application-shell-contract.test.ts
+      - name: Browser boot proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run dev -- --host 127.0.0.1 --port 4173 > /tmp/issue-76-vite.log 2>&1 &
+          VITE_PID=$!
+          trap 'kill "$VITE_PID" 2>/dev/null || true; kill "${CHROME_PID:-}" 2>/dev/null || true' EXIT
+          for _ in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:4173/ >/dev/null; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:4173/ >/dev/null
+
+          CHROME="$(command -v google-chrome || command -v chromium-browser || command -v chromium || true)"
+          test -n "$CHROME"
+          "$CHROME" --headless=new --no-sandbox --disable-gpu --remote-debugging-port=9222 --user-data-dir=/tmp/issue-76-chrome about:blank > /tmp/issue-76-chrome.log 2>&1 &
+          CHROME_PID=$!
+
+          node <<'NODE'
+          const delay = ms => new Promise(resolve => setTimeout(resolve, ms))
+          for (let i = 0; i < 100; i++) {
+            try {
+              const response = await fetch('http://127.0.0.1:9222/json/version')
+              if (response.ok) break
+            } catch {}
+            if (i === 99) throw new Error('Chrome DevTools endpoint did not become ready')
+            await delay(100)
+          }
+
+          const created = await fetch('http://127.0.0.1:9222/json/new?about:blank', { method: 'PUT' })
+          if (!created.ok) throw new Error(`Failed to create browser target: HTTP ${created.status}`)
+          const target = await created.json()
+          const ws = new WebSocket(target.webSocketDebuggerUrl)
+          await new Promise((resolve, reject) => {
+            ws.addEventListener('open', resolve, { once: true })
+            ws.addEventListener('error', reject, { once: true })
+          })
+
+          let sequence = 0
+          const pending = new Map()
+          const observedErrors = []
+          let loadedResolve
+          const loaded = new Promise(resolve => { loadedResolve = resolve })
+
+          ws.addEventListener('message', event => {
+            const message = JSON.parse(event.data)
+            if (message.id && pending.has(message.id)) {
+              const { resolve, reject } = pending.get(message.id)
+              pending.delete(message.id)
+              if (message.error) reject(new Error(JSON.stringify(message.error)))
+              else resolve(message.result)
+              return
+            }
+            if (message.method === 'Page.loadEventFired') loadedResolve()
+            if (message.method === 'Runtime.exceptionThrown') {
+              observedErrors.push(message.params?.exceptionDetails?.text ?? JSON.stringify(message.params))
+            }
+            if (message.method === 'Log.entryAdded' && message.params?.entry?.level === 'error') {
+              observedErrors.push(message.params.entry.text)
+            }
+            if (message.method === 'Runtime.consoleAPICalled' && message.params?.type === 'error') {
+              observedErrors.push((message.params.args ?? []).map(arg => arg.value ?? arg.description ?? '').join(' '))
+            }
+          })
+
+          const send = (method, params = {}) => new Promise((resolve, reject) => {
+            const id = ++sequence
+            pending.set(id, { resolve, reject })
+            ws.send(JSON.stringify({ id, method, params }))
+          })
+
+          await send('Runtime.enable')
+          await send('Log.enable')
+          await send('Page.enable')
+          await send('Page.navigate', { url: 'http://127.0.0.1:4173/' })
+          await Promise.race([loaded, delay(15000).then(() => { throw new Error('Page load timed out') })])
+
+          let proofRendered = false
+          for (let i = 0; i < 100; i++) {
+            const result = await send('Runtime.evaluate', {
+              expression: 'document.body?.innerText.includes("PQG shell proof contribution") === true',
+              returnByValue: true,
+            })
+            if (result?.result?.value === true) {
+              proofRendered = true
+              break
+            }
+            await delay(100)
+          }
+
+          const fatal = observedErrors.filter(text => /root.*no registration|no registration.*root|slot.*collision|collision.*slot|layout: panel actions not wired|activation.*(?:fail|error)|activate.*(?:fail|error)/i.test(text))
+          console.log(JSON.stringify({ proofRendered, fatal, observedErrors }, null, 2))
+          ws.close()
+          if (!proofRendered) throw new Error('PQG proof contribution did not render in the browser')
+          if (fatal.length > 0) throw new Error(`Composition boot errors detected: ${fatal.join(' | ')}`)
+          NODE
