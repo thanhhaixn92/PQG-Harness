@@ -1,6 +1,6 @@
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type {} from '@pqg/application-shell/contracts'
+import type { ShellSystemServices } from '@pqg/application-shell/contracts'
 
 type ReactApi = {
   createElement: (...args: any[]) => any
@@ -75,8 +75,9 @@ function ReferenceSupportSuggestion({ activeId }: PropsRuntime<'pqg.shell.suppor
 
 async function apply(ctx: ClientContext): Promise<void> {
   if (!(await referenceModuleEnabled())) return
+  const services = (ctx as ClientContext & { pqgShell: ShellSystemServices }).pqgShell
 
-  ctx.effect(() => ctx.pqgShell.registerSearchProvider({
+  ctx.effect(() => services.registerSearchProvider({
     id: 'reference',
     label: 'Mô-đun mẫu',
     async search(query) {
@@ -92,7 +93,7 @@ async function apply(ctx: ClientContext): Promise<void> {
     },
   }))
 
-  ctx.effect(() => ctx.pqgShell.registerSupportProvider({
+  ctx.effect(() => services.registerSupportProvider({
     id: 'reference',
     supportFor(activeId) {
       if (activeId !== 'reference') return undefined
