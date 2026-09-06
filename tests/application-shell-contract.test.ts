@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import test from 'node:test'
 import vm from 'node:vm'
 
@@ -7,19 +8,33 @@ import * as cordisModule from '@deepseek-ai/cordis'
 import { Context } from '@deepseek-ai/cordis'
 import * as slotCoreModule from '@deepseek-ai/dsh-client-ui-slots'
 
+const require = createRequire(import.meta.url)
 const runtimeBundleUrl = new URL('../public/plugins/@deepseek-ai/dsh-client-runtime/client.js', import.meta.url)
 const shellBundleUrl = new URL('../public/plugins/@pqg/application-shell/client.js', import.meta.url)
 const referenceBundleUrl = new URL('../public/plugins/@pqg/reference-module/client.js', import.meta.url)
 const layoutBundleUrl = new URL('../public/plugins/@deepseek-ai/dsh-client-ui-layout/client.js', import.meta.url)
+const pqgSeats = [
+  'pqg.shell.navigation',
+  'pqg.shell.workspace',
+  'pqg.shell.home.widget',
+  'pqg.shell.search.provider',
+  'pqg.shell.support.context',
+  'pqg.shell.support.suggestion',
+] as const
 
 interface PluginModule {
   inject: string[]
   apply(ctx: Context): void
 }
 
+interface SlotEntry {
+  component: (props: any) => unknown
+  select?: (owner: { activeId: string }) => unknown
+}
+
 interface SlotRegistryFace {
-  entries(key: string): Array<{ component: (props: any) => unknown }>
-  entriesOfSlot(key: string): Array<{ component?: (props: object) => unknown }>
+  entries(key: string): SlotEntry[]
+  spec(key: string): { kind: string; scope: string } | undefined
 }
 
 async function loadHandoff(url: URL, expectedId: string) {
@@ -43,6 +58,7 @@ async function loadHandoff(url: URL, expectedId: string) {
 async function loadPlugin(url: URL, expectedId: string): Promise<PluginModule> {
   const handoff = await loadHandoff(url, expectedId)
   return handoff.factory((id: string) => {
+    if (id === 'react' || id === 'react/jsx-runtime' || id === 'react-dom' || id === 'react-dom/client') return require(id)
     throw new Error(`unexpected external module in ${expectedId}: ${id}`)
   }) as PluginModule
 }
@@ -66,7 +82,7 @@ test('Makers layout compatibility patch removes the shipped root owner as one un
   assert.match(source, /new ThemePresenter\(\)/)
 })
 
-test('PQG root owns a custom child seat and reference contribution follows declaration lifecycle', async () => {
+test('PQG shell declares product contribution seats and reference module follows their lifecycle', async () => {
   const SlotRegistry = await loadRuntimeSlotRegistry()
   const shell = await loadPlugin(shellBundleUrl, '@pqg/application-shell')
   const reference = await loadPlugin(referenceBundleUrl, '@pqg/reference-module')
@@ -77,33 +93,44 @@ test('PQG root owns a custom child seat and reference contribution follows decla
 
   const referenceFiber = ctx.plugin({ inject: [...reference.inject], apply: reference.apply })
   await referenceFiber.await()
-  assert.equal(slots.entries('pqg.shell.proof').length, 0, 'inject must wait while the PQG seat is undeclared')
+  for (const seat of pqgSeats) assert.equal(slots.entries(seat).length, 0, `${seat} must wait for shell declaration`)
 
   let shellFiber = ctx.plugin({ inject: [...shell.inject], apply: shell.apply })
   await shellFiber.await()
-  assert.equal(slots.entries('root').length, 1, 'PQG must be the only root registration')
-  assert.equal(slots.entries('pqg.shell.proof').length, 1, 'reference contribution must appear after declaration')
+  assert.equal(slots.entries('root').length, 1, 'PQG must remain the only root registration')
 
-  const root = slots.entries('root')[0]!
-  const renderSlot = (name: string): unknown => {
-    const entry = slots.entriesOfSlot(name)[0]
-    return entry?.component?.({}) ?? null
+  const expectedKinds: Record<(typeof pqgSeats)[number], string> = {
+    'pqg.shell.navigation': 'list',
+    'pqg.shell.workspace': 'chain',
+    'pqg.shell.home.widget': 'list',
+    'pqg.shell.search.provider': 'list',
+    'pqg.shell.support.context': 'list',
+    'pqg.shell.support.suggestion': 'list',
   }
-  assert.equal(root.component({ renderSlot }), 'PQG shell proof contribution')
+  for (const seat of pqgSeats) {
+    assert.equal(slots.spec(seat)?.kind, expectedKinds[seat], `${seat} kind`)
+    assert.equal(slots.spec(seat)?.scope, 'root', `${seat} scope`)
+    assert.equal(slots.entries(seat).length, 1, `${seat} reference contribution`)
+  }
+
+  const workspace = slots.entries('pqg.shell.workspace')[0]
+  assert.equal(typeof workspace?.select, 'function')
+  assert.deepEqual(workspace?.select?.({ activeId: 'reference' }), { moduleId: 'reference' })
+  assert.equal(workspace?.select?.({ activeId: 'home' }), null)
 
   await referenceFiber.dispose()
-  assert.equal(slots.entries('pqg.shell.proof').length, 0, 'disposing the reference plugin removes its contribution')
+  for (const seat of pqgSeats) assert.equal(slots.entries(seat).length, 0, `${seat} must disappear when module disposes`)
 
   const remountedReference = ctx.plugin({ inject: [...reference.inject], apply: reference.apply })
   await remountedReference.await()
-  assert.equal(slots.entries('pqg.shell.proof').length, 1, 'reference contribution must remount')
+  for (const seat of pqgSeats) assert.equal(slots.entries(seat).length, 1, `${seat} must remount`)
 
   await shellFiber.dispose()
-  assert.equal(slots.entries('pqg.shell.proof').length, 0, 'disposing the owner collapses its child seat')
+  for (const seat of pqgSeats) assert.equal(slots.entries(seat).length, 0, `${seat} must collapse with shell owner`)
 
   shellFiber = ctx.plugin({ inject: [...shell.inject], apply: shell.apply })
   await shellFiber.await()
-  assert.equal(slots.entries('pqg.shell.proof').length, 1, 'pending injection must recover when the owner remounts')
+  for (const seat of pqgSeats) assert.equal(slots.entries(seat).length, 1, `${seat} injection must recover after shell remount`)
 
   await remountedReference.dispose()
   await shellFiber.dispose()
