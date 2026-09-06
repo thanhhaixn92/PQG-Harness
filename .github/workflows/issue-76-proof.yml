@@ -26,10 +26,11 @@ jobs:
         run: |
           set -euo pipefail
           npm ci
-          RENDERER_TGZ="$(npm pack --silent @deepseek-ai/dsh-client-ui-renderer@0.1.0-rc.6)"
+          npm pack @deepseek-ai/dsh-client-ui-renderer@0.1.0-rc.6 --pack-destination /tmp
+          RENDERER_TGZ=/tmp/deepseek-ai-dsh-client-ui-renderer-0.1.0-rc.6.tgz
+          test -f "$RENDERER_TGZ"
           mkdir -p node_modules/@deepseek-ai/dsh-client-ui-renderer
           tar -xzf "$RENDERER_TGZ" -C node_modules/@deepseek-ai/dsh-client-ui-renderer --strip-components=1
-          rm "$RENDERER_TGZ"
       - name: Prepare DSH Web proof bundles
         run: npm run prepare:dsh-web
       - name: Lifecycle composition proof
