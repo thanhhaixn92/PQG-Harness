@@ -219,7 +219,7 @@ test('ready sidecar propagation failures are surfaced', async () => {
     child: {} as any,
     gateway: {} as any,
     mcp: {
-      setModuleEnabled() {
+      async setModuleEnabled() {
         throw new Error('module propagation failed')
       },
     } as any,
