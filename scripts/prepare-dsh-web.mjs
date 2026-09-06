@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { transformWithEsbuild } from 'vite'
+import { build, transformWithEsbuild } from 'vite'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const publicDir = join(root, 'public')
@@ -10,6 +10,13 @@ const modulesRoot = join(root, 'node_modules', '@deepseek-ai')
 const webDist = join(modulesRoot, 'dsh-web-frontend', 'dist')
 const pqgModuleSettingsId = '@pqg/module-settings'
 const pqgReferenceModuleId = '@pqg/reference-module'
+const pqgMantineSpikeId = '@pqg/mantine-spike'
+const reactPlatformExternals = new Set([
+  'react',
+  'react/jsx-runtime',
+  'react-dom',
+  'react-dom/client',
+])
 const excluded = new Set([
   // The Makers deployment has no native desktop directory chooser. The
   // native row is retained because the upstream Web composition selects it;
@@ -998,6 +1005,60 @@ async function preparePqgReferenceModuleClient() {
   await writeFile(target, bundled)
 }
 
+async function preparePqgMantineSpikeClient() {
+  const entry = join(root, 'src', 'pqg-mantine-spike-client.tsx')
+  const result = await build({
+    configFile: false,
+    root,
+    logLevel: 'silent',
+    build: {
+      write: false,
+      target: 'es2022',
+      minify: 'esbuild',
+      cssCodeSplit: false,
+      lib: {
+        entry,
+        formats: ['cjs'],
+        fileName: 'client',
+      },
+      rollupOptions: {
+        external: id => reactPlatformExternals.has(id),
+        output: { inlineDynamicImports: true },
+      },
+    },
+  })
+  const runs = Array.isArray(result) ? result : [result]
+  const outputs = runs.flatMap(run => Array.isArray(run?.output) ? run.output : [])
+  const chunk = outputs.find(output => output.type === 'chunk' && output.isEntry)
+  const css = outputs.find(output => output.type === 'asset' && output.fileName.endsWith('.css'))
+  if (!chunk) throw new Error('Mantine spike bundle produced no entry chunk.')
+  if (!css || typeof css.source !== 'string') throw new Error('Mantine spike bundle produced no CSS asset.')
+
+  const bundled = [
+    'window.__ModuleLoader__.load({ id: ' + JSON.stringify(pqgMantineSpikeId) + ', factory: (require) => { var module = { exports: {} }; var exports = module.exports;',
+    chunk.code.trimEnd(),
+    'return module.exports; } });',
+    '',
+  ].join('\n')
+  const targetDir = join(publicDir, 'plugins', ...pqgMantineSpikeId.split('/'))
+  await mkdir(targetDir, { recursive: true })
+  await writeFile(join(targetDir, 'client.js'), bundled)
+  await writeFile(join(targetDir, 'styles.css'), css.source)
+  return {
+    entry: {
+      id: pqgMantineSpikeId,
+      url: '/plugins/' + pqgMantineSpikeId + '/client.js?rev=' + hash(bundled),
+      rev: hash(bundled),
+      inject: [
+        '@deepseek-ai/dsh-client-runtime',
+        '@deepseek-ai/dsh-client-ui-settings',
+        '@deepseek-ai/dsh-client-ui-slots',
+      ],
+    },
+    cssUrl: '/plugins/' + pqgMantineSpikeId + '/styles.css?rev=' + hash(css.source),
+  }
+}
+
 async function clientPackages() {
   const rows = []
   for (const directory of await readdir(modulesRoot)) {
@@ -1343,9 +1404,11 @@ await rm(publicDir, { recursive: true, force: true })
 await mkdir(publicDir, { recursive: true })
 await cp(webDist, publicDir, { recursive: true })
 await preparePqgReferenceModuleClient()
+const mantineSpike = await preparePqgMantineSpikeClient()
 const entries = [
   ...(await clientPackages()),
   await preparePqgModuleSettingsClient(),
+  mantineSpike.entry,
 ].sort((left, right) => left.id.localeCompare(right.id))
 if (entries.length < 30) throw new Error(`Expected the DSH Web roster, found only ${String(entries.length)} bundles.`)
 const graph = { rev: hash(JSON.stringify(entries)), entries }
@@ -1357,7 +1420,7 @@ if (!shellHtml.includes(headWithCharset)) {
 // Keep charset first so the HTML5 encoding sniff (first 1024 bytes) sees UTF-8
 // before the overlay script's Chinese copy. Injecting before charset made first
 // paint mojibake until a reload remembered UTF-8.
-const html = shellHtml.replace(headWithCharset, `${headWithCharset}${makersBootstrap(graph)}`)
+const html = shellHtml.replace(headWithCharset, `${headWithCharset}\n    <link rel="stylesheet" data-pqg-mantine-spike href="${mantineSpike.cssUrl}" />${makersBootstrap(graph)}`)
 await writeFile(join(root, 'index.html'), html)
 await writeFile(join(publicDir, 'index.html'), html)
 console.log(`Prepared DSH Web with ${String(entries.length)} client plugins.`)
