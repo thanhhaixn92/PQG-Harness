@@ -89,7 +89,7 @@ jobs:
           }
 
           async function preparePqgMantineSpikeClient'''
-          source, count = pattern.subn(replacement, source, count=1)
+          source, count = pattern.subn(lambda _: replacement, source, count=1)
           if count != 1:
               raise SystemExit(f'application shell prepare function drifted: {count}')
 
