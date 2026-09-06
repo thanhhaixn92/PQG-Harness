@@ -23,6 +23,9 @@ const result = await build({
   configFile: false,
   root,
   logLevel: 'silent',
+  define: {
+    'process.env.NODE_ENV': JSON.stringify('production'),
+  },
   build: {
     write: false,
     target: 'es2022',
