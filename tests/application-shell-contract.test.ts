@@ -41,7 +41,6 @@ async function loadHandoff(url: URL, expectedId: string) {
   const source = await readFile(url, 'utf8')
   const handoffs: Array<{ id: string; factory: (requireModule: (id: string) => unknown) => any }> = []
   vm.runInNewContext(source, {
-    process: { env: { NODE_ENV: 'test' } },
     queueMicrotask,
     window: {
       __ModuleLoader__: {
