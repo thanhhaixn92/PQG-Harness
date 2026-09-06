@@ -5,7 +5,7 @@
   "nodeVersion": "24",
   "agents": {
     "framework": "openai-sdk",
-    "timeout": 300,
+    "timeout": 1800,
     "externalNodeModules": [
       "@deepseek-ai/cordis-plugin-group",
       "@deepseek-ai/dsh-anonymous-user-id",
@@ -42,7 +42,7 @@
       "zod"
     ],
     "sandbox": {
-      "timeout": 300
+      "timeout": 1800
     }
   }
 }
