@@ -127,7 +127,10 @@ export function pqgProductScript(): string {
     ['Into the Unknown', 'Hôm nay bạn muốn làm gì?'],
     ['Settings', 'Cài đặt'],
     ['General', 'Chung'],
+    ['Language', 'Ngôn ngữ'],
+    ['English', 'Tiếng Việt'],
     ['Models', 'Mô hình AI'],
+    ['Models are provided by EdgeOne Makers.', 'Chọn mô hình AI bạn muốn sử dụng.'],
     ['Plugins', 'Tiện ích'],
     ['Plugin inventory', 'Danh sách tiện ích'],
     ['Tools', 'Công cụ'],
@@ -139,6 +142,12 @@ export function pqgProductScript(): string {
     ['Workspace write', 'Cho phép chỉnh sửa'],
     ['workspace-write', 'Cho phép chỉnh sửa'],
     ['Full access', 'Toàn quyền'],
+    ['Inspect the EdgeOne Makers sandbox: list and read files. Writes, commands, and preview will ask you to confirm.', 'Chỉ xem và đọc tệp. Khi cần chỉnh sửa, chạy lệnh hoặc mở bản xem trước, hệ thống sẽ hỏi bạn xác nhận.'],
+    ['Read and write files in the EdgeOne Makers sandbox. Commands and preview will ask you to confirm.', 'Đọc và chỉnh sửa tệp. Khi cần chạy lệnh hoặc mở bản xem trước, hệ thống sẽ hỏi bạn xác nhận.'],
+    ['Full Makers sandbox access: files, commands, and preview, without extra confirmation. The local machine is still never accessible.', 'Cho phép thao tác tệp, chạy lệnh và mở bản xem trước mà không hỏi lại. Hệ thống không thể truy cập máy cá nhân của bạn.'],
+    ['Choose the default Makers sandbox permission for new sessions: read-only, file write, or Full access with commands and preview', 'Chọn quyền mặc định cho phiên mới: chỉ đọc, cho phép chỉnh sửa, hoặc toàn quyền gồm chạy lệnh và xem trước.'],
+    ['Full access lets the agent run commands and publish previews in the EdgeOne Makers sandbox without extra confirmation. The local machine is still never accessible. Only use it when you trust the current task.', 'Toàn quyền cho phép chạy lệnh và mở bản xem trước mà không hỏi lại. Hệ thống không thể truy cập máy cá nhân của bạn. Chỉ dùng khi bạn tin tưởng tác vụ hiện tại.'],
+    ['Full access lets new sessions run commands and publish previews in the EdgeOne Makers sandbox without extra confirmation. The local machine is still never accessible. Only use it when you trust subsequent tasks.', 'Toàn quyền cho phép các phiên mới chạy lệnh và mở bản xem trước mà không hỏi lại. Hệ thống không thể truy cập máy cá nhân của bạn. Chỉ dùng khi bạn tin tưởng các tác vụ tiếp theo.'],
     ['To-dos', 'Việc cần làm'],
     ['Session hierarchy', 'Cấu trúc phiên'],
     ['Goal', 'Mục tiêu'],
@@ -214,6 +223,7 @@ export function pqgProductScript(): string {
     if (!root) return;
     translateText(root);
     hideExactLabel('Preview');
+    hideExactLabel('中文');
     applyBrand();
     markHeadline();
   }
