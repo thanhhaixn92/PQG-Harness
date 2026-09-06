@@ -40,6 +40,7 @@ export async function discoverPqgModules(rootDir = process.cwd()) {
     ...optionalNames,
   ])]
   const modules = []
+  const modulePackages = new Map()
 
   for (const packageName of dependencyNames) {
     let dependencyPackage
@@ -55,8 +56,15 @@ export async function discoverPqgModules(rootDir = process.cwd()) {
     const metadata = moduleMetadata(dependencyPackage, packageName)
     if (!metadata) continue
 
+    const id = metadata.id.trim()
+    const existingPackage = modulePackages.get(id)
+    if (existingPackage) {
+      throw new Error(`Duplicate PQG module id "${id}" declared by "${existingPackage}" and "${packageName}"`)
+    }
+    modulePackages.set(id, packageName)
+
     modules.push({
-      id: metadata.id.trim(),
+      id,
       label: metadata.label.trim(),
       packageName,
       defaultEnabled: metadata.defaultEnabled,

@@ -10,5 +10,13 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "types": ["node"]
   },
-  "include": ["agents/**/*.ts", "src/**/*.ts", "tests/**/*.ts"]
+  "include": [
+    "agents/**/*.ts",
+    "middleware.ts",
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "packages/**/*.ts",
+    "packages/**/*.tsx",
+    "tests/**/*.ts"
+  ]
 }
