@@ -7,25 +7,8 @@ import type {
   ShellSearchProvider,
   ShellSupportContext,
   ShellSupportProvider,
+  ShellSystemServices,
 } from './contracts.ts'
-
-export interface ShellSystemServices {
-  registerSearchProvider(provider: ShellSearchProvider): () => void
-  search(query: string): Promise<readonly ShellSearchMatch[]>
-  registerSupportProvider(provider: ShellSupportProvider): () => void
-  supportFor(activeId: string): ShellSupportContext | undefined
-  subscribe(listener: () => void): () => void
-  notify(notification: ShellNotification): void
-  subscribeNotifications(listener: (notification: ShellNotification) => void): () => void
-  currentApproval(): ShellApprovalRequest | undefined
-  answerApproval(approval: ShellApprovalRequest, outcome: ShellApprovalOutcome): Promise<void>
-}
-
-declare module '@deepseek-ai/cordis' {
-  interface Context {
-    pqgShell: ShellSystemServices
-  }
-}
 
 function removeExact<T>(map: Map<string, T>, id: string, value: T, changed: () => void): void {
   if (map.get(id) !== value) return
