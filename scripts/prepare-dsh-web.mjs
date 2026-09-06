@@ -11,10 +11,9 @@ const webDist = join(modulesRoot, 'dsh-web-frontend', 'dist')
 const pqgModuleSettingsId = '@pqg/module-settings'
 const pqgReferenceModuleId = '@pqg/reference-module'
 const excluded = new Set([
-  // The Makers deployment has no native desktop directory chooser. The
-  // native row is retained because the upstream Web composition selects it;
-  // the browse twin would double-occupy the same UI seat.
+  // Makers provisions its conversation-scoped cloud workspace automatically.
   '@deepseek-ai/dsh-client-ui-directory-picker-browse',
+  '@deepseek-ai/dsh-client-ui-directory-picker-native',
   // Live Cordis editing assumes direct Host trust and opens a large secondary
   // RPC surface. Makers keeps the normal plugin inventory/settings UI but not
   // the self-modifying runtime panel.
