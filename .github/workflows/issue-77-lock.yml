@@ -1,0 +1,35 @@
+name: issue-77-lock
+
+on:
+  push:
+    branches:
+      - feature/77-system-services
+    paths:
+      - .github/workflows/issue-77-lock.yml
+
+permissions:
+  contents: write
+
+jobs:
+  lock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install --package-lock-only --ignore-scripts
+      - name: Assert lock-only mutation
+        run: |
+          unexpected="$(git diff --name-only | grep -v '^package-lock.json$' || true)"
+          test -z "$unexpected" || { echo "$unexpected"; exit 1; }
+          git diff --quiet -- package-lock.json && { echo 'package-lock.json was not updated'; exit 1; }
+      - name: Commit generated lock
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add package-lock.json
+          git commit -m 'deps: lock Mantine system service packages'
+          git push origin HEAD:feature/77-system-services
