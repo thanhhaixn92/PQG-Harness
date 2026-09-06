@@ -1,0 +1,116 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+
+import { createShellSystemServices } from '../packages/application-shell/src/services.ts'
+
+function fakeSessions() {
+  let approvalResult: unknown
+  const wait = {
+    kind: 'approval' as const,
+    key: 'a:1',
+    sessionId: 'session-1',
+    payload: {
+      approvalId: 'approval-1',
+      toolName: 'write_file',
+      reason: 'Ghi thay đổi vào tài liệu',
+    },
+    async respond(result: unknown) {
+      approvalResult = result
+      return { accepted: true }
+    },
+  }
+  return {
+    sessions: {
+      list: {
+        getSnapshot: () => ({ current: 'session-1' }),
+      },
+      binding: (id: string) => id === 'session-1'
+        ? {
+            session: {
+              getSnapshot: () => ({ pending: [wait] }),
+            },
+          }
+        : undefined,
+    },
+    approvalResult: () => approvalResult,
+  }
+}
+
+test('system services aggregate deterministic search/support providers and dispose cleanly', async () => {
+  const fixture = fakeSessions()
+  const services = createShellSystemServices(fixture.sessions as never)
+
+  const disposeA = services.registerSearchProvider({
+    id: 'alpha',
+    label: 'Alpha',
+    async search(query) {
+      return query === 'pqg'
+        ? [{ id: 'one', label: 'Một', description: 'A', targetId: 'alpha' }]
+        : []
+    },
+  })
+  services.registerSearchProvider({
+    id: 'beta',
+    label: 'Beta',
+    async search(query) {
+      return query === 'pqg'
+        ? [{ id: 'two', label: 'Hai', description: 'B', targetId: 'beta' }]
+        : []
+    },
+  })
+  const disposeSupport = services.registerSupportProvider({
+    id: 'alpha',
+    supportFor(activeId) {
+      return activeId === 'alpha'
+        ? {
+            title: 'Alpha',
+            summary: 'Ngữ cảnh Alpha',
+            suggestions: [{ id: 'help', label: 'Hỗ trợ Alpha' }],
+          }
+        : undefined
+    },
+  })
+
+  assert.deepEqual(
+    (await services.search('pqg')).map(item => `${item.providerId}:${item.id}`),
+    ['alpha:one', 'beta:two'],
+  )
+  assert.equal(services.supportFor('alpha')?.summary, 'Ngữ cảnh Alpha')
+
+  disposeA()
+  disposeSupport()
+  assert.deepEqual((await services.search('pqg')).map(item => item.providerId), ['beta'])
+  assert.equal(services.supportFor('alpha'), undefined)
+})
+
+test('notification surface and approval adapter reuse the canonical DSH pending carrier', async () => {
+  const fixture = fakeSessions()
+  const services = createShellSystemServices(fixture.sessions as never)
+  const notifications: string[] = []
+  const disposeNotifications = services.subscribeNotifications(notification => {
+    notifications.push(notification.message)
+  })
+
+  services.notify({ message: 'Đã lưu', kind: 'success' })
+  assert.deepEqual(notifications, ['Đã lưu'])
+
+  const approval = services.currentApproval()
+  assert.equal(approval?.toolName, 'write_file')
+  assert.equal(approval?.reason, 'Ghi thay đổi vào tài liệu')
+  assert.equal(approval?.risk, 'requires-confirmation')
+  assert.ok(approval)
+
+  await services.answerApproval(approval, 'allowed-once')
+  assert.deepEqual(fixture.approvalResult(), {
+    ok: true,
+    value: {
+      sessionId: 'session-1',
+      approvalId: 'approval-1',
+      outcome: 'allowed-once',
+    },
+  })
+
+  disposeNotifications()
+  services.notify({ message: 'Không nhận', kind: 'info' })
+  assert.deepEqual(notifications, ['Đã lưu'])
+})
