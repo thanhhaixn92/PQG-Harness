@@ -10,7 +10,8 @@ import {
   applyModuleEnabledToLiveSidecars,
   stopDshWebSidecar,
 } from '../agents/_dsh-web-sidecar.ts'
-import { setModuleEnabled } from '../agents/_module-policy.ts'
+import { onRequest as handleModulesRequest } from '../agents/api/pqg.modules.ts'
+import { readModulePolicy, setModuleEnabled } from '../agents/_module-policy.ts'
 import {
   applyModulePolicyToBridge,
   listInstalledModuleStates,
@@ -54,7 +55,8 @@ function fakeContext(conversationId = 'conversation') {
           conversations.set(id, { metadata: {} })
         },
         async updateConversation({ conversationId: id, metadata }: { conversationId: string; metadata: Record<string, unknown> }) {
-          conversations.set(id, { metadata })
+          const current = conversations.get(id)
+          conversations.set(id, { metadata: { ...current?.metadata, ...metadata } })
         },
       },
     },
@@ -209,12 +211,79 @@ test('toggle propagates to every live sidecar in the current runtime', async () 
   }
 })
 
-test('Makers adapter loader isolates a broken installed adapter', async () => {
+test('ready sidecar propagation failures are surfaced', async () => {
+  __setSidecarStarterForTests(async (context, conversationId) => ({
+    conversationId,
+    home: '/tmp/test',
+    port: 1,
+    child: {} as any,
+    gateway: {} as any,
+    mcp: {
+      setModuleEnabled() {
+        throw new Error('module propagation failed')
+      },
+    } as any,
+    lastUsedAt: Date.now(),
+    context,
+    async close() {},
+  }))
+  try {
+    const lease = await acquireDshWebSidecar(fakeContext('propagation-failure').context)
+    lease.release()
+    await assert.rejects(
+      applyModuleEnabledToLiveSidecars('task', false),
+      /module propagation failed/,
+    )
+  } finally {
+    await stopDshWebSidecar('propagation-failure')
+    __setSidecarStarterForTests(undefined)
+  }
+})
+
+test('module PUT returns 503 when ready sidecar propagation fails after persistence', async () => {
+  __setSidecarStarterForTests(async (context, conversationId) => ({
+    conversationId,
+    home: '/tmp/test',
+    port: 1,
+    child: {} as any,
+    gateway: {} as any,
+    mcp: {
+      setModuleEnabled() {
+        throw new Error('module propagation failed')
+      },
+    } as any,
+    lastUsedAt: Date.now(),
+    context,
+    async close() {},
+  }))
+  const { context } = fakeContext('api-propagation-failure')
+  try {
+    const lease = await acquireDshWebSidecar(context)
+    lease.release()
+    context.request = new Request('http://localhost/api/pqg.modules', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id: 'reference', enabled: true }),
+    })
+
+    const response = await handleModulesRequest(context)
+    assert.equal(response.status, 503)
+    const body = await response.json() as { error?: { code?: string } }
+    assert.equal(body.error?.code, 'module-runtime-propagation-failed')
+    assert.equal((await readModulePolicy(context)).enabled.reference, true)
+  } finally {
+    await stopDshWebSidecar('api-propagation-failure')
+    __setSidecarStarterForTests(undefined)
+  }
+})
+
+test('Makers adapter loader rolls back a broken installed adapter and continues', async () => {
   const adaptersPath = new URL('../agents/_module-adapters.ts', import.meta.url)
   assert.equal(existsSync(adaptersPath), true, 'agents/_module-adapters.ts must load Makers adapters')
   const { applyInstalledMakersModules } = await import(adaptersPath.href)
   const root = await mkdtemp(join(tmpdir(), 'pqg-makers-adapters-'))
   const registered: Array<[string, string]> = []
+  const removed: string[] = []
 
   try {
     await writeJson(join(root, 'package.json'), {
@@ -235,7 +304,7 @@ test('Makers adapter loader isolates a broken installed adapter', async () => {
       await writeFile(
         join(packageDir, 'makers.mjs'),
         id === 'broken'
-          ? 'export function apply() { throw new Error("broken adapter") }\n'
+          ? 'export function apply({ moduleId, bridge }) { bridge.registerModuleTool(moduleId, "broken_probe", { description: "broken" }, async () => ({ content: [{ type: "text", text: "broken" }] })); throw new Error("broken adapter") }\n'
           : 'export function apply({ moduleId, bridge }) { bridge.registerModuleTool(moduleId, "good_probe", { description: "good" }, async () => ({ content: [{ type: "text", text: "ok" }] })) }\n',
       )
     }
@@ -244,7 +313,14 @@ test('Makers adapter loader isolates a broken installed adapter', async () => {
       registerModuleTool(moduleId: string, name: string) {
         registered.push([moduleId, name])
       },
+      removeModule(moduleId: string) {
+        removed.push(moduleId)
+        for (let index = registered.length - 1; index >= 0; index -= 1) {
+          if (registered[index]?.[0] === moduleId) registered.splice(index, 1)
+        }
+      },
     } as any, root)
+    assert.deepEqual(removed, ['broken'])
     assert.deepEqual(registered, [['good', 'good_probe']])
   } finally {
     await rm(root, { recursive: true, force: true })
