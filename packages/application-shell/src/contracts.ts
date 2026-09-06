@@ -13,10 +13,60 @@ export interface ShellSupportOwner {
   activeId: string
 }
 
-export interface ShellSearchProvider<TResult = unknown> {
+export interface ShellSearchResult {
   id: string
   label: string
-  search(query: string): Promise<readonly TResult[]>
+  description?: string
+  keywords?: readonly string[]
+  targetId?: string
+}
+
+export interface ShellSearchMatch extends ShellSearchResult {
+  providerId: string
+  providerLabel: string
+}
+
+export interface ShellSearchProvider {
+  id: string
+  label: string
+  search(query: string): Promise<readonly ShellSearchResult[]>
+}
+
+export interface ShellSupportSuggestion {
+  id: string
+  label: string
+  prompt?: string
+}
+
+export interface ShellSupportContext {
+  title?: string
+  summary?: string
+  suggestions?: readonly ShellSupportSuggestion[]
+}
+
+export interface ShellSupportProvider {
+  id: string
+  supportFor(activeId: string): ShellSupportContext | undefined
+}
+
+export type ShellNotificationKind = 'info' | 'success' | 'warning' | 'error'
+
+export interface ShellNotification {
+  id?: string
+  title?: string
+  message: string
+  kind?: ShellNotificationKind
+}
+
+export type ShellApprovalOutcome = 'allowed-once' | 'rejected'
+
+export interface ShellApprovalRequest {
+  key: string
+  sessionId: string
+  toolName: string
+  reason?: string
+  callId?: string
+  risk: 'requires-confirmation'
 }
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
