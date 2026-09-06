@@ -2,9 +2,10 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
-test('agent config packages the DSH Web sidecar and allows long runs', async () => {
+test('agent config packages the DSH Web sidecar and reserves durability headroom for long runs', async () => {
   const config = JSON.parse(await readFile(new URL('../edgeone.json', import.meta.url), 'utf8'))
-  assert.equal(config.agents.timeout, 300)
+  assert.equal(config.agents.timeout, 1800)
+  assert.equal(config.agents.sandbox.timeout, 1800)
   assert.ok(config.agents.externalNodeModules.includes('@deepseek-ai/dsh'))
   assert.ok(config.agents.externalNodeModules.every((name: string) => !name.includes('linux-x64')))
   assert.equal(config.agents.includeFiles, undefined)
