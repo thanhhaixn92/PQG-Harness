@@ -7,6 +7,9 @@
     "./client": "./src/client.tsx",
     "./makers": "./src/makers.ts"
   },
+  "dependencies": {
+    "@pqg/application-shell": "file:../application-shell"
+  },
   "pqg": {
     "module": {
       "id": "reference",
