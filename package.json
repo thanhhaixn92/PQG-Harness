@@ -14,7 +14,7 @@
   "type": "module",
   "scripts": {
     "prepare:makers-runtime": "npm ci --ignore-scripts --os=linux --cpu=x64 --include=optional && node scripts/restore-host-frontend-natives.mjs",
-    "prepare:dsh-web": "node scripts/prepare-dsh-web.mjs && node scripts/prepare-pqg-application-shell.mjs && node scripts/apply-product-layer.mjs && node scripts/generate-dsh-api-routes.mjs",
+    "prepare:dsh-web": "node scripts/prepare-dsh-web.mjs && node scripts/apply-product-layer.mjs && node scripts/generate-dsh-api-routes.mjs",
     "dev": "vite",
     "build": "npm run prepare:dsh-web && npm run build:prepared",
     "build:prepared": "vite build && node scripts/write-build-meta.mjs",
@@ -61,6 +61,7 @@
     "@mantine/core": "8.3.18",
     "@mantine/hooks": "8.3.18",
     "@modelcontextprotocol/sdk": "1.29.0",
+    "@pqg/application-shell": "file:packages/application-shell",
     "@pqg/reference-module": "file:packages/reference-module",
     "ws": "8.21.3",
     "zod": "4.4.3"
