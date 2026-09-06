@@ -5,7 +5,7 @@ on:
     branches: [feature/76-application-shell]
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: issue-76-proof
@@ -17,159 +17,14 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: feature/76-application-shell
-      - name: Apply exact PQG root ownership patch
-        shell: bash
-        run: |
-          python <<'PY'
-          from pathlib import Path
-
-          path = Path('scripts/prepare-dsh-web.mjs')
-          source = path.read_text()
-
-          def replace_once(label, old, new):
-              global source
-              count = source.count(old)
-              if count != 1:
-                  raise SystemExit(f'{label}: expected exactly one patch point, found {count}')
-              source = source.replace(old, new, 1)
-
-          if 'function patchLayoutBundleForPqgRoot(source)' not in source:
-              replace_once(
-                  'application shell id',
-                  "const pqgReferenceModuleId = '@pqg/reference-module'\nconst pqgMantineSpikeId = '@pqg/mantine-spike'",
-                  "const pqgReferenceModuleId = '@pqg/reference-module'\nconst pqgApplicationShellId = '@pqg/application-shell'\nconst pqgMantineSpikeId = '@pqg/mantine-spike'",
-              )
-
-              patch_fn = (
-                  "function patchLayoutBundleForPqgRoot(source) {\n"
-                  "  const shippedRootEffect = [\n"
-                  "    '\\t\\t\\tconst layout = new LayoutController();',\n"
-                  "    '\\t\\t\\tctx.effect(() => {',\n"
-                  "    '\\t\\t\\t\\tconst disposeService = ctx.reflect.provide(\"layout\", layout);',\n"
-                  "    '\\t\\t\\t\\tconst disposeRegistration = ctx.slots.register({',\n"
-                  "    '\\t\\t\\t\\t\\tname: \"root\",',\n"
-                  "    '\\t\\t\\t\\t\\tchildren: {',\n"
-                  "    '\\t\\t\\t\\t\\t\\t\"sidebar\": {',\n"
-                  "    '\\t\\t\\t\\t\\t\\t\\tkind: \"single\",',\n"
-                  "    '\\t\\t\\t\\t\\t\\t\\tscope: \"root\"',\n"
-                  "    '\\t\\t\\t\\t\\t\\t},',\n"
-                  "    '\\t\\t\\t\\t\\t\\t\"conversation\": {',\n"
-                  "    '\\t\\t\\t\\t\\t\\t\\tkind: \"single\",',\n"
-                  "    '\\t\\t\\t\\t\\t\\t\\tscope: \"session-maybe\"',\n"
-                  "    '\\t\\t\\t\\t\\t\\t},',\n"
-                  "    '\\t\\t\\t\\t\\t\\t\"details\": {',\n"
-                  "    '\\t\\t\\t\\t\\t\\t\\tkind: \"single\",',\n"
-                  "    '\\t\\t\\t\\t\\t\\t\\tscope: \"session\"',\n"
-                  "    '\\t\\t\\t\\t\\t\\t},',\n"
-                  "    '\\t\\t\\t\\t\\t\\t\"shell.overlay\": {',\n"
-                  "    '\\t\\t\\t\\t\\t\\t\\tkind: \"list\",',\n"
-                  "    '\\t\\t\\t\\t\\t\\t\\tscope: \"root\"',\n"
-                  "    '\\t\\t\\t\\t\\t\\t}',\n"
-                  "    '\\t\\t\\t\\t\\t},',\n"
-                  "    '\\t\\t\\t\\t\\tstore: createLayoutStore,',\n"
-                  "    '\\t\\t\\t\\t\\tinject: (actions) => {',\n"
-                  "    '\\t\\t\\t\\t\\t\\tlayout.attachPanels(actions);',\n"
-                  "    '\\t\\t\\t\\t\\t\\treturn {};',\n"
-                  "    '\\t\\t\\t\\t\\t}',\n"
-                  "    '\\t\\t\\t\\t}, AppFrame);',\n"
-                  "    '\\t\\t\\t\\treturn () => {',\n"
-                  "    '\\t\\t\\t\\t\\tdisposeRegistration();',\n"
-                  "    '\\t\\t\\t\\t\\tdisposeService();',\n"
-                  "    '\\t\\t\\t\\t};',\n"
-                  "    '\\t\\t\\t}, \"ui-layout: service + root registration\");',\n"
-                  "    '',\n"
-                  "  ].join('\\n')\n"
-                  "  if (!source.includes(shippedRootEffect)) {\n"
-                  "    throw new Error('Published DSH ui-layout bundle no longer matches the PQG root ownership patch point.')\n"
-                  "  }\n"
-                  "  return source.replace(shippedRootEffect, '')\n"
-                  "}\n\n"
-              )
-              replace_once(
-                  'layout patch function insertion',
-                  'async function preparePqgModuleSettingsClient() {',
-                  patch_fn + 'async function preparePqgModuleSettingsClient() {',
-              )
-
-              ref_anchor = "  await writeFile(target, bundled)\n}\n\nasync function preparePqgMantineSpikeClient() {"
-              ref_replacement = (
-                  "  await writeFile(target, bundled)\n"
-                  "  const rev = hash(bundled)\n"
-                  "  return {\n"
-                  "    id: pqgReferenceModuleId,\n"
-                  "    url: `/plugins/${pqgReferenceModuleId}/client.js?rev=${rev}`,\n"
-                  "    rev,\n"
-                  "    inject: [\n"
-                  "      '@deepseek-ai/dsh-client-runtime',\n"
-                  "      '@deepseek-ai/dsh-client-ui-slots',\n"
-                  "    ],\n"
-                  "  }\n"
-                  "}\n\n"
-                  "async function preparePqgApplicationShellClient() {\n"
-                  "  const entry = join(root, 'packages', 'application-shell', 'src', 'client.tsx')\n"
-                  "  const source = await readFile(entry, 'utf8')\n"
-                  "  const transformed = await transformWithEsbuild(source, entry, {\n"
-                  "    loader: 'tsx',\n"
-                  "    target: 'es2022',\n"
-                  "    format: 'cjs',\n"
-                  "    sourcemap: false,\n"
-                  "    charset: 'utf8',\n"
-                  "  })\n"
-                  "  const bundled = [\n"
-                  "    `window.__ModuleLoader__.load({ id: ${JSON.stringify(pqgApplicationShellId)}, factory: (require) => { var module = { exports: {} }; var exports = module.exports;`,\n"
-                  "    transformed.code.trimEnd(),\n"
-                  "    'return module.exports; } });',\n"
-                  "    '',\n"
-                  "  ].join('\\n')\n"
-                  "  const target = join(publicDir, 'plugins', ...pqgApplicationShellId.split('/'), 'client.js')\n"
-                  "  await mkdir(dirname(target), { recursive: true })\n"
-                  "  await writeFile(target, bundled)\n"
-                  "  const rev = hash(bundled)\n"
-                  "  return {\n"
-                  "    id: pqgApplicationShellId,\n"
-                  "    url: `/plugins/${pqgApplicationShellId}/client.js?rev=${rev}`,\n"
-                  "    rev,\n"
-                  "    inject: [\n"
-                  "      '@deepseek-ai/dsh-client-runtime',\n"
-                  "      '@deepseek-ai/dsh-client-ui-slots',\n"
-                  "    ],\n"
-                  "  }\n"
-                  "}\n\n"
-                  "async function preparePqgMantineSpikeClient() {"
-              )
-              replace_once('reference/application shell bundle preparation', ref_anchor, ref_replacement)
-
-              replace_once(
-                  'ui-layout patch call',
-                  "    if (manifest.name === '@deepseek-ai/dsh-client-ui-workspace') source = patchWorkspaceBundle(source)\n    if (manifest.name === '@deepseek-ai/dsh-client-ui-settings') source = patchSettingsBundle(source)",
-                  "    if (manifest.name === '@deepseek-ai/dsh-client-ui-workspace') source = patchWorkspaceBundle(source)\n    if (manifest.name === '@deepseek-ai/dsh-client-ui-layout') source = patchLayoutBundleForPqgRoot(source)\n    if (manifest.name === '@deepseek-ai/dsh-client-ui-settings') source = patchSettingsBundle(source)",
-              )
-
-              replace_once(
-                  'boot graph entries',
-                  "await preparePqgReferenceModuleClient()\nconst mantineSpike = await preparePqgMantineSpikeClient()\nconst entries = [\n  ...(await clientPackages()),\n  await preparePqgModuleSettingsClient(),\n  mantineSpike.entry,\n]",
-                  "const referenceModule = await preparePqgReferenceModuleClient()\nconst applicationShell = await preparePqgApplicationShellClient()\nconst mantineSpike = await preparePqgMantineSpikeClient()\nconst entries = [\n  ...(await clientPackages()),\n  applicationShell,\n  referenceModule,\n  await preparePqgModuleSettingsClient(),\n  mantineSpike.entry,\n]",
-              )
-
-              path.write_text(source)
-          PY
-          git diff --check
-          git diff -- scripts/prepare-dsh-web.mjs
-          if ! git diff --quiet -- scripts/prepare-dsh-web.mjs; then
-            git config user.name github-actions[bot]
-            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-            git add scripts/prepare-dsh-web.mjs
-            git commit -m 'feat: establish PQG root ownership proof'
-            git push origin HEAD:feature/76-application-shell
-          fi
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: npm
       - name: Install exact dependencies
-        run: npm ci
+        run: |
+          npm ci
+          npm install --no-save --package-lock=false @deepseek-ai/dsh-client-ui-renderer@0.1.0-rc.6
       - name: Prepare DSH Web proof bundles
         run: npm run prepare:dsh-web
       - name: Lifecycle composition proof
