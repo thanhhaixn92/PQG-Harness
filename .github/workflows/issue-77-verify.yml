@@ -25,6 +25,11 @@ jobs:
       - run: npm run prepare:dsh-web
       - name: Grouped System Services + Shell contracts
         run: node --experimental-strip-types --test tests/system-services.test.ts tests/application-shell-contract.test.ts
+      - name: Inspect exact Cordis lifecycle types
+        run: |
+          node -e "console.log(require('./node_modules/@deepseek-ai/cordis/package.json').version)"
+          grep -R "effect" node_modules/@deepseek-ai/cordis/lib --include='*.d.ts' -n | head -30 || true
+          grep -R "provide" node_modules/@deepseek-ai/cordis/lib --include='*.d.ts' -n | head -30 || true
       - name: Typecheck
         run: npm run typecheck
       - name: Build browser assets
