@@ -617,7 +617,7 @@ export async function applyModuleEnabledToLiveSidecars(
     if (entry.state === 'ready') ready.push(apply)
     else void apply.catch(() => {})
   }
-  if (ready.length > 0) await Promise.allSettled(ready)
+  if (ready.length > 0) await Promise.all(ready)
 }
 
 export async function acquireDshWebSidecar(context: any): Promise<DshWebSidecarLease> {
