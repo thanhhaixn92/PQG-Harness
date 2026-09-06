@@ -33,7 +33,7 @@ interface SlotEntry {
 }
 
 interface SlotRegistryFace {
-  entries(key: string): SlotEntry[]
+  entries(key: string): readonly SlotEntry[]
   spec(key: string): { kind: string; scope: string } | undefined
 }
 
@@ -90,7 +90,7 @@ test('PQG shell declares product contribution seats and reference module follows
 
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
-  const slots = ctx.get('slots') as SlotRegistryFace
+  const slots = ctx.get('slots') as unknown as SlotRegistryFace
 
   const referenceFiber = ctx.plugin({ inject: [...reference.inject], apply: reference.apply })
   await referenceFiber.await()
