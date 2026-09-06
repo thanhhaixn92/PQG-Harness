@@ -62,8 +62,8 @@ test('bundle resolves React only from the DSH platform singleton and renders thr
   assert.equal(requested.has('react/jsx-runtime'), true)
   for (const id of requested) assert.equal(allowedReactExternals.has(id), true)
 
-  const React = require('react') as typeof import('react')
-  const { renderToString } = require('react-dom/server') as typeof import('react-dom/server')
+  const React = require('react') as { createElement: (...args: any[]) => unknown }
+  const { renderToString } = require('react-dom/server') as { renderToString: (node: unknown) => string }
   let component: (() => unknown) | undefined
   let contributionDisposer: (() => void) | undefined
   let disposed = 0
@@ -89,7 +89,7 @@ test('bundle resolves React only from the DSH platform singleton and renders thr
 
   plugin.apply(ctx)
   assert.ok(component, 'slot contribution must register a component')
-  const first = renderToString(React.createElement(component as React.ComponentType))
+  const first = renderToString(React.createElement(component as () => unknown))
   assert.match(first, /id="pqg-mantine-spike"/)
   assert.match(first, /mantine-Button-root/)
   assert.match(first, /Mantine compatibility/)
@@ -101,7 +101,7 @@ test('bundle resolves React only from the DSH platform singleton and renders thr
 
   plugin.apply(ctx)
   assert.ok(component, 'slot contribution must remount after disposal')
-  const second = renderToString(React.createElement(component as React.ComponentType))
+  const second = renderToString(React.createElement(component as () => unknown))
   assert.match(second, /mantine-Button-root/)
 })
 
