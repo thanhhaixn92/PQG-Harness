@@ -105,6 +105,7 @@ test('PQG shell keeps search non-visual and gates module contributions by enable
 
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
+  ctx.provide('sessions', {} as never)
   const slots = ctx.get('slots') as unknown as SlotRegistryFace
 
   const disabledReference = ctx.plugin({ inject: [...reference.inject], apply: reference.apply })
