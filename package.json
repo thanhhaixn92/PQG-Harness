@@ -61,7 +61,9 @@
     "@mantine/core": "8.3.18",
     "@mantine/hooks": "8.3.18",
     "@modelcontextprotocol/sdk": "1.29.0",
+    "@pqg/application-shell": "file:packages/application-shell",
     "@pqg/reference-module": "file:packages/reference-module",
+    "@tabler/icons-react": "3.46.0",
     "ws": "8.21.3",
     "zod": "4.4.3"
   },
