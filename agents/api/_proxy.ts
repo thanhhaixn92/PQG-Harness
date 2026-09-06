@@ -226,15 +226,30 @@ async function snapshotSettingsAfterWrite(
   headers: Headers,
 ): Promise<Response | undefined> {
   if (!SETTINGS_WRITE_PATHS.has(path)) return undefined
-  const bytes = new Uint8Array(await upstream.arrayBuffer())
-  headers.set('content-length', String(bytes.byteLength))
+  let bytes = new Uint8Array(await upstream.arrayBuffer())
   if (upstream.ok && settingsWriteSucceeded(bytes)) {
+    let persisted = false
     try {
-      await snapshotDshSettingsYaml(context, sidecar.conversationId, sidecar.home)
+      persisted = await snapshotDshSettingsYaml(context, sidecar.conversationId, sidecar.home)
     } catch (error) {
       console.warn('[dsh-web] settings snapshot failed:', error instanceof Error ? error.name : 'unknown')
     }
+    if (!persisted) {
+      const envelope = JSON.parse(new TextDecoder().decode(bytes)) as Record<string, unknown>
+      bytes = new TextEncoder().encode(JSON.stringify({
+        ...envelope,
+        result: {
+          ok: false,
+          error: {
+            code: 'settings-persistence-unavailable',
+            message: 'Settings were applied locally but could not be persisted.',
+            details: {},
+          },
+        },
+      }))
+    }
   }
+  headers.set('content-length', String(bytes.byteLength))
   return new Response(bytes, { status: upstream.status, headers })
 }
 

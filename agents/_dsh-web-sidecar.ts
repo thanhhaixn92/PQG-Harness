@@ -134,18 +134,22 @@ export async function restoreDshSettingsYaml(
   conversationId: string,
   home: string,
 ): Promise<boolean> {
-  if (!context?.store) return false
+  if (!context?.store) throw new Error('DSH settings persistence store is unavailable.')
+  let conversation: any
   try {
-    const conversation = await getConversation(context, conversationId)
-    const yaml = conversation?.metadata?.[DSH_SETTINGS_METADATA_KEY]
-    if (typeof yaml !== 'string' || !yaml.trim()) return false
-    if (new TextEncoder().encode(yaml).byteLength > DSH_SETTINGS_MAX_BYTES) return false
-    await mkdir(home, { recursive: true })
-    await writeFile(join(home, DSH_SETTINGS_FILE), yaml)
-    return true
-  } catch {
-    return false
+    conversation = await getConversation(context, conversationId)
+  } catch (error) {
+    if (isMissingConversation(error)) return false
+    throw error
   }
+  const yaml = conversation?.metadata?.[DSH_SETTINGS_METADATA_KEY]
+  if (typeof yaml !== 'string' || !yaml.trim()) return false
+  if (new TextEncoder().encode(yaml).byteLength > DSH_SETTINGS_MAX_BYTES) {
+    throw new Error('Stored DSH settings exceed the supported size limit.')
+  }
+  await mkdir(home, { recursive: true })
+  await writeFile(join(home, DSH_SETTINGS_FILE), yaml)
+  return true
 }
 
 export async function snapshotDshSettingsYaml(
@@ -153,21 +157,23 @@ export async function snapshotDshSettingsYaml(
   conversationId: string,
   home: string,
 ): Promise<boolean> {
-  if (!context?.store) return false
+  if (!context?.store) throw new Error('DSH settings persistence store is unavailable.')
+  let yaml: string
   try {
-    const yaml = await readFile(join(home, DSH_SETTINGS_FILE), 'utf8')
-    if (!yaml.trim()) return false
-    if (new TextEncoder().encode(yaml).byteLength > DSH_SETTINGS_MAX_BYTES) return false
-    await updateConversationMetadata(context, conversationId, { [DSH_SETTINGS_METADATA_KEY]: yaml })
-    return true
+    yaml = await readFile(join(home, DSH_SETTINGS_FILE), 'utf8')
   } catch (error) {
     const code = error && typeof error === 'object' && 'code' in error
       ? String((error as { code?: unknown }).code || '')
       : ''
     if (code === 'ENOENT') return false
-    console.warn('[dsh-web] settings snapshot failed:', error)
-    return false
+    throw error
   }
+  if (!yaml.trim()) return false
+  if (new TextEncoder().encode(yaml).byteLength > DSH_SETTINGS_MAX_BYTES) {
+    throw new Error('DSH settings exceed the supported size limit.')
+  }
+  await updateConversationMetadata(context, conversationId, { [DSH_SETTINGS_METADATA_KEY]: yaml })
+  return true
 }
 
 async function freePort(): Promise<number> {
@@ -492,7 +498,11 @@ async function startSidecarAttempt(context: any, conversationId: string): Promis
     let closePromise: Promise<void> | undefined
 
     const closeSidecarResources = async (): Promise<void> => {
-      await snapshotDshSettingsYaml(sidecar.context, conversationId, home)
+      try {
+        await snapshotDshSettingsYaml(sidecar.context, conversationId, home)
+      } catch (error) {
+        console.warn('[dsh-web] settings snapshot failed:', error instanceof Error ? error.name : 'unknown')
+      }
       await terminateChild(runningChild)
       await Promise.allSettled([runningGateway.close(), runningMcp.close()])
     }

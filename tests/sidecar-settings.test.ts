@@ -62,6 +62,23 @@ test('restoreDshSettingsYaml skips a missing conversation', async () => {
   }
 })
 
+test('restoreDshSettingsYaml surfaces Store outages instead of treating them as missing settings', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'dsh-settings-'))
+  const store = {
+    async getConversation() {
+      throw new Error('store unavailable')
+    },
+  }
+  try {
+    await assert.rejects(
+      restoreDshSettingsYaml({ store }, 'conv-1', home),
+      /store unavailable/,
+    )
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
 test('snapshotDshSettingsYaml persists settings.yaml onto a new conversation', async () => {
   const home = await mkdtemp(join(tmpdir(), 'dsh-settings-'))
   const store = createStore()
@@ -86,4 +103,36 @@ test('snapshotDshSettingsYaml is a no-op when the file is absent', async () => {
   } finally {
     await rm(home, { recursive: true, force: true })
   }
+})
+
+test('snapshotDshSettingsYaml surfaces Store write failures', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'dsh-settings-'))
+  const store = {
+    async getConversation() {
+      return { metadata: {} }
+    },
+    async updateConversation() {
+      throw new Error('store unavailable')
+    },
+  }
+  try {
+    await writeFile(join(home, 'settings.yaml'), 'ui-theme:\n  preference: dark\n')
+    await assert.rejects(
+      snapshotDshSettingsYaml({ store }, 'conv-1', home),
+      /store unavailable/,
+    )
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('sidecar cleanup isolates settings snapshot failure before terminating runtime resources', async () => {
+  const source = await readFile(new URL('../agents/_dsh-web-sidecar.ts', import.meta.url), 'utf8')
+  const start = source.indexOf('const closeSidecarResources = async (): Promise<void> => {')
+  const end = source.indexOf('\n    sidecar = {', start)
+  assert.ok(start >= 0 && end > start)
+  const cleanup = source.slice(start, end)
+  assert.match(cleanup, /try\s*\{\s*await snapshotDshSettingsYaml/)
+  assert.match(cleanup, /await terminateChild\(runningChild\)/)
+  assert.match(cleanup, /Promise\.allSettled\(\[runningGateway\.close\(\), runningMcp\.close\(\)\]\)/)
 })

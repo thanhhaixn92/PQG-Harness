@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
 import { once } from 'node:events'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import test from 'node:test'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
@@ -247,6 +250,83 @@ test('unary streaming response holds its lease until the body finishes', async (
     await stopDshWebSidecar('conv-sweep-trigger')
     __setSidecarStarterForTests(undefined)
     await closeHttpServer(sidecarServer)
+  }
+})
+
+test('successful DSH settings write reports persistence failure instead of false success', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'dsh-settings-proxy-'))
+  await writeFile(join(home, 'settings.yaml'), 'ui-theme:\n  preference: dark\n')
+  const sidecarServer = createServer(async (request, response) => {
+    for await (const _chunk of request) { /* drain */ }
+    response.writeHead(200, { 'content-type': 'application/json' })
+    response.end(JSON.stringify({
+      type: 'server-response',
+      rpcId: 'rpc-settings',
+      result: { ok: true, value: { ns: 'ui-theme' } },
+    }))
+  })
+  await new Promise<void>((resolve, reject) => {
+    sidecarServer.once('error', reject)
+    sidecarServer.listen(0, '127.0.0.1', resolve)
+  })
+  const address = sidecarServer.address() as AddressInfo
+
+  __setSidecarStarterForTests(async (_context: any, conversationId: string) => ({
+    conversationId,
+    home,
+    port: address.port,
+    child: {} as any,
+    gateway: { baseUrl: '', close: async () => {} },
+    mcp: {
+      url: '',
+      requestCount: () => 0,
+      requestLog: () => [],
+      close: async () => {},
+      registerModuleTool: () => {},
+      setModuleEnabled: () => {},
+      removeModule: () => {},
+    },
+    lastUsedAt: Date.now(),
+    context: {},
+    close: async () => {},
+  }))
+
+  try {
+    const response = await onRequest({
+      conversation_id: 'conv-settings-persist-fail',
+      request: {
+        url: '/api/settings.update',
+        method: 'POST',
+        headers: {},
+        body: {
+          type: 'client-request',
+          rpcId: 'rpc-settings',
+          method: 'settings.update',
+          payload: { ns: 'ui-theme', patch: { preference: 'dark' } },
+        },
+      },
+      store: {
+        async getConversation() {
+          return { metadata: {} }
+        },
+        async updateConversation() {
+          throw new Error('store unavailable')
+        },
+      },
+    })
+
+    assert.equal(response.status, 200)
+    const body = await response.json() as any
+    assert.equal(body.type, 'server-response')
+    assert.equal(body.rpcId, 'rpc-settings')
+    assert.equal(body.result?.ok, false)
+    assert.equal(body.result?.error?.code, 'settings-persistence-unavailable')
+    assert.doesNotMatch(JSON.stringify(body), /store unavailable|stack/i)
+  } finally {
+    await stopDshWebSidecar('conv-settings-persist-fail')
+    __setSidecarStarterForTests(undefined)
+    await closeHttpServer(sidecarServer)
+    await rm(home, { recursive: true, force: true })
   }
 })
 
