@@ -1,13 +1,30 @@
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type {} from '../../application-shell/src/contracts.ts'
+import type {} from '@pqg/application-shell/contracts'
 
 type ReactApi = {
   createElement: (...args: any[]) => any
 }
 
+type ModuleState = {
+  id: string
+  enabled: boolean
+}
+
 const React = require('react') as ReactApi
 const inject = ['slots']
+
+async function referenceModuleEnabled(): Promise<boolean> {
+  try {
+    const response = await fetch('/api/pqg.modules', { headers: { accept: 'application/json' } })
+    if (!response.ok) return false
+    const body = await response.json() as { modules?: ModuleState[] }
+    return Array.isArray(body.modules)
+      && body.modules.some(module => module.id === 'reference' && module.enabled === true)
+  } catch {
+    return false
+  }
+}
 
 function ReferenceNavigation({ activeId, navigate }: PropsRuntime<'pqg.shell.navigation'>) {
   return React.createElement(
@@ -46,10 +63,6 @@ function ReferenceHomeWidget(_props: PropsRuntime<'pqg.shell.home.widget'>) {
   return React.createElement('div', { 'data-pqg-reference-home-widget': true }, 'Mô-đun mẫu đã sẵn sàng.')
 }
 
-function ReferenceSearchProvider(_props: PropsRuntime<'pqg.shell.search.provider'>) {
-  return null
-}
-
 function ReferenceSupportContext({ activeId }: PropsRuntime<'pqg.shell.support.context'>) {
   if (activeId !== 'reference') return null
   return React.createElement('p', { 'data-pqg-reference-support-context': true, style: { margin: 0, fontSize: 13 } }, 'Bạn đang ở Mô-đun mẫu.')
@@ -60,7 +73,9 @@ function ReferenceSupportSuggestion({ activeId }: PropsRuntime<'pqg.shell.suppor
   return React.createElement('p', { 'data-pqg-reference-support-suggestion': true, style: { margin: 0, fontSize: 13 } }, 'Gợi ý theo ngữ cảnh sẽ xuất hiện tại đây.')
 }
 
-function apply(ctx: ClientContext): void {
+async function apply(ctx: ClientContext): Promise<void> {
+  if (!(await referenceModuleEnabled())) return
+
   ctx.slots.inject('pqg.shell.navigation', () => ctx.slots.register({
     name: 'pqg.shell.navigation',
     id: 'reference',
@@ -79,13 +94,6 @@ function apply(ctx: ClientContext): void {
     order: 0,
     label: 'Mô-đun mẫu',
   }, ReferenceHomeWidget))
-
-  ctx.slots.inject('pqg.shell.search.provider', () => ctx.slots.register({
-    name: 'pqg.shell.search.provider',
-    id: 'reference',
-    order: 0,
-    label: 'Mô-đun mẫu',
-  }, ReferenceSearchProvider))
 
   ctx.slots.inject('pqg.shell.support.context', () => ctx.slots.register({
     name: 'pqg.shell.support.context',
