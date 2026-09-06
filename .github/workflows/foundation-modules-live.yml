@@ -1,0 +1,42 @@
+name: foundation-modules-live
+
+on:
+  push:
+    branches: [fix/48-foundation-recovery]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    if: "${{ github.event.head_commit.message == 'ci: probe Production module boundary' }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe Production build and module API
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://pqg-harness.edgeone.cool'
+          conversation="issue48-$(python3 -c 'import uuid; print(uuid.uuid4())')"
+          echo '=== build-meta ==='
+          curl -fsS --max-time 20 "$base/build-meta.json"
+          echo
+          echo '=== pqg.modules ==='
+          status=$(curl -sS --max-time 30 \
+            -H "makers-conversation-id: $conversation" \
+            -H 'cache-control: no-cache' \
+            -o /tmp/modules.json \
+            -w '%{http_code}' \
+            "$base/api/pqg.modules")
+          echo "status=$status"
+          cat /tmp/modules.json
+          echo
+          test "$status" = '200'
+          python3 - <<'PY'
+          import json
+          body = json.load(open('/tmp/modules.json'))
+          if not isinstance(body, dict) or not isinstance(body.get('modules'), list):
+              raise SystemExit('invalid module catalog response')
+          print('module_count=' + str(len(body['modules'])))
+          PY
