@@ -1089,32 +1089,57 @@ async function preparePqgReferenceModuleClient() {
 
 async function preparePqgApplicationShellClient() {
   const entry = join(root, 'packages', 'application-shell', 'src', 'client.tsx')
-  const source = await readFile(entry, 'utf8')
-  const transformed = await transformWithEsbuild(source, entry, {
-    loader: 'tsx',
-    target: 'es2022',
-    format: 'cjs',
-    sourcemap: false,
-    charset: 'utf8',
+  const result = await build({
+    configFile: false,
+    root,
+    logLevel: 'silent',
+    define: {
+      'process.env.NODE_ENV': JSON.stringify('production'),
+    },
+    build: {
+      write: false,
+      target: 'es2022',
+      minify: 'esbuild',
+      cssCodeSplit: false,
+      lib: {
+        entry,
+        formats: ['cjs'],
+        fileName: 'client',
+      },
+      rollupOptions: {
+        external: id => reactPlatformExternals.has(id),
+        output: { inlineDynamicImports: true },
+      },
+    },
   })
+  const runs = Array.isArray(result) ? result : [result]
+  const outputs = runs.flatMap(run => Array.isArray(run?.output) ? run.output : [])
+  const chunk = outputs.find(output => output.type === 'chunk' && output.isEntry)
+  const css = outputs.find(output => output.type === 'asset' && output.fileName.endsWith('.css'))
+  if (!chunk) throw new Error('PQG Application Shell bundle produced no entry chunk.')
+  if (!css || typeof css.source !== 'string') throw new Error('PQG Application Shell bundle produced no CSS asset.')
+
   const bundled = [
-    `window.__ModuleLoader__.load({ id: ${JSON.stringify(pqgApplicationShellId)}, factory: (require) => { var module = { exports: {} }; var exports = module.exports;`,
-    transformed.code.trimEnd(),
+    'window.__ModuleLoader__.load({ id: ' + JSON.stringify(pqgApplicationShellId) + ', factory: (require) => { var module = { exports: {} }; var exports = module.exports;',
+    chunk.code.trimEnd(),
     'return module.exports; } });',
     '',
   ].join('\n')
-  const target = join(publicDir, 'plugins', ...pqgApplicationShellId.split('/'), 'client.js')
-  await mkdir(dirname(target), { recursive: true })
-  await writeFile(target, bundled)
-  const rev = hash(bundled)
+  const targetDir = join(publicDir, 'plugins', ...pqgApplicationShellId.split('/'))
+  await mkdir(targetDir, { recursive: true })
+  await writeFile(join(targetDir, 'client.js'), bundled)
+  await writeFile(join(targetDir, 'styles.css'), css.source)
   return {
-    id: pqgApplicationShellId,
-    url: `/plugins/${pqgApplicationShellId}/client.js?rev=${rev}`,
-    rev,
-    inject: [
-      '@deepseek-ai/dsh-client-runtime',
-      '@deepseek-ai/dsh-client-ui-slots',
-    ],
+    entry: {
+      id: pqgApplicationShellId,
+      url: `/plugins/${pqgApplicationShellId}/client.js?rev=${hash(bundled)}`,
+      rev: hash(bundled),
+      inject: [
+        '@deepseek-ai/dsh-client-runtime',
+        '@deepseek-ai/dsh-client-ui-slots',
+      ],
+    },
+    cssUrl: `/plugins/${pqgApplicationShellId}/styles.css?rev=${hash(css.source)}`,
   }
 }
 
@@ -1523,7 +1548,7 @@ const applicationShell = await preparePqgApplicationShellClient()
 const mantineSpike = await preparePqgMantineSpikeClient()
 const entries = [
   ...(await clientPackages()),
-  applicationShell,
+  applicationShell.entry,
   referenceModule,
   await preparePqgModuleSettingsClient(),
   mantineSpike.entry,
@@ -1538,7 +1563,7 @@ if (!shellHtml.includes(headWithCharset)) {
 // Keep charset first so the HTML5 encoding sniff (first 1024 bytes) sees UTF-8
 // before the overlay script's Chinese copy. Injecting before charset made first
 // paint mojibake until a reload remembered UTF-8.
-const html = shellHtml.replace(headWithCharset, `${headWithCharset}\n    <link rel="stylesheet" data-pqg-mantine-spike href="${mantineSpike.cssUrl}" />${makersBootstrap(graph)}`)
+const html = shellHtml.replace(headWithCharset, `${headWithCharset}\n    <link rel="stylesheet" data-pqg-mantine-spike href="${mantineSpike.cssUrl}" />\n    <link rel="stylesheet" data-pqg-application-shell href="${applicationShell.cssUrl}" />${makersBootstrap(graph)}`)
 await writeFile(join(root, 'index.html'), html)
 await writeFile(join(publicDir, 'index.html'), html)
 console.log(`Prepared DSH Web with ${String(entries.length)} client plugins.`)
