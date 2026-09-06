@@ -20,7 +20,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm install --package-lock-only --ignore-scripts
+      - run: npm install --package-lock-only --ignore-scripts --save-exact @mantine/notifications@8.3.18 @mantine/spotlight@8.3.18
       - name: Assert lock-only mutation
         run: |
           unexpected="$(git diff --name-only | grep -v '^package-lock.json$' || true)"
