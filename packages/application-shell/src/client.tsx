@@ -11,6 +11,7 @@ import {
   Text,
   Title,
 } from '@mantine/core'
+import { IconCheck, IconHome } from '@tabler/icons-react'
 // @ts-expect-error Vite bundles Mantine's exported CSS file; it has no TypeScript declaration.
 import '@mantine/core/styles.layer.css'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
@@ -207,10 +208,10 @@ function PqgApplicationShell({ renderSlot, renderSlotChain }: RootProps) {
             React.createElement(
               Stack,
               { gap: 4 },
-              React.createElement(NavLink, { label: pqgCopy.home, active: activeId === 'home', onClick: () => navigate('home') }),
+              React.createElement(NavLink, { label: pqgCopy.home, leftSection: React.createElement(IconHome, { size: 18, stroke: 1.8, 'aria-hidden': true }), active: activeId === 'home', onClick: () => navigate('home') }),
               React.createElement(Text, { c: 'dimmed', fw: 700, px: 'sm', pt: 'sm', size: 'xs', tt: 'uppercase' }, pqgCopy.modules),
               renderSlot('pqg.shell.navigation', { activeId, navigate }, { fallback: null }),
-              React.createElement(NavLink, { label: pqgCopy.approval, active: activeId === 'approval', onClick: () => navigate('approval') }),
+              React.createElement(NavLink, { label: pqgCopy.approval, leftSection: React.createElement(IconCheck, { size: 18, stroke: 1.8, 'aria-hidden': true }), active: activeId === 'approval', onClick: () => navigate('approval') }),
               React.createElement(Text, { c: 'dimmed', fw: 700, px: 'sm', pt: 'md', size: 'xs', tt: 'uppercase' }, pqgCopy.personal),
               React.createElement(NavLink, { label: pqgCopy.quickNote, active: activeId === 'quick-note', onClick: () => navigate('quick-note') }),
               React.createElement(NavLink, { label: pqgCopy.recent, active: activeId === 'recent', onClick: () => navigate('recent') }),
