@@ -9,12 +9,14 @@ export interface ShellWorkspaceOwner {
   activeId: string
 }
 
-export interface ShellSearchOwner {
-  query: string
-}
-
 export interface ShellSupportOwner {
   activeId: string
+}
+
+export interface ShellSearchProvider<TResult = unknown> {
+  id: string
+  label: string
+  search(query: string): Promise<readonly TResult[]>
 }
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -32,11 +34,6 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'pqg.shell.home.widget': {
       kind: 'list'
       scope: 'root'
-    }
-    'pqg.shell.search.provider': {
-      kind: 'list'
-      scope: 'root'
-      owner: ShellSearchOwner
     }
     'pqg.shell.support.context': {
       kind: 'list'
