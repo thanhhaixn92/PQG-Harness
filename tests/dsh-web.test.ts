@@ -10,6 +10,7 @@ test('build preparation installs the official DSH Web plugin graph', async () =>
   assert.match(html, /@deepseek-ai\/dsh-client-ui-trajectory/)
   assert.match(html, /@deepseek-ai\/dsh-client-ui-workspace/)
   assert.doesNotMatch(html, /@deepseek-ai\/dsh-client-ui-cordis/)
+  assert.doesNotMatch(html, /@deepseek-ai\/dsh-client-ui-directory-picker-(?:native|browse)/)
 })
 
 test('Makers connection bundle uses SSE and injects conversation routing', async () => {
