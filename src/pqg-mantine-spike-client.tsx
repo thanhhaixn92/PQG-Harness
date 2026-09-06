@@ -1,4 +1,5 @@
 import { Button, MantineProvider } from '@mantine/core'
+// @ts-expect-error Vite bundles Mantine's exported CSS file; it has no TypeScript declaration.
 import '@mantine/core/styles.layer.css'
 
 export {}
