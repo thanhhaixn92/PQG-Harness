@@ -1,0 +1,37 @@
+name: issue-76-finalizer-unblock
+
+on:
+  push:
+    branches: [feature/76-application-shell]
+    paths:
+      - .github/workflows/issue-76-finalizer-unblock.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/76-application-shell
+          fetch-depth: 1
+      - name: Preserve backslashes in regex replacement
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('.github/workflows/issue-76-finalize.yml')
+          source = path.read_text()
+          old = 'source, count = pattern.subn(replacement, source, count=1)'
+          new = 'source, count = pattern.subn(lambda _: replacement, source, count=1)'
+          if source.count(old) != 1:
+              raise SystemExit('finalizer replacement expression drifted')
+          path.write_text(source.replace(old, new, 1))
+          PY
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .github/workflows/issue-76-finalize.yml
+          git commit -m 'chore: preserve finalizer replacement backslashes'
+          git push origin HEAD:feature/76-application-shell
