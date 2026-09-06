@@ -23,6 +23,26 @@ jobs:
           cache: npm
       - name: Install exact dependencies
         run: npm ci
+      - name: Inspect exact rc6 layout consumers
+        shell: bash
+        run: |
+          node <<'NODE'
+          const { readFileSync } = require('node:fs')
+          for (const name of [
+            'dsh-client-app-shell',
+            'dsh-client-ui-sidebar',
+            'dsh-client-ui-conversation',
+          ]) {
+            const path = `node_modules/@deepseek-ai/${name}/lib/client.js`
+            const source = readFileSync(path, 'utf8')
+            console.log(`--- ${name} ---`)
+            for (const pattern of [/const inject =[^;]+;/g, /ctx\.layout[^;\n]*/g, /layout\.[A-Za-z]+\([^)]*\)/g]) {
+              for (const match of source.matchAll(pattern)) console.log(match[0])
+            }
+            const apply = source.indexOf('function apply(ctx)')
+            if (apply >= 0) console.log(source.slice(apply, apply + 1800))
+          }
+          NODE
       - name: Prepare DSH Web proof bundles
         run: npm run prepare:dsh-web
       - name: Lifecycle composition proof
@@ -111,7 +131,7 @@ jobs:
             await delay(100)
           }
 
-          const fatal = observedErrors.filter(text => /root.*no registration|no registration.*root|slot.*collision|collision.*slot|layout: panel actions not wired|activation.*(?:fail|error)|activate.*(?:fail|error)/i.test(text))
+          const fatal = observedErrors.filter(text => /root.*no registration|no registration.*root|slot.*collision|collision.*slot|layout: panel actions not wired|activation.*(?:fail|error)|activate.*(?:fail|error)|web boot: .*did not activate/i.test(text))
           console.log(JSON.stringify({ proofRendered, fatal, observedErrors }, null, 2))
           ws.close()
           if (!proofRendered) throw new Error('PQG proof contribution did not render in the browser')
