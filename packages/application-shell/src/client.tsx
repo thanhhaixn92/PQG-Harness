@@ -25,7 +25,6 @@ type ShellSeat =
   | 'pqg.shell.navigation'
   | 'pqg.shell.workspace'
   | 'pqg.shell.home.widget'
-  | 'pqg.shell.search.provider'
   | 'pqg.shell.support.context'
   | 'pqg.shell.support.suggestion'
 
@@ -222,9 +221,6 @@ function PqgApplicationShell({ renderSlot, renderSlotChain }: RootProps) {
         React.createElement(
           AppShell.Main,
           null,
-          React.createElement('div', { hidden: true, 'data-pqg-search-provider-seat': true },
-            renderSlot('pqg.shell.search.provider', { query: '' }, { fallback: null }),
-          ),
           renderSlotChain('pqg.shell.workspace', { activeId }, { fallback: mainFallback }),
         ),
         React.createElement(AppShell.Aside, null, !narrow && supportState !== 'collapsed' ? supportContent : null),
@@ -253,7 +249,6 @@ function apply(ctx: ClientContext): void {
       'pqg.shell.navigation': { kind: 'list', scope: 'root' },
       'pqg.shell.workspace': { kind: 'chain', scope: 'root' },
       'pqg.shell.home.widget': { kind: 'list', scope: 'root' },
-      'pqg.shell.search.provider': { kind: 'list', scope: 'root' },
       'pqg.shell.support.context': { kind: 'list', scope: 'root' },
       'pqg.shell.support.suggestion': { kind: 'list', scope: 'root' },
     },
