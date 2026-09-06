@@ -7,13 +7,13 @@ import type { ModuleMcpBridge } from './_mcp-bridge.ts'
 type MakersAdapter = {
   apply(input: {
     moduleId: string
-    bridge: Pick<ModuleMcpBridge, 'registerModuleTool'>
+    bridge: Pick<ModuleMcpBridge, 'registerModuleTool' | 'removeModule'>
   }): void | Promise<void>
 }
 
 export async function applyInstalledMakersModules(
   _context: any,
-  bridge: Pick<ModuleMcpBridge, 'registerModuleTool'>,
+  bridge: Pick<ModuleMcpBridge, 'registerModuleTool' | 'removeModule'>,
   rootDir = process.cwd(),
 ): Promise<void> {
   const modules = await discoverPqgModules(rootDir)
@@ -26,6 +26,8 @@ export async function applyInstalledMakersModules(
       const adapter = await import(pathToFileURL(entry).href) as MakersAdapter
       if (typeof adapter.apply !== 'function') continue
       await adapter.apply({ moduleId: module.id, bridge })
-    } catch {}
+    } catch {
+      bridge.removeModule(module.id)
+    }
   }
 }

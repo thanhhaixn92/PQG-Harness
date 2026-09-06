@@ -43,5 +43,5 @@ jobs:
       - name: Test prepared tree
         run: npm run test:prepared
 
-      - name: Build prepared frontend
-        run: npm run build:prepared
+      - name: Build exact Makers production path
+        run: npm run build:makers
