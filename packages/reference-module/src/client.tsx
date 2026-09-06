@@ -12,7 +12,7 @@ type ModuleState = {
 }
 
 const React = require('react') as ReactApi
-const inject = ['slots']
+const inject = ['slots', 'pqgShell']
 
 async function referenceModuleEnabled(): Promise<boolean> {
   try {
@@ -75,6 +75,37 @@ function ReferenceSupportSuggestion({ activeId }: PropsRuntime<'pqg.shell.suppor
 
 async function apply(ctx: ClientContext): Promise<void> {
   if (!(await referenceModuleEnabled())) return
+
+  ctx.effect(() => ctx.pqgShell.registerSearchProvider({
+    id: 'reference',
+    label: 'Mô-đun mẫu',
+    async search(query) {
+      const normalized = query.toLocaleLowerCase('vi')
+      if (!'mô-đun mẫu reference module'.includes(normalized)) return []
+      return [{
+        id: 'open-reference',
+        label: 'Mô-đun mẫu',
+        description: 'Mở không gian của mô-đun mẫu',
+        keywords: ['reference', 'module'],
+        targetId: 'reference',
+      }]
+    },
+  }))
+
+  ctx.effect(() => ctx.pqgShell.registerSupportProvider({
+    id: 'reference',
+    supportFor(activeId) {
+      if (activeId !== 'reference') return undefined
+      return {
+        title: 'Mô-đun mẫu',
+        summary: 'Bạn đang làm việc trong Mô-đun mẫu.',
+        suggestions: [
+          { id: 'explain', label: 'Giải thích khu vực này' },
+          { id: 'next-step', label: 'Gợi ý bước tiếp theo' },
+        ],
+      }
+    },
+  }))
 
   ctx.slots.inject('pqg.shell.navigation', () => ctx.slots.register({
     name: 'pqg.shell.navigation',
