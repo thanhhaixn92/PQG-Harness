@@ -25,15 +25,12 @@ jobs:
       - run: npm run prepare:dsh-web
       - name: Grouped System Services + Shell contracts
         run: node --experimental-strip-types --test tests/system-services.test.ts tests/application-shell-contract.test.ts
-      - name: Inspect exact Cordis lifecycle types
-        run: |
-          node -e "console.log(require('./node_modules/@deepseek-ai/cordis/package.json').version)"
-          grep -R "effect" node_modules/@deepseek-ai/cordis/lib --include='*.d.ts' -n | head -30 || true
-          grep -R "provide" node_modules/@deepseek-ai/cordis/lib --include='*.d.ts' -n | head -30 || true
       - name: Typecheck
         run: npm run typecheck
       - name: Build browser assets
         run: npm run build
+      - name: Exact Makers build
+        run: npm run build:makers
       - name: Chromium system-services smoke
         shell: bash
         run: |
@@ -130,7 +127,9 @@ jobs:
 
           const evaluate = async expression => {
             const result = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true })
-            if (result?.exceptionDetails) throw new Error(result.exceptionDetails.text ?? 'Runtime.evaluate failed')
+            if (result?.exceptionDetails) {
+              throw new Error(result.exceptionDetails.exception?.description ?? result.exceptionDetails.text ?? 'Runtime.evaluate failed')
+            }
             return result?.result?.value
           }
           const waitFor = async (expression, label) => {
@@ -153,7 +152,7 @@ jobs:
           await evaluate('document.querySelector("[data-pqg-search-toggle]").click(); true')
           await waitFor('document.querySelector("[data-pqg-search-input]") !== null && document.querySelector("[data-pqg-search-input]").offsetParent !== null', 'Spotlight search')
           await evaluate(`(() => { const input = document.querySelector('[data-pqg-search-input]'); input.focus(); const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; setter.call(input, 'reference'); input.dispatchEvent(new Event('input', { bubbles: true })); return true })()`)
-          await waitFor('document.querySelector("[data-pqg-search-result=\"reference:open-reference\"]") !== null', 'aggregated search result')
+          await waitFor(`document.querySelector('[data-pqg-search-result="reference:open-reference"]') !== null`, 'aggregated search result')
 
           await evaluate(`(() => { const input = document.querySelector('[data-pqg-search-input]'); input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); return true })()`)
           await evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true, cancelable: true })); true`)
@@ -174,5 +173,3 @@ jobs:
           if (exceptions.length > 0) throw new Error(`Browser exceptions detected: ${exceptions.join(' | ')}`)
           if (fatalLogs.length > 0) throw new Error(`Browser fatal logs detected: ${fatalLogs.join(' | ')}`)
           NODE
-      - name: Exact Makers build
-        run: npm run build:makers
