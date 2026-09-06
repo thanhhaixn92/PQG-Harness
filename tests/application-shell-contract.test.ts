@@ -4,7 +4,7 @@ import test from 'node:test'
 import vm from 'node:vm'
 
 import { Context } from '@deepseek-ai/cordis'
-import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
+import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 
 const shellBundleUrl = new URL('../public/plugins/@pqg/application-shell/client.js', import.meta.url)
 const referenceBundleUrl = new URL('../public/plugins/@pqg/reference-module/client.js', import.meta.url)
