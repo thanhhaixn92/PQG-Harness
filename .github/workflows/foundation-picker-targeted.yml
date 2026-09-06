@@ -1,0 +1,50 @@
+name: foundation-picker-targeted
+
+on:
+  push:
+    branches: [fix/48-foundation-recovery]
+
+permissions:
+  contents: write
+
+jobs:
+  targeted:
+    if: github.event.head_commit.message == 'ci: run temporary picker target'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Remove native host picker from Makers composition
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/prepare-dsh-web.mjs')
+          source = path.read_text()
+          old = """  // The Makers deployment has no native desktop directory chooser. The
+          // native row is retained because the upstream Web composition selects it;
+          // the browse twin would double-occupy the same UI seat.
+          '@deepseek-ai/dsh-client-ui-directory-picker-browse',
+          """
+          new = """  // Makers provisions its conversation-scoped cloud workspace automatically.
+          '@deepseek-ai/dsh-client-ui-directory-picker-browse',
+          '@deepseek-ai/dsh-client-ui-directory-picker-native',
+          """
+          if old not in source:
+              raise SystemExit('native picker exclusion patch point not found')
+          path.write_text(source.replace(old, new, 1))
+          PY
+      - run: npm run prepare:dsh-web
+      - run: node --experimental-strip-types --test tests/dsh-web.test.ts
+      - name: Commit deterministic prepared output
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add scripts/prepare-dsh-web.mjs index.html public agents/api
+          git diff --cached --check
+          git commit -m 'fix: remove native picker from Makers bootstrap'
+          git push origin HEAD:fix/48-foundation-recovery
