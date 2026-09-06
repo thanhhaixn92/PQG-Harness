@@ -1,4 +1,4 @@
-import type { ISessions, PendingInteraction, PendingWait } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ISessions, PendingInteraction, PendingWait, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
   ShellApprovalOutcome,
   ShellApprovalRequest,
@@ -85,7 +85,7 @@ export function createShellSystemServices(sessions: ISessions): ShellSystemServi
     return () => { notificationListeners.delete(listener) }
   }
 
-  const approvalWait = (sessionId?: string, key?: string): PendingWait<'approval'> | undefined => {
+  const approvalWait = (sessionId?: SessionId, key?: string): PendingWait<'approval'> | undefined => {
     const id = sessionId ?? sessions.list.getSnapshot().current
     if (id === undefined) return undefined
     const snapshot = sessions.binding(id)?.session.getSnapshot()
