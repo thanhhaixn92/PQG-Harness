@@ -399,40 +399,6 @@ window.__ModuleLoader__.load({
 		* @param ctx - client root context.
 		*/
 		function apply(ctx) {
-			const layout = new LayoutController();
-			ctx.effect(() => {
-				const disposeService = ctx.reflect.provide("layout", layout);
-				const disposeRegistration = ctx.slots.register({
-					name: "root",
-					children: {
-						"sidebar": {
-							kind: "single",
-							scope: "root"
-						},
-						"conversation": {
-							kind: "single",
-							scope: "session-maybe"
-						},
-						"details": {
-							kind: "single",
-							scope: "session"
-						},
-						"shell.overlay": {
-							kind: "list",
-							scope: "root"
-						}
-					},
-					store: createLayoutStore,
-					inject: (actions) => {
-						layout.attachPanels(actions);
-						return {};
-					}
-				}, AppFrame);
-				return () => {
-					disposeRegistration();
-					disposeService();
-				};
-			}, "ui-layout: service + root registration");
 			ctx.effect(() => {
 				const presenter = new ThemePresenter();
 				presenter.apply(ctx.theme.getTheme());
