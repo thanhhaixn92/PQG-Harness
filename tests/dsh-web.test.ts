@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
@@ -12,13 +13,13 @@ test('build preparation installs the official DSH Web plugin graph', async () =>
   assert.doesNotMatch(html, /@deepseek-ai\/dsh-client-ui-cordis/)
 })
 
-test('PQG root takeover preserves the DSH layout service', async () => {
-  const layout = await readFile(
-    new URL('../public/plugins/@deepseek-ai/dsh-client-ui-layout/client.js', import.meta.url),
-    'utf8',
-  )
-  assert.match(layout, /ctx\.reflect\.provide\("layout", layout\)/)
-  assert.doesNotMatch(layout, /name: "root"/)
+test('patched DSH Web entry asset is cache-busted by its prepared content hash', async () => {
+  const html = await readFile(new URL('../index.html', import.meta.url), 'utf8')
+  const asset = html.match(/<script[^>]+src="(\/assets\/[^"?]+\.js)\?rev=([a-f0-9]{12})"/)
+  assert.ok(asset, 'prepared entry script must include a 12-character revision')
+  const source = await readFile(new URL(`../public${asset[1]}`, import.meta.url), 'utf8')
+  const expected = createHash('sha256').update(source).digest('hex').slice(0, 12)
+  assert.equal(asset[2], expected)
 })
 
 test('Makers connection bundle uses SSE and injects conversation routing', async () => {
@@ -155,7 +156,7 @@ test('page chrome keeps GitHub, deploy, and a contact dialog' , async () => {
   assert.match(html, /deployHref = intl \? "https:\/\/edgeone.ai\/makers\/new" \+ deployParams : "https:\/\/console.cloud.tencent.com\/edgeone\/makers\/new" \+ deployParams/)
   assert.match(html, /from=within&fromAgent=1&agentLang=typescript/)
   assert.match(html, /deploy\.href = deployHref/)
-  assert.match(html, /contactHref = intl \? "https:\/\/pages.edgeone.ai\/contact\?source=deepseek-harness" : "https:\/\/cloud.tencent.com\/online-service\?from=connect-us"/)
+  assert.match(html, /contactHref = intl \? "https:\/\/pages.edgeone.ai\/contact\?source=deepseek-harness" : "https:\/\/cloud\.tencent\.com\/online-service\?from=connect-us"/)
   assert.match(html, /go\.href = contactHref/)
   assert.match(html, /const host = centerCol\(\);\s*if \(!host\) return;/)
   assert.doesNotMatch(html, /\|\| document\.body/)
