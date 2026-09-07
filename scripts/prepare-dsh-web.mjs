@@ -1022,6 +1022,7 @@ async function patchWebShellForPqgRoot() {
     'for(const s of r.loader.entries()){const u=s.options.name;if((u==="@deepseek-ai/dsh-client-ui-sidebar"||u==="@deepseek-ai/dsh-client-ui-conversation")&&s.fiber!==void 0&&u3[s.fiber.state]==="pending"){const p=Object.keys(s.fiber.inject).filter(h=>r.get(h)===void 0);if(p.length===1&&p[0]==="layout")continue}if(s.fiber===void 0){',
   )
   await writeFile(target, source)
+  return { asset: assetMatch[1], rev: hash(source) }
 }
 
 async function preparePqgModuleSettingsClient() {
@@ -1286,7 +1287,7 @@ const makersActionsHead = [
   '  const contactHref = intl ? "https://pages.edgeone.ai/contact?source=deepseek-harness" : "https://cloud.tencent.com/online-service?from=connect-us";',
   '  const copy = {',
   '    zh: { github: "GitHub 源码", deploy: "模版部署", powered: "基于 <b>EdgeOne Makers Agents</b> 部署", more: "了解更多", poweredTitle: "集成到我的产品", title: "从 DeepSeek Harness 到你的云端 Agent", body: "DeepSeek Harness 已接入 EdgeOne Makers Agents。部署后，你可以自由扩展模型、工具、技能与界面，打造适用于 Vibe Coding、任务自动化和内容生产的云端 Agent，并将生成的应用与内容发布至全球边缘网络。Makers 提供 Agent 托管、安全沙箱与应用交付的一体化方案。", later: "以后再说", go: "联系我们" },',
-    '    en: { github: "GitHub", deploy: "Deploy", powered: "Powered by <b>EdgeOne Makers Agents</b>", more: "Learn more", poweredTitle: "Integrate with my product", title: "From DeepSeek Harness to Your Cloud Agent", body: "DeepSeek Harness now runs on EdgeOne Makers Agents. After you deploy, you can extend models, tools, skills, and the UI to build a cloud Agent for Vibe Coding, task automation, and content production, then publish generated apps and content to the global edge network. Makers provides an integrated solution for Agent hosting, a secure sandbox, and app delivery.", later: "Maybe later", go: "Contact us" }',
+  '    en: { github: "GitHub", deploy: "Deploy", powered: "Powered by <b>EdgeOne Makers Agents</b>", more: "Learn more", poweredTitle: "Integrate with my product", title: "From DeepSeek Harness to Your Cloud Agent", body: "DeepSeek Harness now runs on EdgeOne Makers Agents. After you deploy, you can extend models, tools, skills, and the UI to build a cloud Agent for Vibe Coding, task automation, and content production, then publish generated apps and content to the global edge network. Makers provides an integrated solution for Agent hosting, a secure sandbox, and app delivery.", later: "Maybe later", go: "Contact us" }',
   '  };',
   '  const localeOf = () => {',
   '    const lang = (document.documentElement.lang || "").toLowerCase();',
@@ -1542,7 +1543,7 @@ ${makersActionsHead}`
 await rm(publicDir, { recursive: true, force: true })
 await mkdir(publicDir, { recursive: true })
 await cp(webDist, publicDir, { recursive: true })
-await patchWebShellForPqgRoot()
+const webShellEntry = await patchWebShellForPqgRoot()
 const referenceModule = await preparePqgReferenceModuleClient()
 const applicationShell = await preparePqgApplicationShellClient()
 const mantineSpike = await preparePqgMantineSpikeClient()
@@ -1555,7 +1556,12 @@ const entries = [
 ].sort((left, right) => left.id.localeCompare(right.id))
 if (entries.length < 30) throw new Error(`Expected the DSH Web roster, found only ${String(entries.length)} bundles.`)
 const graph = { rev: hash(JSON.stringify(entries)), entries }
-const shellHtml = await readFile(join(webDist, 'index.html'), 'utf8')
+let shellHtml = await readFile(join(webDist, 'index.html'), 'utf8')
+const entrySrc = `src="/assets/${webShellEntry.asset}"`
+if (!shellHtml.includes(entrySrc)) {
+  throw new Error('Published DSH Web index no longer matches the patched entry asset.')
+}
+shellHtml = shellHtml.replace(entrySrc, `src="/assets/${webShellEntry.asset}?rev=${webShellEntry.rev}"`)
 const headWithCharset = '<head>\n    <meta charset="utf-8" />'
 if (!shellHtml.includes(headWithCharset)) {
   throw new Error('Published DSH Web index.html no longer declares charset as the first <head> child.')
