@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { transformWithEsbuild } from 'vite'
+import { build, transformWithEsbuild } from 'vite'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const publicDir = join(root, 'public')
@@ -10,6 +10,14 @@ const modulesRoot = join(root, 'node_modules', '@deepseek-ai')
 const webDist = join(modulesRoot, 'dsh-web-frontend', 'dist')
 const pqgModuleSettingsId = '@pqg/module-settings'
 const pqgReferenceModuleId = '@pqg/reference-module'
+const pqgApplicationShellId = '@pqg/application-shell'
+const pqgMantineSpikeId = '@pqg/mantine-spike'
+const reactPlatformExternals = new Set([
+  'react',
+  'react/jsx-runtime',
+  'react-dom',
+  'react-dom/client',
+])
 const excluded = new Set([
   // The Makers deployment has no native desktop directory chooser. The
   // native row is retained because the upstream Web composition selects it;
@@ -945,6 +953,77 @@ function patchSessionLogExportBundle(source) {
   )
 }
 
+function patchLayoutBundleForPqgRoot(source) {
+  const shippedRootEffect = [
+    '\t\t\tconst layout = new LayoutController();',
+    '\t\t\tctx.effect(() => {',
+    '\t\t\t\tconst disposeService = ctx.reflect.provide("layout", layout);',
+    '\t\t\t\tconst disposeRegistration = ctx.slots.register({',
+    '\t\t\t\t\tname: "root",',
+    '\t\t\t\t\tchildren: {',
+    '\t\t\t\t\t\t"sidebar": {',
+    '\t\t\t\t\t\t\tkind: "single",',
+    '\t\t\t\t\t\t\tscope: "root"',
+    '\t\t\t\t\t\t},',
+    '\t\t\t\t\t\t"conversation": {',
+    '\t\t\t\t\t\t\tkind: "single",',
+    '\t\t\t\t\t\t\tscope: "session-maybe"',
+    '\t\t\t\t\t\t},',
+    '\t\t\t\t\t\t"details": {',
+    '\t\t\t\t\t\t\tkind: "single",',
+    '\t\t\t\t\t\t\tscope: "session"',
+    '\t\t\t\t\t\t},',
+    '\t\t\t\t\t\t"shell.overlay": {',
+    '\t\t\t\t\t\t\tkind: "list",',
+    '\t\t\t\t\t\t\tscope: "root"',
+    '\t\t\t\t\t\t}',
+    '\t\t\t\t\t},',
+    '\t\t\t\t\tstore: createLayoutStore,',
+    '\t\t\t\t\tinject: (actions) => {',
+    '\t\t\t\t\t\tlayout.attachPanels(actions);',
+    '\t\t\t\t\t\treturn {};',
+    '\t\t\t\t\t}',
+    '\t\t\t\t}, AppFrame);',
+    '\t\t\t\treturn () => {',
+    '\t\t\t\t\tdisposeRegistration();',
+    '\t\t\t\t\tdisposeService();',
+    '\t\t\t\t};',
+    '\t\t\t}, "ui-layout: service + root registration");',
+    '',
+  ].join('\n')
+  if (!source.includes(shippedRootEffect)) {
+    throw new Error('Published DSH ui-layout bundle no longer matches the PQG root ownership patch point.')
+  }
+  return source.replace(shippedRootEffect, '')
+}
+
+async function patchWebShellForPqgRoot() {
+  const indexHtml = await readFile(join(publicDir, 'index.html'), 'utf8')
+  const assetMatch = indexHtml.match(/<script[^>]+src="\/assets\/([^\"]+\.js)"/)
+  if (!assetMatch) {
+    throw new Error('Published DSH Web index no longer exposes the expected module asset.')
+  }
+  const target = join(publicDir, 'assets', assetMatch[1])
+  let source = await readFile(target, 'utf8')
+  const appShellInject = 'const Fl="@deepseek-ai/dsh-client-app-shell",w8="app-shell",x8=["slots","sessions","layout"];function _8(n){'
+  if (!source.includes(appShellInject)) {
+    throw new Error('Published DSH Web shell no longer matches the PQG app-shell layout guard patch point.')
+  }
+  source = source.replace(
+    appShellInject,
+    'const Fl="@deepseek-ai/dsh-client-app-shell",w8="app-shell",x8=["slots","sessions"];function _8(n){',
+  )
+  const bootSweep = 'for(const s of r.loader.entries()){const u=s.options.name;if(s.fiber===void 0){'
+  if (!source.includes(bootSweep)) {
+    throw new Error('Published DSH Web shell no longer matches the PQG parked presentation boot patch point.')
+  }
+  source = source.replace(
+    bootSweep,
+    'for(const s of r.loader.entries()){const u=s.options.name;if((u==="@deepseek-ai/dsh-client-ui-sidebar"||u==="@deepseek-ai/dsh-client-ui-conversation")&&s.fiber!==void 0&&u3[s.fiber.state]==="pending"){const p=Object.keys(s.fiber.inject).filter(h=>r.get(h)===void 0);if(p.length===1&&p[0]==="layout")continue}if(s.fiber===void 0){',
+  )
+  await writeFile(target, source)
+}
+
 async function preparePqgModuleSettingsClient() {
   const entry = join(root, 'src', 'pqg-module-settings-client.ts')
   const source = await readFile(entry, 'utf8')
@@ -996,6 +1075,126 @@ async function preparePqgReferenceModuleClient() {
   const target = join(publicDir, 'plugins', ...pqgReferenceModuleId.split('/'), 'client.js')
   await mkdir(dirname(target), { recursive: true })
   await writeFile(target, bundled)
+  const rev = hash(bundled)
+  return {
+    id: pqgReferenceModuleId,
+    url: `/plugins/${pqgReferenceModuleId}/client.js?rev=${rev}`,
+    rev,
+    inject: [
+      '@deepseek-ai/dsh-client-runtime',
+      '@deepseek-ai/dsh-client-ui-slots',
+    ],
+  }
+}
+
+async function preparePqgApplicationShellClient() {
+  const entry = join(root, 'packages', 'application-shell', 'src', 'client.tsx')
+  const result = await build({
+    configFile: false,
+    root,
+    logLevel: 'silent',
+    define: {
+      'process.env.NODE_ENV': JSON.stringify('production'),
+    },
+    build: {
+      write: false,
+      target: 'es2022',
+      minify: 'esbuild',
+      cssCodeSplit: false,
+      lib: {
+        entry,
+        formats: ['cjs'],
+        fileName: 'client',
+      },
+      rollupOptions: {
+        external: id => reactPlatformExternals.has(id),
+        output: { inlineDynamicImports: true },
+      },
+    },
+  })
+  const runs = Array.isArray(result) ? result : [result]
+  const outputs = runs.flatMap(run => Array.isArray(run?.output) ? run.output : [])
+  const chunk = outputs.find(output => output.type === 'chunk' && output.isEntry)
+  const css = outputs.find(output => output.type === 'asset' && output.fileName.endsWith('.css'))
+  if (!chunk) throw new Error('PQG Application Shell bundle produced no entry chunk.')
+  if (!css || typeof css.source !== 'string') throw new Error('PQG Application Shell bundle produced no CSS asset.')
+
+  const bundled = [
+    'window.__ModuleLoader__.load({ id: ' + JSON.stringify(pqgApplicationShellId) + ', factory: (require) => { var module = { exports: {} }; var exports = module.exports;',
+    chunk.code.trimEnd(),
+    'return module.exports; } });',
+    '',
+  ].join('\n')
+  const targetDir = join(publicDir, 'plugins', ...pqgApplicationShellId.split('/'))
+  await mkdir(targetDir, { recursive: true })
+  await writeFile(join(targetDir, 'client.js'), bundled)
+  await writeFile(join(targetDir, 'styles.css'), css.source)
+  return {
+    entry: {
+      id: pqgApplicationShellId,
+      url: `/plugins/${pqgApplicationShellId}/client.js?rev=${hash(bundled)}`,
+      rev: hash(bundled),
+      inject: [
+        '@deepseek-ai/dsh-client-runtime',
+        '@deepseek-ai/dsh-client-ui-slots',
+      ],
+    },
+    cssUrl: `/plugins/${pqgApplicationShellId}/styles.css?rev=${hash(css.source)}`,
+  }
+}
+
+async function preparePqgMantineSpikeClient() {
+  const entry = join(root, 'src', 'pqg-mantine-spike-client.tsx')
+  const result = await build({
+    configFile: false,
+    root,
+    logLevel: 'silent',
+    build: {
+      write: false,
+      target: 'es2022',
+      minify: 'esbuild',
+      cssCodeSplit: false,
+      lib: {
+        entry,
+        formats: ['cjs'],
+        fileName: 'client',
+      },
+      rollupOptions: {
+        external: id => reactPlatformExternals.has(id),
+        output: { inlineDynamicImports: true },
+      },
+    },
+  })
+  const runs = Array.isArray(result) ? result : [result]
+  const outputs = runs.flatMap(run => Array.isArray(run?.output) ? run.output : [])
+  const chunk = outputs.find(output => output.type === 'chunk' && output.isEntry)
+  const css = outputs.find(output => output.type === 'asset' && output.fileName.endsWith('.css'))
+  if (!chunk) throw new Error('Mantine spike bundle produced no entry chunk.')
+  if (!css || typeof css.source !== 'string') throw new Error('Mantine spike bundle produced no CSS asset.')
+
+  const bundled = [
+    'window.__ModuleLoader__.load({ id: ' + JSON.stringify(pqgMantineSpikeId) + ', factory: (require) => { var module = { exports: {} }; var exports = module.exports;',
+    chunk.code.trimEnd(),
+    'return module.exports; } });',
+    '',
+  ].join('\n')
+  const targetDir = join(publicDir, 'plugins', ...pqgMantineSpikeId.split('/'))
+  await mkdir(targetDir, { recursive: true })
+  await writeFile(join(targetDir, 'client.js'), bundled)
+  await writeFile(join(targetDir, 'styles.css'), css.source)
+  return {
+    entry: {
+      id: pqgMantineSpikeId,
+      url: '/plugins/' + pqgMantineSpikeId + '/client.js?rev=' + hash(bundled),
+      rev: hash(bundled),
+      inject: [
+        '@deepseek-ai/dsh-client-runtime',
+        '@deepseek-ai/dsh-client-ui-settings',
+        '@deepseek-ai/dsh-client-ui-slots',
+      ],
+    },
+    cssUrl: '/plugins/' + pqgMantineSpikeId + '/styles.css?rev=' + hash(css.source),
+  }
 }
 
 async function clientPackages() {
@@ -1013,6 +1212,7 @@ async function clientPackages() {
     if (manifest.name === '@deepseek-ai/dsh-client-ui-permission-presets') source = patchPermissionPresetsBundle(source)
     if (manifest.name === '@deepseek-ai/dsh-client-ui-conversation') source = patchConversationBundle(source)
     if (manifest.name === '@deepseek-ai/dsh-client-ui-workspace') source = patchWorkspaceBundle(source)
+    if (manifest.name === '@deepseek-ai/dsh-client-ui-layout') source = patchLayoutBundleForPqgRoot(source)
     if (manifest.name === '@deepseek-ai/dsh-client-ui-settings') source = patchSettingsBundle(source)
     if (manifest.name === '@deepseek-ai/dsh-client-ui-settings-models') source = patchSettingsModelsBundle(source)
     if (manifest.name === '@deepseek-ai/dsh-client-ui-model-selection') source = patchModelSelectionBundle(source)
@@ -1342,10 +1542,16 @@ ${makersActionsHead}`
 await rm(publicDir, { recursive: true, force: true })
 await mkdir(publicDir, { recursive: true })
 await cp(webDist, publicDir, { recursive: true })
-await preparePqgReferenceModuleClient()
+await patchWebShellForPqgRoot()
+const referenceModule = await preparePqgReferenceModuleClient()
+const applicationShell = await preparePqgApplicationShellClient()
+const mantineSpike = await preparePqgMantineSpikeClient()
 const entries = [
   ...(await clientPackages()),
+  applicationShell.entry,
+  referenceModule,
   await preparePqgModuleSettingsClient(),
+  mantineSpike.entry,
 ].sort((left, right) => left.id.localeCompare(right.id))
 if (entries.length < 30) throw new Error(`Expected the DSH Web roster, found only ${String(entries.length)} bundles.`)
 const graph = { rev: hash(JSON.stringify(entries)), entries }
@@ -1357,7 +1563,7 @@ if (!shellHtml.includes(headWithCharset)) {
 // Keep charset first so the HTML5 encoding sniff (first 1024 bytes) sees UTF-8
 // before the overlay script's Chinese copy. Injecting before charset made first
 // paint mojibake until a reload remembered UTF-8.
-const html = shellHtml.replace(headWithCharset, `${headWithCharset}${makersBootstrap(graph)}`)
+const html = shellHtml.replace(headWithCharset, `${headWithCharset}\n    <link rel="stylesheet" data-pqg-mantine-spike href="${mantineSpike.cssUrl}" />\n    <link rel="stylesheet" data-pqg-application-shell href="${applicationShell.cssUrl}" />${makersBootstrap(graph)}`)
 await writeFile(join(root, 'index.html'), html)
 await writeFile(join(publicDir, 'index.html'), html)
 console.log(`Prepared DSH Web with ${String(entries.length)} client plugins.`)
