@@ -12,6 +12,15 @@ test('build preparation installs the official DSH Web plugin graph', async () =>
   assert.doesNotMatch(html, /@deepseek-ai\/dsh-client-ui-cordis/)
 })
 
+test('PQG root takeover preserves the DSH layout service', async () => {
+  const layout = await readFile(
+    new URL('../public/plugins/@deepseek-ai/dsh-client-ui-layout/client.js', import.meta.url),
+    'utf8',
+  )
+  assert.match(layout, /ctx\.reflect\.provide\("layout", layout\)/)
+  assert.doesNotMatch(layout, /name: "root"/)
+})
+
 test('Makers connection bundle uses SSE and injects conversation routing', async () => {
   const connection = await readFile(
     new URL('../public/plugins/@deepseek-ai/dsh-client-connection/client.js', import.meta.url),
