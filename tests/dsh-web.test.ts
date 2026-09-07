@@ -156,7 +156,7 @@ test('page chrome keeps GitHub, deploy, and a contact dialog' , async () => {
   assert.match(html, /deployHref = intl \? "https:\/\/edgeone.ai\/makers\/new" \+ deployParams : "https:\/\/console.cloud.tencent.com\/edgeone\/makers\/new" \+ deployParams/)
   assert.match(html, /from=within&fromAgent=1&agentLang=typescript/)
   assert.match(html, /deploy\.href = deployHref/)
-  assert.match(html, /contactHref = intl \? "https:\/\/pages.edgeone.ai\/contact\?source=deepseek-harness" : "https:\/\/cloud\.tencent\.com\/online-service\?from=connect-us"/)
+  assert.match(html, /contactHref = intl \? "https:\/\/pages.edgeone.ai\/contact\?source=deepseek-harness" : "https:\/\/cloud.tencent.com\/online-service\?from=connect-us"/)
   assert.match(html, /go\.href = contactHref/)
   assert.match(html, /const host = centerCol\(\);\s*if \(!host\) return;/)
   assert.doesNotMatch(html, /\|\| document\.body/)
