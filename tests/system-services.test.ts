@@ -83,6 +83,31 @@ test('system services aggregate deterministic search/support providers and dispo
   assert.equal(services.supportFor('alpha'), undefined)
 })
 
+test('search keeps healthy results when a provider throws before returning a promise', async () => {
+  const fixture = fakeSessions()
+  const services = createShellSystemServices(fixture.sessions as never)
+
+  services.registerSearchProvider({
+    id: 'broken',
+    label: 'Broken',
+    search() {
+      throw new Error('provider failed before returning a promise')
+    },
+  })
+  services.registerSearchProvider({
+    id: 'healthy',
+    label: 'Healthy',
+    async search() {
+      return [{ id: 'result', label: 'Kết quả', targetId: 'healthy' }]
+    },
+  })
+
+  assert.deepEqual(
+    (await services.search('pqg')).map(item => `${item.providerId}:${item.id}`),
+    ['healthy:result'],
+  )
+})
+
 test('notification surface and approval adapter reuse the canonical DSH pending carrier', async () => {
   const fixture = fakeSessions()
   const services = createShellSystemServices(fixture.sessions as never)

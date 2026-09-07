@@ -240,7 +240,6 @@ function ApprovalView({
     } catch {
       setError(pqgCopy.approvalErrorNotification)
       services.notify({ kind: 'error', title: pqgCopy.approval, message: pqgCopy.approvalErrorNotification })
-    } finally {
       setBusy(false)
     }
   }

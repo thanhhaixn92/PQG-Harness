@@ -44,7 +44,9 @@ export function createShellSystemServices(sessions: ISessions): ShellSystemServi
     const normalized = query.trim()
     if (normalized === '') return []
     const providers = [...searchProviders.values()]
-    const settled = await Promise.allSettled(providers.map(provider => provider.search(normalized)))
+    const settled = await Promise.allSettled(
+      providers.map(provider => Promise.resolve().then(() => provider.search(normalized))),
+    )
     const matches: ShellSearchMatch[] = []
     settled.forEach((result, index) => {
       if (result.status !== 'fulfilled') return
