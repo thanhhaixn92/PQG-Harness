@@ -20,33 +20,63 @@
 (() => {
   const button = document.getElementById('run');
   const output = document.getElementById('output');
-  const paths = ['/api/pqg.modules', '/api/session.list', '/api/workspace.list'];
+  const probes = [
+    { path: '/api/pqg.modules', method: 'GET' },
+    { path: '/api/session.list', method: 'POST', rpcMethod: 'session.list' },
+    { path: '/api/workspace.list', method: 'POST', rpcMethod: 'workspace.list' },
+  ];
 
   function safeErrorBody(text) {
     return text.slice(0, 1200);
   }
 
-  async function probe(path, conversationId) {
-    const response = await fetch(path, {
-      headers: { 'Makers-Conversation-Id': conversationId },
+  async function probe(spec, conversationId) {
+    const headers = { 'Makers-Conversation-Id': conversationId };
+    const options = {
+      method: spec.method,
+      headers,
       credentials: 'same-origin',
-    });
+    };
+    if (spec.rpcMethod) {
+      headers['content-type'] = 'application/json';
+      const rpcRequest = {
+        type: 'client-request',
+        rpcId: crypto.randomUUID(),
+        method: spec.rpcMethod,
+        payload: {},
+      };
+      options.body = JSON.stringify(rpcRequest);
+    }
+
+    const response = await fetch(spec.path, options);
     const text = await response.text();
     if (!response.ok) {
-      return `${path}\nHTTP ${response.status}\n${safeErrorBody(text)}`;
+      return `${spec.path}\nHTTP ${response.status}\n${safeErrorBody(text)}`;
     }
-    if (path === '/api/pqg.modules') {
+    if (spec.path === '/api/pqg.modules') {
       try {
         const parsed = JSON.parse(text);
         const modules = Array.isArray(parsed?.modules)
           ? parsed.modules.map((item) => ({ id: item?.id, enabled: item?.enabled }))
           : [];
-        return `${path}\nHTTP ${response.status}\n${JSON.stringify({ modules }, null, 2)}`;
+        return `${spec.path}\nHTTP ${response.status}\n${JSON.stringify({ modules }, null, 2)}`;
       } catch {
-        return `${path}\nHTTP ${response.status}\nOK (${text.length} bytes)`;
+        return `${spec.path}\nHTTP ${response.status}\nOK (${text.length} bytes)`;
       }
     }
-    return `${path}\nHTTP ${response.status}\nOK (${text.length} bytes)`;
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed?.result?.ok === true) {
+        return `${spec.path}\nHTTP ${response.status}\nRPC OK`;
+      }
+      if (parsed?.result?.ok === false) {
+        const error = parsed.result.error || {};
+        return `${spec.path}\nHTTP ${response.status}\nRPC ERROR\n${safeErrorBody(JSON.stringify({ code: error.code, message: error.message }, null, 2))}`;
+      }
+    } catch {
+      // Fall through to the bounded response summary.
+    }
+    return `${spec.path}\nHTTP ${response.status}\nOK (${text.length} bytes)`;
   }
 
   button.addEventListener('click', async () => {
@@ -54,11 +84,11 @@
     output.textContent = 'Đang chạy…';
     const conversationId = `audit-${crypto.randomUUID().replaceAll('-', '').slice(0, 24)}`;
     const rows = [`conversation_id: ${conversationId}`];
-    for (const path of paths) {
+    for (const spec of probes) {
       try {
-        rows.push(await probe(path, conversationId));
+        rows.push(await probe(spec, conversationId));
       } catch (error) {
-        rows.push(`${path}\nFETCH ERROR\n${String(error).slice(0, 1200)}`);
+        rows.push(`${spec.path}\nFETCH ERROR\n${String(error).slice(0, 1200)}`);
       }
     }
     output.textContent = rows.join('\n\n----------------\n\n');
