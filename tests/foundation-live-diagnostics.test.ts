@@ -80,5 +80,5 @@ test('Foundation diagnostics uses DSH unary RPC envelopes for session and worksp
   assert.match(body, /type:\s*['"]client-request['"]/)
   assert.match(body, /rpcId:\s*crypto\.randomUUID\(\)/)
   assert.match(body, /payload:\s*\{\}/)
-  assert.match(body, /body:\s*JSON\.stringify\(/)
+  assert.match(body, /(?:body\s*:|options\.body\s*=)\s*JSON\.stringify\(/)
 })
