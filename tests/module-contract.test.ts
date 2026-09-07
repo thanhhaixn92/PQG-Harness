@@ -234,3 +234,39 @@ test('root installs a reference PQG module with both client and Makers adapters'
     makers: true,
   })
 })
+
+test('ignores missing runtime dependencies while discovering installed PQG modules', async () => {
+  const { discoverPqgModules } = await import(modulePath.href)
+  const root = await mkdtemp(join(tmpdir(), 'pqg-missing-runtime-dependency-'))
+
+  try {
+    await writeJson(join(root, 'package.json'), {
+      dependencies: {
+        bufferutil: '^4.0.1',
+        '@pqg/plugin-task': '1.0.0',
+      },
+    })
+    await mkdir(join(root, 'node_modules', '@pqg', 'plugin-task'), { recursive: true })
+    await writeJson(join(root, 'node_modules', '@pqg', 'plugin-task', 'package.json'), {
+      name: '@pqg/plugin-task',
+      pqg: {
+        module: {
+          id: 'task',
+          label: 'Công việc',
+          defaultEnabled: true,
+        },
+      },
+    })
+
+    assert.deepEqual(await discoverPqgModules(root), [{
+      id: 'task',
+      label: 'Công việc',
+      packageName: '@pqg/plugin-task',
+      defaultEnabled: true,
+      client: false,
+      makers: false,
+    }])
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
