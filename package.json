@@ -60,6 +60,8 @@
     "@deepseek-ai/dsh-workflow": "0.1.0-rc.6",
     "@mantine/core": "8.3.18",
     "@mantine/hooks": "8.3.18",
+    "@mantine/notifications": "8.3.18",
+    "@mantine/spotlight": "8.3.18",
     "@modelcontextprotocol/sdk": "1.29.0",
     "@pqg/application-shell": "file:packages/application-shell",
     "@pqg/reference-module": "file:packages/reference-module",

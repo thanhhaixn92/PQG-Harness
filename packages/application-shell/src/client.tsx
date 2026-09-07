@@ -1,5 +1,6 @@
 import {
   AppShell,
+  Badge,
   Burger,
   Button,
   Drawer,
@@ -11,14 +12,26 @@ import {
   Text,
   Title,
 } from '@mantine/core'
-import { IconCheck, IconHome } from '@tabler/icons-react'
+import { Notifications, notifications } from '@mantine/notifications'
+import { Spotlight, spotlight } from '@mantine/spotlight'
+import { IconCheck, IconHome, IconSearch } from '@tabler/icons-react'
 // @ts-expect-error Vite bundles Mantine's exported CSS file; it has no TypeScript declaration.
 import '@mantine/core/styles.layer.css'
+// @ts-expect-error Vite bundles package CSS files; they have no TypeScript declarations.
+import '@mantine/notifications/styles.css'
+// @ts-expect-error Vite bundles package CSS files; they have no TypeScript declarations.
+import '@mantine/spotlight/styles.css'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type { PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { pqgCopy } from './copy.ts'
-import type { SupportPanelState } from './contracts.ts'
-import type {} from './contracts.ts'
+import type {
+  ShellApprovalOutcome,
+  ShellNotificationKind,
+  ShellSearchMatch,
+  ShellSystemServices,
+  SupportPanelState,
+} from './contracts.ts'
+import { createShellSystemServices } from './services.ts'
 import { EmptyState, UnavailableState } from './states.ts'
 import { pqgShellTokens } from './tokens.ts'
 
@@ -30,6 +43,7 @@ type ShellSeat =
   | 'pqg.shell.support.suggestion'
 
 type RootProps = PropsRuntime<'root'> & PropsRenderSlots<ShellSeat>
+type ApplicationShellProps = RootProps & { services: ShellSystemServices }
 
 type ReactApi = {
   createElement: (...args: any[]) => any
@@ -38,7 +52,7 @@ type ReactApi = {
 }
 
 const React = require('react') as ReactApi
-const inject = ['slots']
+const inject = ['slots', 'sessions']
 const utilityIds = new Set(['quick-note', 'recent', 'favorites'])
 
 function shellRoot(): HTMLElement | undefined {
@@ -57,17 +71,49 @@ function viewportWidth(): number {
   return typeof window === 'undefined' ? pqgShellTokens.desktopSupportBreakpoint : window.innerWidth
 }
 
+function notificationColor(kind: ShellNotificationKind | undefined): string {
+  if (kind === 'success') return 'teal'
+  if (kind === 'warning') return 'yellow'
+  if (kind === 'error') return 'red'
+  return 'blue'
+}
+
 function SupportContent({
   activeId,
   state,
   renderSlot,
+  services,
   setState,
 }: {
   activeId: string
   state: SupportPanelState
   renderSlot: RootProps['renderSlot']
+  services: ShellSystemServices
   setState(state: SupportPanelState): void
 }) {
+  const support = services.supportFor(activeId)
+  const suggestions = state === 'expanded' ? support?.suggestions ?? [] : []
+  const structuredSupport = support === undefined
+    ? null
+    : React.createElement(
+        Stack,
+        { gap: 'sm', 'data-pqg-support-context': activeId },
+        support.title === undefined ? null : React.createElement(Text, { fw: 600, size: 'sm' }, support.title),
+        support.summary === undefined ? null : React.createElement(Text, { c: 'dimmed', size: 'sm' }, support.summary),
+        suggestions.length === 0
+          ? null
+          : React.createElement(
+              Stack,
+              { gap: 6 },
+              React.createElement(Text, { c: 'dimmed', fw: 600, size: 'xs', tt: 'uppercase' }, pqgCopy.supportSuggestions),
+              ...suggestions.map(suggestion => React.createElement(
+                Paper,
+                { key: suggestion.id, withBorder: true, radius: 'md', p: 'xs', 'data-pqg-support-suggestion': suggestion.id },
+                React.createElement(Text, { size: 'sm' }, suggestion.label),
+              )),
+            ),
+      )
+
   return React.createElement(
     Stack,
     { gap: 'md', p: state === 'compact' ? 'sm' : 'md', 'data-pqg-support-state': state },
@@ -84,8 +130,159 @@ function SupportContent({
       ),
     ),
     state === 'compact' ? null : React.createElement(Text, { c: 'dimmed', size: 'sm' }, pqgCopy.supportDescription),
-    renderSlot('pqg.shell.support.context', { activeId }, { fallback: null }),
-    renderSlot('pqg.shell.support.suggestion', { activeId }, { fallback: null }),
+    structuredSupport ?? renderSlot('pqg.shell.support.context', { activeId }, { fallback: null }),
+    structuredSupport === null ? renderSlot('pqg.shell.support.suggestion', { activeId }, { fallback: null }) : null,
+  )
+}
+
+function SearchSurface({
+  navigate,
+  revision,
+  services,
+}: {
+  navigate(targetId: string): void
+  revision: number
+  services: ShellSystemServices
+}) {
+  const [query, setQuery] = React.useState('')
+  const [results, setResults] = React.useState<readonly ShellSearchMatch[]>([])
+  const [loading, setLoading] = React.useState(false)
+
+  React.useEffect(() => {
+    const normalized = query.trim()
+    if (normalized === '') {
+      setResults([])
+      setLoading(false)
+      return
+    }
+    let active = true
+    setLoading(true)
+    void services.search(normalized).then(
+      matches => {
+        if (!active) return
+        setResults(matches)
+        setLoading(false)
+      },
+      () => {
+        if (!active) return
+        setResults([])
+        setLoading(false)
+      },
+    )
+    return () => { active = false }
+  }, [query, revision, services])
+
+  const items = results.map(result => React.createElement(Spotlight.Action, {
+    key: `${result.providerId}:${result.id}`,
+    label: result.label,
+    description: result.description ?? result.providerLabel,
+    onClick: () => {
+      navigate(result.targetId)
+      spotlight.close()
+    },
+    'data-pqg-search-result': `${result.providerId}:${result.id}`,
+  }))
+  const emptyCopy = query.trim() === ''
+    ? pqgCopy.searchHint
+    : loading
+      ? pqgCopy.searchLoading
+      : pqgCopy.searchEmpty
+
+  return React.createElement(
+    Spotlight.Root,
+    { query, onQueryChange: setQuery, withinPortal: false, 'data-pqg-search-root': true },
+    React.createElement(Spotlight.Search, {
+      placeholder: pqgCopy.searchPlaceholder,
+      leftSection: React.createElement(IconSearch, { size: 18, stroke: 1.8, 'aria-hidden': true }),
+      'data-pqg-search-input': true,
+    }),
+    React.createElement(
+      Spotlight.ActionsList,
+      null,
+      items.length > 0 ? items : React.createElement(Spotlight.Empty, null, emptyCopy),
+    ),
+  )
+}
+
+function ApprovalView({
+  revision,
+  services,
+}: {
+  revision: string
+  services: ShellSystemServices
+}) {
+  const approval = services.currentApproval()
+  const [busy, setBusy] = React.useState(false)
+  const [error, setError] = React.useState<string | undefined>(undefined)
+
+  React.useEffect(() => {
+    setBusy(false)
+    setError(undefined)
+  }, [approval?.key, revision])
+
+  if (approval === undefined) {
+    return React.createElement(EmptyState, { description: pqgCopy.approvalEmpty })
+  }
+
+  const decide = async (outcome: ShellApprovalOutcome): Promise<void> => {
+    if (busy) return
+    setBusy(true)
+    setError(undefined)
+    try {
+      await services.answerApproval(approval, outcome)
+      services.notify({
+        kind: outcome === 'allowed-once' ? 'success' : 'info',
+        title: pqgCopy.approval,
+        message: outcome === 'allowed-once'
+          ? pqgCopy.approvalAllowedNotification
+          : pqgCopy.approvalRejectedNotification,
+      })
+    } catch {
+      setError(pqgCopy.approvalErrorNotification)
+      services.notify({ kind: 'error', title: pqgCopy.approval, message: pqgCopy.approvalErrorNotification })
+      setBusy(false)
+    }
+  }
+
+  return React.createElement(
+    Stack,
+    { gap: 'lg', 'data-pqg-approval-view': true },
+    React.createElement(Title, { order: 2 }, pqgCopy.approval),
+    React.createElement(
+      Paper,
+      { withBorder: true, radius: 'lg', p: 'lg', 'data-pqg-approval-request': approval.key },
+      React.createElement(Stack, { gap: 'md' },
+        React.createElement('div', null,
+          React.createElement(Text, { c: 'dimmed', size: 'xs', tt: 'uppercase', fw: 700 }, pqgCopy.approvalAction),
+          React.createElement(Text, { fw: 600 }, approval.toolName),
+        ),
+        React.createElement('div', null,
+          React.createElement(Text, { c: 'dimmed', size: 'xs', tt: 'uppercase', fw: 700 }, pqgCopy.approvalReason),
+          React.createElement(Text, { size: 'sm' }, approval.reason ?? pqgCopy.approvalReasonFallback),
+        ),
+        React.createElement('div', null,
+          React.createElement(Text, { c: 'dimmed', size: 'xs', tt: 'uppercase', fw: 700 }, pqgCopy.approvalRisk),
+          React.createElement(Badge, { variant: 'light', color: 'yellow' }, pqgCopy.approvalRiskConfirmation),
+        ),
+        error === undefined ? null : React.createElement(Text, { c: 'red', size: 'sm' }, error),
+        React.createElement(
+          Group,
+          { justify: 'flex-end' },
+          React.createElement(Button, {
+            variant: 'light',
+            color: 'red',
+            disabled: busy,
+            onClick: () => { void decide('rejected') },
+            'data-pqg-approval-reject': true,
+          }, pqgCopy.approvalReject),
+          React.createElement(Button, {
+            loading: busy,
+            onClick: () => { void decide('allowed-once') },
+            'data-pqg-approval-allow': true,
+          }, pqgCopy.approvalAllow),
+        ),
+      ),
+    ),
   )
 }
 
@@ -110,16 +307,43 @@ function HomeView({ renderSlot }: Pick<RootProps, 'renderSlot'>) {
   )
 }
 
-function PqgApplicationShell({ renderSlot, renderSlotChain }: RootProps) {
+function PqgApplicationShell({ renderSlot, renderSlotChain, services, useSessions }: ApplicationShellProps) {
   const [activeId, setActiveId] = React.useState('home')
   const [mobileNavOpened, setMobileNavOpened] = React.useState(false)
   const [supportState, setSupportState] = React.useState<SupportPanelState>(initialSupportState)
   const [width, setWidth] = React.useState(viewportWidth)
+  const [serviceRevision, setServiceRevision] = React.useState(0)
+  const sessions = useSessions(state => state)
+  const currentSummary = sessions.current === undefined ? undefined : sessions.byId[sessions.current]
+  const approvalRevision = `${sessions.current ?? ''}:${currentSummary?.pendingInteraction ?? ''}:${currentSummary?.updatedAt ?? 0}`
+
+  React.useEffect(() => services.subscribe(() => {
+    setServiceRevision(version => version + 1)
+  }), [services])
+
+  React.useEffect(() => services.subscribeNotifications(notification => {
+    notifications.show({
+      ...(notification.id === undefined ? {} : { id: notification.id }),
+      ...(notification.title === undefined ? {} : { title: notification.title }),
+      message: notification.message,
+      color: notificationColor(notification.kind),
+    })
+  }), [services])
 
   React.useEffect(() => {
     const onResize = () => setWidth(window.innerWidth)
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  React.useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLocaleLowerCase() !== 'k') return
+      event.preventDefault()
+      spotlight.open()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
 
   const narrow = width < pqgShellTokens.tabletBreakpoint
@@ -131,7 +355,7 @@ function PqgApplicationShell({ renderSlot, renderSlotChain }: RootProps) {
   const mainFallback = activeId === 'home'
     ? React.createElement(HomeView, { renderSlot })
     : activeId === 'approval'
-      ? React.createElement(UnavailableState, { title: pqgCopy.approval, description: pqgCopy.approvalUnavailable })
+      ? React.createElement(ApprovalView, { revision: approvalRevision, services })
       : utilityIds.has(activeId)
         ? React.createElement(UnavailableState, { description: pqgCopy.utilityUnavailable })
         : React.createElement(UnavailableState, { description: pqgCopy.moduleUnavailable })
@@ -140,6 +364,7 @@ function PqgApplicationShell({ renderSlot, renderSlotChain }: RootProps) {
     activeId,
     state: supportState,
     renderSlot,
+    services,
     setState: setSupportState,
   })
 
@@ -155,6 +380,8 @@ function PqgApplicationShell({ renderSlot, renderSlotChain }: RootProps) {
         getRootElement: shellRoot,
         withGlobalClasses: false,
       },
+      React.createElement(Notifications, { position: 'top-right', limit: 4 }),
+      React.createElement(SearchSurface, { navigate, revision: serviceRevision, services }),
       React.createElement(
         AppShell,
         {
@@ -191,12 +418,24 @@ function PqgApplicationShell({ renderSlot, renderSlotChain }: RootProps) {
                 React.createElement(Text, { c: 'dimmed', size: 'xs' }, pqgCopy.workspace),
               ),
             ),
-            React.createElement(Button, {
-              variant: supportState === 'collapsed' ? 'light' : 'filled',
-              size: 'sm',
-              onClick: () => setSupportState((state) => state === 'collapsed' ? (narrow ? 'expanded' : 'compact') : 'collapsed'),
-              'data-pqg-support-toggle': true,
-            }, pqgCopy.support),
+            React.createElement(
+              Group,
+              { gap: 'xs', wrap: 'nowrap' },
+              React.createElement(Button, {
+                variant: 'default',
+                size: 'compact-sm',
+                leftSection: React.createElement(IconSearch, { size: 16, stroke: 1.8, 'aria-hidden': true }),
+                onClick: spotlight.open,
+                'aria-label': pqgCopy.search,
+                'data-pqg-search-toggle': true,
+              }, width < 640 ? null : pqgCopy.search),
+              React.createElement(Button, {
+                variant: supportState === 'collapsed' ? 'light' : 'filled',
+                size: 'compact-sm',
+                onClick: () => setSupportState((state) => state === 'collapsed' ? (narrow ? 'expanded' : 'compact') : 'collapsed'),
+                'data-pqg-support-toggle': true,
+              }, pqgCopy.support),
+            ),
           ),
         ),
         React.createElement(
@@ -244,16 +483,29 @@ function PqgApplicationShell({ renderSlot, renderSlotChain }: RootProps) {
 }
 
 function apply(ctx: ClientContext): void {
-  ctx.slots.register({
-    name: 'root',
-    children: {
-      'pqg.shell.navigation': { kind: 'list', scope: 'root' },
-      'pqg.shell.workspace': { kind: 'chain', scope: 'root' },
-      'pqg.shell.home.widget': { kind: 'list', scope: 'root' },
-      'pqg.shell.support.context': { kind: 'list', scope: 'root' },
-      'pqg.shell.support.suggestion': { kind: 'list', scope: 'root' },
-    },
-  }, PqgApplicationShell)
+  const services = createShellSystemServices(ctx.sessions)
+
+  function ApplicationShellRoot(props: RootProps) {
+    return React.createElement(PqgApplicationShell, { ...props, services })
+  }
+
+  ctx.effect(() => {
+    const disposeService = ctx.reflect.provide('pqgShell', services)
+    const disposeRegistration = ctx.slots.register({
+      name: 'root',
+      children: {
+        'pqg.shell.navigation': { kind: 'list', scope: 'root' },
+        'pqg.shell.workspace': { kind: 'chain', scope: 'root' },
+        'pqg.shell.home.widget': { kind: 'list', scope: 'root' },
+        'pqg.shell.support.context': { kind: 'list', scope: 'root' },
+        'pqg.shell.support.suggestion': { kind: 'list', scope: 'root' },
+      },
+    }, ApplicationShellRoot)
+    return () => {
+      disposeRegistration()
+      void disposeService()
+    }
+  }, 'pqg-shell: system services + root registration')
 }
 
 module.exports = { inject, apply }

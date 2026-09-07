@@ -105,12 +105,14 @@ test('PQG shell keeps search non-visual and gates module contributions by enable
 
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
+  ctx.provide('sessions', {} as never)
   const slots = ctx.get('slots') as unknown as SlotRegistryFace
 
   const disabledReference = ctx.plugin({ inject: [...reference.inject], apply: reference.apply })
   await disabledReference.await()
   let shellFiber = ctx.plugin({ inject: [...shell.inject], apply: shell.apply })
   await shellFiber.await()
+  await disabledReference.await()
   assert.equal(slots.entries('root').length, 1, 'PQG must remain the only root registration')
   assert.equal(slots.spec('pqg.shell.search.provider'), undefined, 'search provider must not be a rendered slot')
   for (const seat of visualSeats) {
@@ -127,6 +129,7 @@ test('PQG shell keeps search non-visual and gates module contributions by enable
 
   shellFiber = ctx.plugin({ inject: [...shell.inject], apply: shell.apply })
   await shellFiber.await()
+  await referenceFiber.await()
   const expectedKinds: Record<(typeof visualSeats)[number], string> = {
     'pqg.shell.navigation': 'list',
     'pqg.shell.workspace': 'chain',
@@ -157,6 +160,7 @@ test('PQG shell keeps search non-visual and gates module contributions by enable
 
   shellFiber = ctx.plugin({ inject: [...shell.inject], apply: shell.apply })
   await shellFiber.await()
+  await referenceFiber.await()
   for (const seat of visualSeats) assert.equal(slots.entries(seat).length, 1, `${seat} injection must recover after shell remount`)
 
   await referenceFiber.dispose()

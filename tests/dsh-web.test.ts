@@ -226,15 +226,17 @@ test('PQG module settings serializes policy writes from the toggle UI', async ()
   assert.match(source, /const saving = savingId !== null/)
 })
 
-test('reference module client is prepared without entering the rc.6 boot graph', async () => {
+test('reference module client is prepared for the PQG Shell boot graph', async () => {
   const bundlePath = new URL('../public/plugins/@pqg/reference-module/client.js', import.meta.url)
   assert.equal(existsSync(bundlePath), true, 'reference client bundle must be prepared')
   const bundle = await readFile(bundlePath, 'utf8')
   const html = await readFile(new URL('../index.html', import.meta.url), 'utf8')
   assert.match(bundle, /window\.__ModuleLoader__\.load/)
   assert.match(bundle, /@pqg\/reference-module/)
-  assert.match(bundle, /settings\.section/)
-  assert.doesNotMatch(html, /"id":"@pqg\/reference-module"/)
+  assert.match(bundle, /pqgShell/)
+  assert.match(bundle, /pqg\.shell\.navigation/)
+  assert.doesNotMatch(bundle, /settings\.section/)
+  assert.match(html, /"id":"@pqg\/reference-module"/)
 })
 
 test('sidecar seeds persisted module policy before applying Makers adapters', async () => {
