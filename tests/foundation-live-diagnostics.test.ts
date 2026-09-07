@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
 const middlewareUrl = new URL('../middleware.ts', import.meta.url)
+const diagnosticsUrl = new URL('../public/pqg-diagnostics.html', import.meta.url)
 const origin = 'https://pqg-harness.edgeone.cool'
 const secret = 'foundation-personal-secret-0123456789abcdef'
 
@@ -37,25 +39,29 @@ async function issueSessionCookie(middleware: (context: any) => Promise<Response
   return (response.headers.get('set-cookie') || '').split(';', 1)[0]
 }
 
-test('Foundation diagnostics page is authenticated and probes one conversation context safely', async () => {
+test('Foundation diagnostics static page stays behind PQG auth', async () => {
   const { middleware } = await loadMiddleware()
+  const path = '/pqg-diagnostics.html'
 
-  const anonymous = makeContext(new Request(`${origin}/pqg-diagnostics`, { headers: { accept: 'text/html' } }))
+  const anonymous = makeContext(new Request(`${origin}${path}`, { headers: { accept: 'text/html' } }))
   const anonymousResponse = await middleware(anonymous.context)
   assert.equal(anonymousResponse.status, 303)
   assert.match(anonymousResponse.headers.get('location') || '', /\/pqg-login$/)
   assert.equal(anonymous.nextCalls(), 0)
 
   const cookie = await issueSessionCookie(middleware)
-  const authenticated = makeContext(new Request(`${origin}/pqg-diagnostics`, {
+  const authenticated = makeContext(new Request(`${origin}${path}`, {
     headers: { cookie, accept: 'text/html' },
   }))
   const response = await middleware(authenticated.context)
   assert.equal(response.status, 200)
-  assert.equal(authenticated.nextCalls(), 0)
-  assert.equal(response.headers.get('cache-control'), 'no-store')
+  assert.equal(authenticated.nextCalls(), 1)
+})
 
-  const body = await response.text()
+test('Foundation diagnostics probes one conversation context without exposing auth material', async () => {
+  assert.equal(existsSync(diagnosticsUrl), true, 'temporary diagnostics page must exist')
+  const body = await readFile(diagnosticsUrl, 'utf8')
+
   assert.match(body, /Makers-Conversation-Id/)
   assert.match(body, /\/api\/pqg\.modules/)
   assert.match(body, /\/api\/session\.list/)
