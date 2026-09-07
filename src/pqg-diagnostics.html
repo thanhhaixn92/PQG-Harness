@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PQG Foundation Diagnostics</title>
+  <style>
+    :root{color-scheme:light dark;font-family:system-ui,sans-serif}body{margin:0;padding:24px;background:Canvas;color:CanvasText}main{max-width:860px;margin:auto}button{font:inherit;padding:10px 14px;cursor:pointer}pre{white-space:pre-wrap;overflow-wrap:anywhere;padding:16px;border:1px solid color-mix(in srgb,CanvasText 20%,transparent);border-radius:10px}small{opacity:.72}
+  </style>
+</head>
+<body>
+<main>
+  <h1>PQG Foundation Diagnostics</h1>
+  <p>Kiểm tra cùng một EdgeOne Makers conversation context cho module, session và workspace.</p>
+  <button id="run" type="button">Chạy kiểm tra</button>
+  <p><small>Không đọc cookie, access secret hoặc token.</small></p>
+  <pre id="output">Chưa chạy.</pre>
+</main>
+<script>
+(() => {
+  const button = document.getElementById('run');
+  const output = document.getElementById('output');
+  const paths = ['/api/pqg.modules', '/api/session.list', '/api/workspace.list'];
+
+  function safeErrorBody(text) {
+    return text.slice(0, 1200);
+  }
+
+  async function probe(path, conversationId) {
+    const response = await fetch(path, {
+      headers: { 'Makers-Conversation-Id': conversationId },
+      credentials: 'same-origin',
+    });
+    const text = await response.text();
+    if (!response.ok) {
+      return `${path}\nHTTP ${response.status}\n${safeErrorBody(text)}`;
+    }
+    if (path === '/api/pqg.modules') {
+      try {
+        const parsed = JSON.parse(text);
+        const modules = Array.isArray(parsed?.modules)
+          ? parsed.modules.map((item) => ({ id: item?.id, enabled: item?.enabled }))
+          : [];
+        return `${path}\nHTTP ${response.status}\n${JSON.stringify({ modules }, null, 2)}`;
+      } catch {
+        return `${path}\nHTTP ${response.status}\nOK (${text.length} bytes)`;
+      }
+    }
+    return `${path}\nHTTP ${response.status}\nOK (${text.length} bytes)`;
+  }
+
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    output.textContent = 'Đang chạy…';
+    const conversationId = `audit-${crypto.randomUUID().replaceAll('-', '').slice(0, 24)}`;
+    const rows = [`conversation_id: ${conversationId}`];
+    for (const path of paths) {
+      try {
+        rows.push(await probe(path, conversationId));
+      } catch (error) {
+        rows.push(`${path}\nFETCH ERROR\n${String(error).slice(0, 1200)}`);
+      }
+    }
+    output.textContent = rows.join('\n\n----------------\n\n');
+    button.disabled = false;
+  });
+})();
+</script>
+</body>
+</html>
