@@ -70,3 +70,15 @@ test('Foundation diagnostics probes one conversation context without exposing au
   assert.doesNotMatch(body, /document\.cookie/)
   assert.doesNotMatch(body, new RegExp(secret))
 })
+
+test('Foundation diagnostics uses DSH unary RPC envelopes for session and workspace probes', async () => {
+  assert.equal(existsSync(diagnosticsUrl), true, 'temporary diagnostics page must exist')
+  const body = await readFile(diagnosticsUrl, 'utf8')
+
+  assert.match(body, /\{\s*path:\s*['"]\/api\/session\.list['"],\s*method:\s*['"]POST['"],\s*rpcMethod:\s*['"]session\.list['"]\s*\}/)
+  assert.match(body, /\{\s*path:\s*['"]\/api\/workspace\.list['"],\s*method:\s*['"]POST['"],\s*rpcMethod:\s*['"]workspace\.list['"]\s*\}/)
+  assert.match(body, /type:\s*['"]client-request['"]/)
+  assert.match(body, /rpcId:\s*crypto\.randomUUID\(\)/)
+  assert.match(body, /payload:\s*\{\}/)
+  assert.match(body, /body:\s*JSON\.stringify\(/)
+})
