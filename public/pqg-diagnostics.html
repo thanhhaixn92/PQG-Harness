@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>PQG Foundation Diagnostics</title>
+<style>
+:root{color-scheme:light dark;font-family:system-ui,sans-serif}body{margin:0;padding:20px;background:Canvas;color:CanvasText}main{max-width:760px;margin:auto}h1{font-size:1.4rem}section{margin:16px 0;padding:14px;border:1px solid color-mix(in srgb,CanvasText 18%,transparent);border-radius:10px}pre{white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0 0;font-size:13px}.muted{opacity:.7}
+</style>
+</head>
+<body>
+<main>
+<h1>Foundation live diagnostics</h1>
+<p class="muted">Trang tạm thời để kiểm tra cùng một EdgeOne conversation context. Không đọc hoặc hiển thị cookie đăng nhập.</p>
+<p id="conversation" class="muted"></p>
+<div id="results">Đang kiểm tra…</div>
+</main>
+<script>
+(() => {
+  const paths = ['/api/pqg.modules', '/api/session.list', '/api/workspace.list'];
+  const conversationId = `audit-${crypto.randomUUID().replaceAll('-', '').slice(0, 24)}`;
+  const results = document.getElementById('results');
+  document.getElementById('conversation').textContent = `conversation_id: ${conversationId}`;
+
+  function safeSummary(path, response, text) {
+    let parsed;
+    try { parsed = JSON.parse(text); } catch { parsed = undefined; }
+
+    const rpcError = parsed && parsed.result && parsed.result.ok === false ? parsed.result.error : undefined;
+    if (rpcError) return `HTTP ${response.status}\n${JSON.stringify({ error: rpcError }, null, 2)}`;
+
+    if (!response.ok) return `HTTP ${response.status}\n${text.slice(0, 2000)}`;
+
+    if (path === '/api/pqg.modules' && Array.isArray(parsed?.modules)) {
+      const modules = parsed.modules.map(module => ({ id: module.id, enabled: module.enabled }));
+      return `HTTP ${response.status}\n${JSON.stringify({ modules }, null, 2)}`;
+    }
+
+    return `HTTP ${response.status}\nOK (${text.length} bytes)`;
+  }
+
+  async function run() {
+    results.textContent = '';
+    for (const path of paths) {
+      const section = document.createElement('section');
+      const heading = document.createElement('strong');
+      const output = document.createElement('pre');
+      heading.textContent = path;
+      output.textContent = 'Đang kiểm tra…';
+      section.append(heading, output);
+      results.append(section);
+
+      try {
+        const response = await fetch(path, {
+          headers: { 'Makers-Conversation-Id': conversationId },
+          credentials: 'same-origin',
+        });
+        const text = await response.text();
+        output.textContent = safeSummary(path, response, text);
+      } catch (error) {
+        output.textContent = `FETCH ERROR\n${String(error)}`;
+      }
+    }
+  }
+
+  void run();
+})();
+</script>
+</body>
+</html>
