@@ -50,7 +50,7 @@ export async function discoverPqgModules(rootDir = process.cwd()) {
       const code = error && typeof error === 'object' && 'code' in error
         ? String(error.code)
         : ''
-      if (optionalNames.has(packageName) && code === 'ENOENT') continue
+      if (code === 'ENOENT') continue
       throw error
     }
     const metadata = moduleMetadata(dependencyPackage, packageName)
