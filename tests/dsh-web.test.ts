@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
@@ -10,6 +11,15 @@ test('build preparation installs the official DSH Web plugin graph', async () =>
   assert.match(html, /@deepseek-ai\/dsh-client-ui-trajectory/)
   assert.match(html, /@deepseek-ai\/dsh-client-ui-workspace/)
   assert.doesNotMatch(html, /@deepseek-ai\/dsh-client-ui-cordis/)
+})
+
+test('patched DSH Web entry asset is cache-busted by its prepared content hash', async () => {
+  const html = await readFile(new URL('../index.html', import.meta.url), 'utf8')
+  const asset = html.match(/<script[^>]+src="(\/assets\/[^"?]+\.js)\?rev=([a-f0-9]{12})"/)
+  assert.ok(asset, 'prepared entry script must include a 12-character revision')
+  const source = await readFile(new URL(`../public${asset[1]}`, import.meta.url), 'utf8')
+  const expected = createHash('sha256').update(source).digest('hex').slice(0, 12)
+  assert.equal(asset[2], expected)
 })
 
 test('Makers connection bundle uses SSE and injects conversation routing', async () => {
