@@ -1,0 +1,80 @@
+name: tmp-shell-theme-implement
+on:
+  push:
+    branches:
+      - fix/application-shell-theme-layout
+permissions:
+  contents: write
+jobs:
+  implement:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Apply scoped shell theme fix
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          client = Path('packages/application-shell/src/client.tsx')
+          source = client.read_text()
+
+          def replace(old: str, new: str):
+              global source
+              if old not in source:
+                  raise SystemExit(f'missing expected source block: {old[:120]!r}')
+              source = source.replace(old, new, 1)
+
+          replace("const inject = ['slots', 'sessions']\nconst utilityIds = new Set(['quick-note', 'recent', 'favorites'])\n", "const inject = ['slots', 'sessions']\nconst shellFontFamily = 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif'\n")
+
+          replace("""  const mainFallback = activeId === 'home'\n    ? React.createElement(HomeView, { renderSlot })\n    : activeId === 'approval'\n      ? React.createElement(ApprovalView, { revision: approvalRevision, services })\n      : utilityIds.has(activeId)\n        ? React.createElement(UnavailableState, { description: pqgCopy.utilityUnavailable })\n        : React.createElement(UnavailableState, { description: pqgCopy.moduleUnavailable })\n""", """  const mainFallback = activeId === 'home'\n    ? React.createElement(HomeView, { renderSlot })\n    : activeId === 'approval'\n      ? React.createElement(ApprovalView, { revision: approvalRevision, services })\n      : React.createElement(UnavailableState, { description: pqgCopy.moduleUnavailable })\n""")
+
+          replace("""    { id: 'pqg-application-shell', 'data-pqg-active': activeId, style: { minHeight: '100vh' } },\n""", """    {\n      id: 'pqg-application-shell',\n      'data-pqg-active': activeId,\n      style: {\n        minHeight: '100vh',\n        background: pqgShellTokens.shellBackground,\n        color: pqgShellTokens.textPrimary,\n        colorScheme: 'light',\n      },\n    },\n""")
+
+          replace("""        withGlobalClasses: false,\n      },\n""", """        withGlobalClasses: false,\n        theme: {\n          primaryColor: 'blue',\n          defaultRadius: 'md',\n          fontFamily: shellFontFamily,\n          headings: { fontFamily: shellFontFamily },\n        },\n      },\n""")
+
+          replace("""          padding: 'md',\n""", """          padding: mobileNav ? 'sm' : 'lg',\n""")
+
+          replace("""          AppShell.Header,\n          { px: 'md' },\n""", """          AppShell.Header,\n          {\n            px: mobileNav ? 'sm' : 'lg',\n            style: {\n              background: pqgShellTokens.panelBackground,\n              borderBottom: `1px solid ${pqgShellTokens.borderColor}`,\n              color: pqgShellTokens.textPrimary,\n            },\n          },\n""")
+
+          replace("""          AppShell.Navbar,\n          { p: 'sm' },\n""", """          AppShell.Navbar,\n          {\n            p: 'md',\n            style: {\n              background: pqgShellTokens.navigationBackground,\n              borderRight: `1px solid ${pqgShellTokens.borderColor}`,\n              color: pqgShellTokens.textPrimary,\n            },\n          },\n""")
+
+          replace("""              React.createElement(Text, { c: 'dimmed', fw: 700, px: 'sm', pt: 'md', size: 'xs', tt: 'uppercase' }, pqgCopy.personal),\n              React.createElement(NavLink, { label: pqgCopy.quickNote, active: activeId === 'quick-note', onClick: () => navigate('quick-note') }),\n              React.createElement(NavLink, { label: pqgCopy.recent, active: activeId === 'recent', onClick: () => navigate('recent') }),\n              React.createElement(NavLink, { label: pqgCopy.favorites, active: activeId === 'favorites', onClick: () => navigate('favorites') }),\n""", "")
+
+          replace("""        React.createElement(\n          AppShell.Main,\n          null,\n          renderSlotChain('pqg.shell.workspace', { activeId }, { fallback: mainFallback }),\n        ),\n        React.createElement(AppShell.Aside, null, !narrow && supportState !== 'collapsed' ? supportContent : null),\n""", """        React.createElement(\n          AppShell.Main,\n          { style: { background: pqgShellTokens.shellBackground } },\n          React.createElement(\n            'div',\n            { style: { width: '100%', maxWidth: pqgShellTokens.contentMaxWidth, margin: '0 auto' } },\n            renderSlotChain('pqg.shell.workspace', { activeId }, { fallback: mainFallback }),\n          ),\n        ),\n        React.createElement(AppShell.Aside, {\n          style: {\n            background: pqgShellTokens.panelBackground,\n            borderLeft: `1px solid ${pqgShellTokens.borderColor}`,\n            color: pqgShellTokens.textPrimary,\n          },\n        }, !narrow && supportState !== 'collapsed' ? supportContent : null),\n""")
+
+          client.write_text(source)
+
+          Path('packages/application-shell/src/tokens.ts').write_text("""export const pqgShellTokens = Object.freeze({\n  headerHeight: 64,\n  navbarWidth: 248,\n  supportCompactWidth: 92,\n  supportExpandedWidth: 320,\n  tabletBreakpoint: 1200,\n  mobileNavBreakpoint: 960,\n  desktopSupportBreakpoint: 1440,\n  contentMaxWidth: 1180,\n  shellBackground: '#f5f7fb',\n  panelBackground: '#ffffff',\n  navigationBackground: '#fbfcfe',\n  textPrimary: '#172033',\n  borderColor: '#e4e9f0',\n})\n""")
+
+          Path('packages/application-shell/src/states.ts').write_text("""type ReactApi = {\n  createElement: (...args: any[]) => any\n}\n\nconst React = require('react') as ReactApi\n\nexport interface ProductStateProps {\n  title?: string\n  description?: string\n}\n\nfunction ProductState({ title, description }: Required<ProductStateProps>) {\n  return React.createElement(\n    'section',\n    {\n      'data-pqg-product-state': title,\n      style: {\n        display: 'grid',\n        gap: 8,\n        placeItems: 'center',\n        minHeight: 220,\n        maxWidth: 720,\n        margin: '24px auto',\n        padding: 32,\n        textAlign: 'center',\n        color: 'var(--mantine-color-text, #172033)',\n        background: 'var(--mantine-color-white, #ffffff)',\n        border: '1px solid var(--mantine-color-gray-2, #e9ecef)',\n        borderRadius: 12,\n      },\n    },\n    React.createElement('strong', { style: { fontSize: 16 } }, title),\n    React.createElement(\n      'span',\n      { style: { color: 'var(--mantine-color-dimmed, #667085)', fontSize: 14 } },\n      description,\n    ),\n  )\n}\n\nexport function LoadingState(props: ProductStateProps = {}) {\n  return React.createElement(ProductState, {\n    title: props.title ?? 'Đang tải',\n    description: props.description ?? 'Nội dung đang được chuẩn bị.',\n  })\n}\n\nexport function EmptyState(props: ProductStateProps = {}) {\n  return React.createElement(ProductState, {\n    title: props.title ?? 'Chưa có nội dung',\n    description: props.description ?? 'Nội dung sẽ xuất hiện tại đây khi sẵn sàng.',\n  })\n}\n\nexport function ErrorState(props: ProductStateProps = {}) {\n  return React.createElement(ProductState, {\n    title: props.title ?? 'Không thể hiển thị nội dung',\n    description: props.description ?? 'Vui lòng thử lại sau.',\n  })\n}\n\nexport function UnavailableState(props: ProductStateProps = {}) {\n  return React.createElement(ProductState, {\n    title: props.title ?? 'Chưa khả dụng',\n    description: props.description ?? 'Chức năng này hiện chưa sẵn sàng.',\n  })\n}\n""")
+
+          copy = Path('packages/application-shell/src/copy.ts')
+          copy_source = copy.read_text()
+          for line in [
+              "  personal: 'Cá nhân',\n",
+              "  quickNote: 'Ghi chú nhanh',\n",
+              "  recent: 'Gần đây',\n",
+              "  favorites: 'Mục yêu thích',\n",
+              "  utilityUnavailable: 'Tiện ích này chưa được kích hoạt.',\n",
+          ]:
+              if line not in copy_source:
+                  raise SystemExit(f'missing copy line: {line!r}')
+              copy_source = copy_source.replace(line, '', 1)
+          copy.write_text(copy_source)
+          PY
+      - run: npm ci
+      - run: npm run prepare:dsh-web
+      - run: node --experimental-strip-types --test tests/application-shell-contract.test.ts tests/task-module.test.ts
+      - run: npm run typecheck
+      - name: Commit scoped shell fix and remove temporary workflows
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm -f .github/workflows/tmp-shell-theme-tdd.yml .github/workflows/tmp-shell-theme-implement.yml
+          git add packages/application-shell/src/client.tsx packages/application-shell/src/states.ts packages/application-shell/src/tokens.ts packages/application-shell/src/copy.ts index.html public/index.html public/plugins/@pqg/application-shell/client.js
+          git commit -m 'fix(shell): own light theme and simplify navigation'
+          git push
