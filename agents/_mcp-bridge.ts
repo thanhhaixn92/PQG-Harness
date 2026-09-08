@@ -57,6 +57,9 @@ type McpToolDefinition = {
   inputSchema?: Record<string, unknown>
 }
 
+export type MakersPermissionMode = 'read-only' | 'workspace-write' | 'danger-full-access'
+type ModuleMcpToolDefinition = McpToolDefinition & { permission: MakersPermissionMode }
+
 export interface LocalMcpBridge {
   url: string
   requestCount(): number
@@ -68,15 +71,15 @@ export interface ModuleMcpBridge extends LocalMcpBridge {
   registerModuleTool(
     moduleId: string,
     name: string,
-    def: McpToolDefinition,
+    def: ModuleMcpToolDefinition,
     handler: McpToolHandler,
   ): void
+  moduleToolPermissions(): Record<string, MakersPermissionMode>
   setModuleEnabled(moduleId: string, enabled: boolean): void
   removeModule(moduleId: string): void
 }
 
 export type MakersContextProvider = () => any
-export type MakersPermissionMode = 'read-only' | 'workspace-write' | 'danger-full-access'
 
 interface McpServerRuntime {
   server: McpServer
@@ -84,9 +87,11 @@ interface McpServerRuntime {
   registerModuleTool(
     moduleId: string,
     name: string,
-    def: McpToolDefinition,
+    def: ModuleMcpToolDefinition,
     handler: McpToolHandler,
   ): void
+  moduleToolPermissions(): Record<string, MakersPermissionMode>
+  removeModule(moduleId: string): void
 }
 
 function toolName(tool: unknown): string {
@@ -168,6 +173,8 @@ async function createMcpServer(
     { capabilities: { tools: {} } },
   )
   const modules = createModuleToolLifecycle()
+  const permissions = new Map<string, MakersPermissionMode>()
+  const moduleToolNames = new Map<string, Set<string>>()
 
   const register = (
     name: string,
@@ -188,10 +195,24 @@ async function createMcpServer(
   const registerModuleTool = (
     moduleId: string,
     name: string,
-    def: McpToolDefinition,
+    def: ModuleMcpToolDefinition,
     handler: McpToolHandler,
   ): void => {
-    modules.add(moduleId, register(name, def, handler))
+    const { permission, ...toolDefinition } = def
+    const handle = register(name, toolDefinition, handler)
+    modules.add(moduleId, handle)
+    permissions.set(name, permission)
+    const names = moduleToolNames.get(moduleId) ?? new Set<string>()
+    names.add(name)
+    moduleToolNames.set(moduleId, names)
+  }
+
+  const moduleToolPermissions = (): Record<string, MakersPermissionMode> => Object.fromEntries(permissions)
+
+  const removeModule = (moduleId: string): void => {
+    for (const name of moduleToolNames.get(moduleId) ?? []) permissions.delete(name)
+    moduleToolNames.delete(moduleId)
+    modules.remove(moduleId)
   }
 
   register('makers_context_probe', {
@@ -320,7 +341,7 @@ async function createMcpServer(
     }
   })
 
-  return { server, modules, registerModuleTool }
+  return { server, modules, registerModuleTool, moduleToolPermissions, removeModule }
 }
 
 async function handleMcpRequest(
@@ -340,7 +361,7 @@ export async function startLocalMcpBridge(
   getContext: MakersContextProvider,
   conversationId: string,
 ): Promise<ModuleMcpBridge> {
-  const { server, modules, registerModuleTool } = await createMcpServer(getContext, conversationId)
+  const { server, modules, registerModuleTool, moduleToolPermissions, removeModule } = await createMcpServer(getContext, conversationId)
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: () => randomUUID(),
   })
@@ -430,8 +451,9 @@ export async function startLocalMcpBridge(
     requestCount: () => requests,
     requestLog: () => requestMetadata.map(entry => ({ ...entry })),
     registerModuleTool,
+    moduleToolPermissions,
     setModuleEnabled: modules.setEnabled,
-    removeModule: modules.remove,
+    removeModule,
     close,
   }
 }
