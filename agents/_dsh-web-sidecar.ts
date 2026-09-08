@@ -472,7 +472,7 @@ async function startSidecarAttempt(context: any, conversationId: string): Promis
       mcpUrl: mcp.url,
       gatewayBaseUrl: gateway.baseUrl,
       defaultModel,
-      moduleToolPermissions: mcp.moduleToolPermissions(),
+      moduleToolPermissions: mcp.moduleToolPermissions?.() ?? {},
     })
 
     const dshBin = join(dirname(require.resolve('@deepseek-ai/dsh/package.json')), 'lib', 'bin.js')

@@ -10,6 +10,7 @@ const modulesRoot = join(root, 'node_modules', '@deepseek-ai')
 const webDist = join(modulesRoot, 'dsh-web-frontend', 'dist')
 const pqgModuleSettingsId = '@pqg/module-settings'
 const pqgReferenceModuleId = '@pqg/reference-module'
+const pqgTaskModuleId = '@pqg/task-module'
 const pqgApplicationShellId = '@pqg/application-shell'
 const pqgMantineSpikeId = '@pqg/mantine-spike'
 const reactPlatformExternals = new Set([
@@ -1057,35 +1058,74 @@ async function preparePqgModuleSettingsClient() {
   }
 }
 
-async function preparePqgReferenceModuleClient() {
-  const entry = join(root, 'packages', 'reference-module', 'src', 'client.tsx')
-  const source = await readFile(entry, 'utf8')
-  const transformed = await transformWithEsbuild(source, entry, {
-    loader: 'tsx',
-    target: 'es2022',
-    format: 'cjs',
-    sourcemap: false,
-    charset: 'utf8',
+async function preparePqgModuleClient(id, entry, inject) {
+  const result = await build({
+    configFile: false,
+    root,
+    logLevel: 'silent',
+    define: {
+      'process.env.NODE_ENV': JSON.stringify('production'),
+    },
+    build: {
+      write: false,
+      target: 'es2022',
+      minify: 'esbuild',
+      cssCodeSplit: false,
+      lib: {
+        entry,
+        formats: ['cjs'],
+        fileName: 'client',
+      },
+      rollupOptions: {
+        external: moduleId => reactPlatformExternals.has(moduleId),
+        output: { inlineDynamicImports: true },
+      },
+    },
   })
+  const runs = Array.isArray(result) ? result : [result]
+  const outputs = runs.flatMap(run => Array.isArray(run?.output) ? run.output : [])
+  const chunk = outputs.find(output => output.type === 'chunk' && output.isEntry)
+  if (!chunk) throw new Error(`PQG module ${id} bundle produced no entry chunk.`)
+
   const bundled = [
-    `window.__ModuleLoader__.load({ id: ${JSON.stringify(pqgReferenceModuleId)}, factory: (require) => { var module = { exports: {} }; var exports = module.exports;`,
-    transformed.code.trimEnd(),
+    'window.__ModuleLoader__.load({ id: ' + JSON.stringify(id) + ', factory: (require) => { var module = { exports: {} }; var exports = module.exports;',
+    chunk.code.trimEnd(),
     'return module.exports; } });',
     '',
   ].join('\n')
-  const target = join(publicDir, 'plugins', ...pqgReferenceModuleId.split('/'), 'client.js')
+  const target = join(publicDir, 'plugins', ...id.split('/'), 'client.js')
   await mkdir(dirname(target), { recursive: true })
   await writeFile(target, bundled)
   const rev = hash(bundled)
   return {
-    id: pqgReferenceModuleId,
-    url: `/plugins/${pqgReferenceModuleId}/client.js?rev=${rev}`,
+    id,
+    url: `/plugins/${id}/client.js?rev=${rev}`,
     rev,
-    inject: [
+    inject,
+  }
+}
+
+async function preparePqgReferenceModuleClient() {
+  return preparePqgModuleClient(
+    pqgReferenceModuleId,
+    join(root, 'packages', 'reference-module', 'src', 'client.tsx'),
+    [
       '@deepseek-ai/dsh-client-runtime',
       '@deepseek-ai/dsh-client-ui-slots',
     ],
-  }
+  )
+}
+
+async function preparePqgTaskModuleClient() {
+  return preparePqgModuleClient(
+    pqgTaskModuleId,
+    join(root, 'packages', 'task-module', 'src', 'client.tsx'),
+    [
+      '@deepseek-ai/dsh-client-runtime',
+      '@deepseek-ai/dsh-client-ui-slots',
+      '@pqg/application-shell',
+    ],
+  )
 }
 
 async function preparePqgApplicationShellClient() {
@@ -1545,12 +1585,14 @@ await mkdir(publicDir, { recursive: true })
 await cp(webDist, publicDir, { recursive: true })
 const webShellEntry = await patchWebShellForPqgRoot()
 const referenceModule = await preparePqgReferenceModuleClient()
+const taskModule = await preparePqgTaskModuleClient()
 const applicationShell = await preparePqgApplicationShellClient()
 const mantineSpike = await preparePqgMantineSpikeClient()
 const entries = [
   ...(await clientPackages()),
   applicationShell.entry,
   referenceModule,
+  taskModule,
   await preparePqgModuleSettingsClient(),
   mantineSpike.entry,
 ].sort((left, right) => left.id.localeCompare(right.id))

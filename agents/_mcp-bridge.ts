@@ -74,7 +74,7 @@ export interface ModuleMcpBridge extends LocalMcpBridge {
     def: ModuleMcpToolDefinition,
     handler: McpToolHandler,
   ): void
-  moduleToolPermissions(): Record<string, MakersPermissionMode>
+  moduleToolPermissions?(): Record<string, MakersPermissionMode>
   setModuleEnabled(moduleId: string, enabled: boolean): void
   removeModule(moduleId: string): void
 }
