@@ -140,6 +140,19 @@ test('Task client scopes module policy and CRUD requests to the current Makers c
   assert.match(source, /sessions\.list\.subscribe/)
 })
 
+test('Task client activates contributions at most once across session-list updates', async () => {
+  const source = await readFile(new URL('../packages/task-module/src/client.tsx', import.meta.url), 'utf8')
+  const applyStart = source.indexOf('async function apply')
+  assert.ok(applyStart >= 0, 'Task client apply must exist')
+  const applyBlock = source.slice(applyStart)
+  assert.match(applyBlock, /let activated = false/)
+  assert.match(applyBlock, /let checking = false/)
+  assert.match(applyBlock, /if \(activated \|\| checking \|\| disposed\) return/)
+  const markActivated = applyBlock.indexOf('activated = true')
+  const register = applyBlock.indexOf('registerTaskContributions(client)')
+  assert.ok(markActivated >= 0 && register > markActivated, 'activation must be marked before contributions register')
+})
+
 test('module settings scopes module-state GET and PUT requests to the current Makers conversation', async () => {
   const source = await readFile(new URL('../src/pqg-module-settings-client.ts', import.meta.url), 'utf8')
   assert.match(source, /const inject = \['slots', 'sessions'\]/)
