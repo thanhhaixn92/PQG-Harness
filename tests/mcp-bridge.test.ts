@@ -56,16 +56,6 @@ test('module tools toggle on the existing MCP bridge without affecting Makers co
     () => ({ tools: { all: () => [] } }),
     'conv-module-lifecycle',
   )
-  const moduleBridge = bridge as typeof bridge & {
-    registerModuleTool(
-      moduleId: string,
-      name: string,
-      def: { description: string; inputSchema?: Record<string, unknown> },
-      handler: () => Promise<{ content: Array<{ type: 'text'; text: string }> }>,
-    ): void
-    setModuleEnabled(moduleId: string, enabled: boolean): void
-    removeModule(moduleId: string): void
-  }
   const client = new Client({ name: 'module-lifecycle-test', version: '1.0.0' }, { capabilities: {} })
   await client.connect(new StreamableHTTPClientTransport(new URL(bridge.url)))
 
@@ -73,28 +63,31 @@ test('module tools toggle on the existing MCP bridge without affecting Makers co
     const initial = (await client.listTools()).tools.map(tool => tool.name)
     assert.ok(initial.includes('makers_context_probe'))
     assert.equal(initial.includes('future_probe'), false)
+    assert.deepEqual(bridge.moduleToolPermissions(), {})
 
-    moduleBridge.setModuleEnabled('future', true)
-    moduleBridge.registerModuleTool(
+    bridge.setModuleEnabled('future', true)
+    bridge.registerModuleTool(
       'future',
       'future_probe',
-      { description: 'Future PQG module probe', inputSchema: {} },
+      { description: 'Future PQG module probe', inputSchema: {}, permission: 'read-only' },
       async () => ({ content: [{ type: 'text', text: 'ok' }] }),
     )
 
+    assert.deepEqual(bridge.moduleToolPermissions(), { future_probe: 'read-only' })
     const enabled = (await client.listTools()).tools.map(tool => tool.name)
     assert.ok(enabled.includes('future_probe'))
     assert.ok(enabled.includes('makers_context_probe'))
 
-    moduleBridge.setModuleEnabled('future', false)
+    bridge.setModuleEnabled('future', false)
     const disabled = (await client.listTools()).tools.map(tool => tool.name)
     assert.equal(disabled.includes('future_probe'), false)
     assert.ok(disabled.includes('makers_context_probe'))
 
-    moduleBridge.setModuleEnabled('future', true)
+    bridge.setModuleEnabled('future', true)
     assert.ok((await client.listTools()).tools.some(tool => tool.name === 'future_probe'))
 
-    moduleBridge.removeModule('future')
+    bridge.removeModule('future')
+    assert.deepEqual(bridge.moduleToolPermissions(), {})
     const removed = (await client.listTools()).tools.map(tool => tool.name)
     assert.equal(removed.includes('future_probe'), false)
     assert.ok(removed.includes('makers_context_probe'))
@@ -109,26 +102,18 @@ test('a failing module tool returns an MCP error without taking down Makers core
     () => ({ tools: { all: () => [] } }),
     'conv-module-failure',
   )
-  const moduleBridge = bridge as typeof bridge & {
-    registerModuleTool(
-      moduleId: string,
-      name: string,
-      def: { description: string; inputSchema?: Record<string, unknown> },
-      handler: () => Promise<{ content: Array<{ type: 'text'; text: string }> }>,
-    ): void
-    setModuleEnabled(moduleId: string, enabled: boolean): void
-  }
   const client = new Client({ name: 'module-failure-test', version: '1.0.0' }, { capabilities: {} })
   await client.connect(new StreamableHTTPClientTransport(new URL(bridge.url)))
 
   try {
-    moduleBridge.setModuleEnabled('future', true)
-    moduleBridge.registerModuleTool(
+    bridge.setModuleEnabled('future', true)
+    bridge.registerModuleTool(
       'future',
       'future_fail',
       { description: 'Failing future module probe', inputSchema: {} },
       async () => { throw new Error('reference module failure') },
     )
+    assert.deepEqual(bridge.moduleToolPermissions(), {})
 
     const failed = await client.callTool({ name: 'future_fail', arguments: {} }) as any
     assert.equal(failed.isError, true)
@@ -164,6 +149,7 @@ test('installed reference Makers adapter toggles one probe tool on the existing 
     const initial = (await client.listTools()).tools.map(tool => tool.name)
     assert.ok(initial.includes('makers_context_probe'))
     assert.equal(initial.includes('pqg_reference_probe'), false)
+    assert.deepEqual(bridge.moduleToolPermissions(), {})
 
     bridge.setModuleEnabled('reference', true)
     const enabled = (await client.listTools()).tools.map(tool => tool.name)
