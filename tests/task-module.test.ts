@@ -111,6 +111,13 @@ test('Task module is wired through the existing PQG module, build and permission
   assert.equal(existsSync(apiUrl), true, 'Task HTTP adapter must exist')
 })
 
+test('Task client keeps its own build producer without rewriting the Reference producer', async () => {
+  const source = await readFile(new URL('../scripts/prepare-dsh-web.mjs', import.meta.url), 'utf8')
+  assert.match(source, /async function preparePqgReferenceModuleClient\(\)/)
+  assert.match(source, /async function preparePqgTaskModuleClient\(\)/)
+  assert.doesNotMatch(source, /async function preparePqgModuleClient\(id, entry, inject\)/)
+})
+
 test('prepared DSH Web boot graph includes the Task client contribution', async () => {
   const preparedClient = new URL('../public/plugins/@pqg/task-module/client.js', import.meta.url)
   assert.equal(existsSync(preparedClient), true, 'prepare:dsh-web must emit the Task client bundle')
