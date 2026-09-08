@@ -9,7 +9,7 @@ import { Context } from '@deepseek-ai/cordis'
 import * as slotCoreModule from '@deepseek-ai/dsh-client-ui-slots'
 
 const require = createRequire(import.meta.url)
-const { renderToStaticMarkup } = require('react-dom/server') as typeof import('react-dom/server')
+const { renderToStaticMarkup } = require('react-dom/server') as { renderToStaticMarkup(node: unknown): string }
 const runtimeBundleUrl = new URL('../public/plugins/@deepseek-ai/dsh-client-runtime/client.js', import.meta.url)
 const shellBundleUrl = new URL('../public/plugins/@pqg/application-shell/client.js', import.meta.url)
 const referenceBundleUrl = new URL('../public/plugins/@pqg/reference-module/client.js', import.meta.url)
@@ -103,7 +103,7 @@ test('PQG shell owns a readable light surface and hides placeholder utilities fr
 
   const root = slots.entries('root')[0]?.component
   assert.equal(typeof root, 'function')
-  const React = require('react') as typeof import('react')
+  const React = require('react') as { createElement: (...args: any[]) => unknown }
   const html = renderToStaticMarkup(React.createElement(root as any, {
     renderSlot: (_name: string, _owner: unknown, options?: { fallback?: unknown }) => options?.fallback ?? null,
     renderSlotChain: (_name: string, _owner: unknown, options?: { fallback?: unknown }) => options?.fallback ?? null,
