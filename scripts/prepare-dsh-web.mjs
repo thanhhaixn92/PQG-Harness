@@ -1058,7 +1058,40 @@ async function preparePqgModuleSettingsClient() {
   }
 }
 
-async function preparePqgModuleClient(id, entry, inject) {
+async function preparePqgReferenceModuleClient() {
+  const entry = join(root, 'packages', 'reference-module', 'src', 'client.tsx')
+  const source = await readFile(entry, 'utf8')
+  const transformed = await transformWithEsbuild(source, entry, {
+    loader: 'tsx',
+    target: 'es2022',
+    format: 'cjs',
+    sourcemap: false,
+    charset: 'utf8',
+  })
+  const bundled = [
+    `window.__ModuleLoader__.load({ id: ${JSON.stringify(pqgReferenceModuleId)}, factory: (require) => { var module = { exports: {} }; var exports = module.exports;`,
+    transformed.code.trimEnd(),
+    'return module.exports; } });',
+    '',
+  ].join('\n')
+  const target = join(publicDir, 'plugins', ...pqgReferenceModuleId.split('/'), 'client.js')
+  await mkdir(dirname(target), { recursive: true })
+  await writeFile(target, bundled)
+  const rev = hash(bundled)
+  return {
+    id: pqgReferenceModuleId,
+    url: `/plugins/${pqgReferenceModuleId}/client.js?rev=${rev}`,
+    rev,
+    inject: [
+      '@deepseek-ai/dsh-client-runtime',
+      '@deepseek-ai/dsh-client-ui-slots',
+    ],
+  }
+}
+
+async function preparePqgTaskModuleClient() {
+  const id = pqgTaskModuleId
+  const entry = join(root, 'packages', 'task-module', 'src', 'client.tsx')
   const result = await build({
     configFile: false,
     root,
@@ -1101,31 +1134,12 @@ async function preparePqgModuleClient(id, entry, inject) {
     id,
     url: `/plugins/${id}/client.js?rev=${rev}`,
     rev,
-    inject,
-  }
-}
-
-async function preparePqgReferenceModuleClient() {
-  return preparePqgModuleClient(
-    pqgReferenceModuleId,
-    join(root, 'packages', 'reference-module', 'src', 'client.tsx'),
-    [
-      '@deepseek-ai/dsh-client-runtime',
-      '@deepseek-ai/dsh-client-ui-slots',
-    ],
-  )
-}
-
-async function preparePqgTaskModuleClient() {
-  return preparePqgModuleClient(
-    pqgTaskModuleId,
-    join(root, 'packages', 'task-module', 'src', 'client.tsx'),
-    [
+    inject: [
       '@deepseek-ai/dsh-client-runtime',
       '@deepseek-ai/dsh-client-ui-slots',
       '@pqg/application-shell',
     ],
-  )
+  }
 }
 
 async function preparePqgApplicationShellClient() {
