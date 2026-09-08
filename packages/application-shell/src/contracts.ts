@@ -98,6 +98,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'pqg.shell.home.widget': {
       kind: 'list'
       scope: 'root'
+      owner: ShellNavigationOwner
     }
     'pqg.shell.support.context': {
       kind: 'list'

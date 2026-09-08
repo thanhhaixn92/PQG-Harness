@@ -268,7 +268,7 @@ function TaskWorkspace(_props: PropsRuntime<'pqg.shell.workspace'> & { matched: 
   )
 }
 
-function TaskHomeWidget(_props: PropsRuntime<'pqg.shell.home.widget'>) {
+function TaskHomeWidget({ navigate }: PropsRuntime<'pqg.shell.home.widget'>) {
   const [tasks, setTasks] = React.useState<TaskRecord[]>([])
   const [loaded, setLoaded] = React.useState(false)
 
@@ -285,15 +285,36 @@ function TaskHomeWidget(_props: PropsRuntime<'pqg.shell.home.widget'>) {
   const today = localDateKey()
   const dueToday = tasks.filter(task => !task.completed && task.dueDate === today)
   return React.createElement(
-    Stack,
-    { gap: 6, 'data-pqg-task-home-widget': true },
-    React.createElement(Group, { justify: 'space-between' },
-      React.createElement(Text, { fw: 600 }, 'Việc cần làm hôm nay'),
-      React.createElement(Badge, { variant: 'light' }, loaded ? String(dueToday.length) : '…'),
+    Paper,
+    {
+      withBorder: true,
+      radius: 'lg',
+      p: 'lg',
+      'data-pqg-task-home-card': true,
+    },
+    React.createElement(
+      Stack,
+      { gap: 'sm', 'data-pqg-task-home-widget': true },
+      React.createElement(
+        Group,
+        { justify: 'space-between', align: 'center' },
+        React.createElement(Text, { fw: 700 }, 'Việc cần làm hôm nay'),
+        React.createElement(Button, {
+          variant: 'subtle',
+          size: 'compact-sm',
+          onClick: () => navigate(TASK_ID),
+        }, 'Xem công việc'),
+      ),
+      React.createElement(Badge, { variant: 'light', w: 'fit-content' }, loaded ? `${dueToday.length} việc` : 'Đang tải…'),
+      loaded && dueToday.length === 0
+        ? React.createElement(Text, { c: 'dimmed', size: 'sm' }, 'Không có việc đến hạn hôm nay.')
+        : dueToday.slice(0, 4).map(task => React.createElement(
+            Group,
+            { key: task.id, gap: 'xs', wrap: 'nowrap' },
+            React.createElement('span', { 'aria-hidden': true }, '•'),
+            React.createElement(Text, { size: 'sm', lineClamp: 1 }, task.title),
+          )),
     ),
-    loaded && dueToday.length === 0
-      ? React.createElement(Text, { c: 'dimmed', size: 'sm' }, 'Không có việc đến hạn hôm nay.')
-      : dueToday.slice(0, 3).map(task => React.createElement(Text, { key: task.id, size: 'sm' }, `• ${task.title}`)),
   )
 }
 
