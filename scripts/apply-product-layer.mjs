@@ -1,4 +1,4 @@
-import { copyFile, readFile, writeFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { product } from '../config/product.mjs'
@@ -157,11 +157,6 @@ export async function applyProductLayer(targetRoot = root) {
   const localePath = join(targetRoot, 'public', 'plugins', '@deepseek-ai', 'dsh-client-locale', 'client.js')
   const locale = await readFile(localePath, 'utf8')
   await writeFile(localePath, applyLocaleProductLayer(locale))
-
-  await copyFile(
-    join(root, 'src', 'pqg-diagnostics.html'),
-    join(targetRoot, 'public', 'pqg-diagnostics.html'),
-  )
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
