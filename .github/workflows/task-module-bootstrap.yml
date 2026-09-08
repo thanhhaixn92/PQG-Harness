@@ -1,0 +1,160 @@
+name: Task module bootstrap
+
+on:
+  push:
+    branches:
+      - feature/78-task-module
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/78-task-module
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Wire Task client producer
+        shell: bash
+        run: |
+          node <<'NODE'
+          const { readFileSync, writeFileSync } = require('node:fs')
+          const path = 'scripts/prepare-dsh-web.mjs'
+          let source = readFileSync(path, 'utf8')
+
+          if (!source.includes("const pqgTaskModuleId = '@pqg/task-module'")) {
+            source = source.replace(
+              "const pqgReferenceModuleId = '@pqg/reference-module'\n",
+              "const pqgReferenceModuleId = '@pqg/reference-module'\nconst pqgTaskModuleId = '@pqg/task-module'\n",
+            )
+          }
+
+          const start = source.indexOf('async function preparePqgReferenceModuleClient() {')
+          const end = source.indexOf('async function preparePqgApplicationShellClient()', start)
+          if (start < 0 || end <= start) throw new Error('Could not locate PQG module client producer seam')
+
+          const moduleProducer = `async function preparePqgModuleClient(id, entry, inject) {
+            const result = await build({
+              configFile: false,
+              root,
+              logLevel: 'silent',
+              define: {
+                'process.env.NODE_ENV': JSON.stringify('production'),
+              },
+              build: {
+                write: false,
+                target: 'es2022',
+                minify: 'esbuild',
+                cssCodeSplit: false,
+                lib: {
+                  entry,
+                  formats: ['cjs'],
+                  fileName: 'client',
+                },
+                rollupOptions: {
+                  external: moduleId => reactPlatformExternals.has(moduleId),
+                  output: { inlineDynamicImports: true },
+                },
+              },
+            })
+            const runs = Array.isArray(result) ? result : [result]
+            const outputs = runs.flatMap(run => Array.isArray(run?.output) ? run.output : [])
+            const chunk = outputs.find(output => output.type === 'chunk' && output.isEntry)
+            if (!chunk) throw new Error(\`PQG module \${id} bundle produced no entry chunk.\`)
+
+            const bundled = [
+              'window.__ModuleLoader__.load({ id: ' + JSON.stringify(id) + ', factory: (require) => { var module = { exports: {} }; var exports = module.exports;',
+              chunk.code.trimEnd(),
+              'return module.exports; } });',
+              '',
+            ].join('\\n')
+            const target = join(publicDir, 'plugins', ...id.split('/'), 'client.js')
+            await mkdir(dirname(target), { recursive: true })
+            await writeFile(target, bundled)
+            const rev = hash(bundled)
+            return {
+              id,
+              url: \`/plugins/\${id}/client.js?rev=\${rev}\`,
+              rev,
+              inject,
+            }
+          }
+
+          async function preparePqgReferenceModuleClient() {
+            return preparePqgModuleClient(
+              pqgReferenceModuleId,
+              join(root, 'packages', 'reference-module', 'src', 'client.tsx'),
+              [
+                '@deepseek-ai/dsh-client-runtime',
+                '@deepseek-ai/dsh-client-ui-slots',
+              ],
+            )
+          }
+
+          async function preparePqgTaskModuleClient() {
+            return preparePqgModuleClient(
+              pqgTaskModuleId,
+              join(root, 'packages', 'task-module', 'src', 'client.tsx'),
+              [
+                '@deepseek-ai/dsh-client-runtime',
+                '@deepseek-ai/dsh-client-ui-slots',
+                '@pqg/application-shell',
+              ],
+            )
+          }
+
+          `
+          source = source.slice(0, start) + moduleProducer + source.slice(end)
+
+          if (!source.includes('const taskModule = await preparePqgTaskModuleClient()')) {
+            source = source.replace(
+              'const referenceModule = await preparePqgReferenceModuleClient()\nconst applicationShell = await preparePqgApplicationShellClient()',
+              'const referenceModule = await preparePqgReferenceModuleClient()\nconst taskModule = await preparePqgTaskModuleClient()\nconst applicationShell = await preparePqgApplicationShellClient()',
+            )
+          }
+          if (!source.includes('  taskModule,\n  await preparePqgModuleSettingsClient(),')) {
+            source = source.replace(
+              '  referenceModule,\n  await preparePqgModuleSettingsClient(),',
+              '  referenceModule,\n  taskModule,\n  await preparePqgModuleSettingsClient(),',
+            )
+          }
+
+          if (!source.includes("const pqgTaskModuleId = '@pqg/task-module'") || !source.includes('const taskModule = await preparePqgTaskModuleClient()')) {
+            throw new Error('Task client producer wiring did not apply')
+          }
+          writeFileSync(path, source)
+          NODE
+
+      - name: Refresh lockfile
+        run: npm install --package-lock-only --ignore-scripts
+
+      - name: Install exact dependencies
+        run: npm ci
+
+      - name: Prepare generated DSH Web assets
+        run: npm run prepare:dsh-web
+
+      - name: Targeted Task verification
+        run: node --experimental-strip-types --test tests/task-module.test.ts tests/module-contract.test.ts tests/mcp-permission.test.ts tests/mcp-bridge.test.ts
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Commit generated artifacts and remove bootstrap workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/task-module-bootstrap.yml
+          git add package-lock.json scripts/prepare-dsh-web.mjs index.html public agents/api
+          git commit -m "feat(task): wire Task module generated artifacts"
+          git push origin HEAD:feature/78-task-module
