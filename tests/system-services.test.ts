@@ -5,6 +5,8 @@ import { createShellSystemServices } from '../packages/application-shell/src/ser
 
 function fakeSessions() {
   let approvalResult: unknown
+  const prompts: unknown[] = []
+  let cancelled = 0
   const wait = {
     kind: 'approval' as const,
     key: 'a:1',
@@ -28,11 +30,21 @@ function fakeSessions() {
         ? {
             session: {
               getSnapshot: () => ({ pending: [wait] }),
+              async prompt(content: unknown, mode: unknown) {
+                prompts.push({ content, mode })
+                return { ok: true, value: { accepted: true } }
+              },
+              async cancel() {
+                cancelled++
+                return { ok: true, value: { accepted: true } }
+              },
             },
           }
         : undefined,
     },
     approvalResult: () => approvalResult,
+    prompts: () => prompts,
+    cancelled: () => cancelled,
   }
 }
 
@@ -81,6 +93,20 @@ test('system services aggregate deterministic search/support providers and dispo
   disposeSupport()
   assert.deepEqual((await services.search('pqg')).map(item => item.providerId), ['beta'])
   assert.equal(services.supportFor('alpha'), undefined)
+})
+
+test('support adapter sends text through the current DSH session and can stop it', async () => {
+  const fixture = fakeSessions()
+  const services = createShellSystemServices(fixture.sessions as never)
+
+  await services.promptSupport('Tóm tắt việc hôm nay')
+  await services.stopSupport()
+
+  assert.deepEqual(fixture.prompts(), [{
+    content: [{ type: 'text', text: 'Tóm tắt việc hôm nay' }],
+    mode: 'queue',
+  }])
+  assert.equal(fixture.cancelled(), 1)
 })
 
 test('search keeps healthy results when a provider throws before returning a promise', async () => {

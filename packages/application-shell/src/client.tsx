@@ -11,6 +11,7 @@ import {
   SimpleGrid,
   Stack,
   Text,
+  Textarea,
   Title,
 } from '@mantine/core'
 import { Notifications, notifications } from '@mantine/notifications'
@@ -92,8 +93,53 @@ function SupportContent({
   services: ShellSystemServices
   setState(state: SupportPanelState): void
 }) {
+  const [draft, setDraft] = React.useState('')
+  const [busy, setBusy] = React.useState(false)
+  const [error, setError] = React.useState<string | undefined>(undefined)
+  const [, setRevision] = React.useState(0)
+  React.useEffect(() => services.subscribeSupport(() => setRevision(value => value + 1)), [services])
   const support = services.supportFor(activeId)
   const suggestions = state === 'expanded' ? support?.suggestions ?? [] : []
+  const snapshot = services.supportSnapshot()
+  const messages = (snapshot?.nodes ?? []).flatMap(node => {
+    if (node.kind === 'assistant') {
+      const text = node.blocks.filter(block => block.kind === 'text').map(block => block.text).join('')
+      return text ? [{ id: node.seq, role: 'assistant', text }] : []
+    }
+    if (node.kind === 'user') {
+      const text = node.content.filter((block: any) => block.type === 'text').map((block: any) => block.text).join('')
+      return text ? [{ id: node.seq, role: 'user', text }] : []
+    }
+    return []
+  })
+  const send = async (value = draft): Promise<void> => {
+    if (!value.trim() || busy) return
+    setBusy(true)
+    setError(undefined)
+    try {
+      await services.promptSupport(value)
+      setDraft('')
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : pqgCopy.supportSendError
+      setError(message)
+      services.notify({ kind: 'error', title: pqgCopy.supportTitle, message })
+    } finally {
+      setBusy(false)
+    }
+  }
+  const stop = async (): Promise<void> => {
+    setBusy(true)
+    setError(undefined)
+    try {
+      await services.stopSupport()
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : pqgCopy.supportStopError
+      setError(message)
+      services.notify({ kind: 'error', title: pqgCopy.supportTitle, message })
+    } finally {
+      setBusy(false)
+    }
+  }
   const structuredSupport = support === undefined
     ? null
     : React.createElement(
@@ -108,9 +154,9 @@ function SupportContent({
               { gap: 6 },
               React.createElement(Text, { c: 'dimmed', fw: 600, size: 'xs', tt: 'uppercase' }, pqgCopy.supportSuggestions),
               ...suggestions.map(suggestion => React.createElement(
-                Paper,
-                { key: suggestion.id, withBorder: true, radius: 'md', p: 'xs', 'data-pqg-support-suggestion': suggestion.id },
-                React.createElement(Text, { size: 'sm' }, suggestion.label),
+                Button,
+                { key: suggestion.id, size: 'compact-sm', variant: 'light', justify: 'flex-start', disabled: !suggestion.prompt || snapshot === undefined || busy, onClick: () => void send(suggestion.prompt), 'data-pqg-support-suggestion': suggestion.id },
+                suggestion.label,
               )),
             ),
       )
@@ -133,6 +179,18 @@ function SupportContent({
     state === 'compact' ? null : React.createElement(Text, { c: 'dimmed', size: 'sm' }, pqgCopy.supportDescription),
     structuredSupport ?? renderSlot('pqg.shell.support.context', { activeId }, { fallback: null }),
     structuredSupport === null ? renderSlot('pqg.shell.support.suggestion', { activeId }, { fallback: null }) : null,
+    state === 'compact' ? null : React.createElement(
+      Stack,
+      { gap: 'xs', 'data-pqg-support-chat': true },
+      messages.length === 0 ? React.createElement(Text, { c: 'dimmed', size: 'sm' }, pqgCopy.supportEmpty) : messages.map(message => React.createElement(Paper, { key: message.id, withBorder: true, radius: 'md', p: 'xs', bg: message.role === 'user' ? 'blue.0' : undefined }, React.createElement(Text, { size: 'sm' }, message.text))),
+      snapshot?.runningCalls.length ? React.createElement(Text, { c: 'dimmed', size: 'xs' }, pqgCopy.supportWorking) : null,
+      error === undefined ? null : React.createElement(Text, { c: 'red', size: 'xs' }, error),
+      React.createElement(Textarea, { value: draft, onChange: (event: { currentTarget: { value: string } }) => setDraft(event.currentTarget.value), placeholder: pqgCopy.supportPlaceholder, minRows: 2, disabled: snapshot === undefined || busy, 'data-pqg-support-composer': true }),
+      React.createElement(Group, { justify: 'flex-end' },
+        snapshot?.running ? React.createElement(Button, { size: 'compact-sm', variant: 'light', color: 'red', loading: busy, onClick: () => void stop(), 'data-pqg-support-stop': true }, pqgCopy.supportStop) : null,
+        React.createElement(Button, { size: 'compact-sm', loading: busy, disabled: snapshot === undefined || !draft.trim(), onClick: () => void send(), 'data-pqg-support-send': true }, pqgCopy.supportSend),
+      ),
+    ),
   )
 }
 

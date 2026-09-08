@@ -237,3 +237,13 @@ test('PQG shell keeps search non-visual and gates module contributions by enable
   await referenceFiber.dispose()
   await shellFiber.dispose()
 })
+
+test('Support panel exposes an interactive agent composer and stop control contract', async () => {
+  const source = await readFile(new URL('../packages/application-shell/src/client.tsx', import.meta.url), 'utf8')
+
+  assert.match(source, /data-pqg-support-chat/)
+  assert.match(source, /data-pqg-support-composer/)
+  assert.match(source, /data-pqg-support-send/)
+  assert.match(source, /data-pqg-support-stop/)
+  assert.match(source, /onClick: \(\) => void send\(suggestion\.prompt\)/)
+})
