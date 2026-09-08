@@ -1,0 +1,261 @@
+name: tmp-dashboard-green
+on:
+  push:
+    branches: [feature/dashboard-visual-baseline]
+    paths: [.github/workflows/tmp-dashboard-green.yml]
+permissions:
+  contents: write
+jobs:
+  green:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/dashboard-visual-baseline
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Apply minimal dashboard GREEN
+        shell: python
+        run: |
+          from pathlib import Path
+
+          shell = Path('packages/application-shell/src/client.tsx')
+          source = shell.read_text()
+          source = source.replace("  Paper,\n  Stack,", "  Paper,\n  SimpleGrid,\n  Stack,")
+          old_home = '''function HomeView({ renderSlot }: Pick<RootProps, 'renderSlot'>) {
+            return React.createElement(
+              Stack,
+              { gap: 'lg' },
+              React.createElement(
+                'div',
+                null,
+                React.createElement(Title, { order: 2 }, pqgCopy.homeTitle),
+                React.createElement(Text, { c: 'dimmed', mt: 4 }, pqgCopy.homeDescription),
+              ),
+              React.createElement(
+                Paper,
+                { withBorder: true, radius: 'lg', p: 'lg' },
+                React.createElement(Text, { fw: 600, mb: 'sm' }, pqgCopy.workspace),
+                renderSlot('pqg.shell.home.widget', {}, {
+                  fallback: React.createElement(EmptyState, { description: pqgCopy.homeEmpty }),
+                }),
+              ),
+            )
+          }
+          '''
+          new_home = '''function DashboardMetricCard({
+            label,
+            value,
+            description,
+          }: {
+            label: string
+            value: string
+            description: string
+          }) {
+            return React.createElement(
+              Paper,
+              {
+                withBorder: true,
+                radius: 'lg',
+                p: 'lg',
+                'data-pqg-dashboard-metric': label,
+                style: { background: pqgShellTokens.panelBackground, boxShadow: pqgShellTokens.cardShadow },
+              },
+              React.createElement(
+                Stack,
+                { gap: 6 },
+                React.createElement(Text, { c: 'dimmed', fw: 600, size: 'sm' }, label),
+                React.createElement(Text, { fw: 800, size: 'xl', lh: 1.15 }, value),
+                React.createElement(Text, { c: 'dimmed', size: 'xs' }, description),
+              ),
+            )
+          }
+
+          function HomeView({
+            navigate,
+            renderSlot,
+            services,
+            sessions,
+          }: Pick<RootProps, 'renderSlot'> & {
+            navigate(targetId: string): void
+            services: ShellSystemServices
+            sessions: { current?: string; byId: Record<string, unknown> }
+          }) {
+            const sessionCount = Object.keys(sessions.byId).length
+            const approvalCount = services.currentApproval() === undefined ? '0' : '1'
+            const currentSession = sessions.current === undefined ? pqgCopy.dashboardClosed : pqgCopy.dashboardOpen
+            const today = new Intl.DateTimeFormat('vi-VN', {
+              weekday: 'long',
+              day: 'numeric',
+              month: 'long',
+              year: 'numeric',
+            }).format(new Date())
+
+            return React.createElement(
+              Stack,
+              { gap: 'xl', 'data-pqg-dashboard': true },
+              React.createElement(
+                Group,
+                { justify: 'space-between', align: 'flex-start', gap: 'lg' },
+                React.createElement(
+                  'div',
+                  null,
+                  React.createElement(Title, { order: 1, size: '2rem', lh: 1.15 }, pqgCopy.homeTitle),
+                  React.createElement(Text, { c: 'dimmed', mt: 6 }, pqgCopy.homeDescription),
+                ),
+                React.createElement(Text, { c: 'dimmed', size: 'sm', visibleFrom: 'md' }, today),
+              ),
+              React.createElement(
+                SimpleGrid,
+                { cols: { base: 1, sm: 3 }, spacing: 'md' },
+                React.createElement(DashboardMetricCard, {
+                  label: pqgCopy.dashboardSessions,
+                  value: String(sessionCount),
+                  description: 'Các phiên đang có trong không gian làm việc.',
+                }),
+                React.createElement(DashboardMetricCard, {
+                  label: pqgCopy.dashboardCurrentSession,
+                  value: currentSession,
+                  description: 'Trạng thái phiên làm việc hiện tại.',
+                }),
+                React.createElement(DashboardMetricCard, {
+                  label: pqgCopy.dashboardApproval,
+                  value: approvalCount,
+                  description: 'Hành động đang chờ xác nhận của bạn.',
+                }),
+              ),
+              React.createElement(
+                Stack,
+                { gap: 'md' },
+                React.createElement(
+                  'div',
+                  null,
+                  React.createElement(Title, { order: 2 }, pqgCopy.dashboardWorkspaceTitle),
+                  React.createElement(Text, { c: 'dimmed', mt: 4 }, pqgCopy.dashboardWorkspaceDescription),
+                ),
+                React.createElement(
+                  SimpleGrid,
+                  { cols: { base: 1, md: 2 }, spacing: 'md', 'data-pqg-dashboard-widgets': true },
+                  renderSlot('pqg.shell.home.widget', { activeId: 'home', navigate }, {
+                    fallback: React.createElement(
+                      Paper,
+                      { withBorder: true, radius: 'lg', p: 'lg' },
+                      React.createElement(EmptyState, { description: pqgCopy.homeEmpty }),
+                    ),
+                  }),
+                ),
+              ),
+            )
+          }
+          '''
+          if old_home not in source:
+              raise SystemExit('HomeView source block changed unexpectedly')
+          source = source.replace(old_home, new_home)
+          source = source.replace(
+              "? React.createElement(HomeView, { renderSlot })",
+              "? React.createElement(HomeView, { navigate, renderSlot, services, sessions })",
+          )
+          source = source.replace(
+              "              }, width < 640 ? null : pqgCopy.search),",
+              "                style: width < 900 ? undefined : { minWidth: 340, justifyContent: 'flex-start' },\n              }, width < 640 ? null : pqgCopy.searchPlaceholder),",
+          )
+          shell.write_text(source)
+
+          task = Path('packages/task-module/src/client.tsx')
+          source = task.read_text()
+          old_task = '''function TaskHomeWidget(_props: PropsRuntime<'pqg.shell.home.widget'>) {
+            const [tasks, setTasks] = React.useState<TaskRecord[]>([])
+            const [loaded, setLoaded] = React.useState(false)
+
+            React.useEffect(() => {
+              void loadTasks().then(
+                rows => {
+                  setTasks(rows)
+                  setLoaded(true)
+                },
+                () => setLoaded(true),
+              )
+            }, [])
+
+            const today = localDateKey()
+            const dueToday = tasks.filter(task => !task.completed && task.dueDate === today)
+            return React.createElement(
+              Stack,
+              { gap: 6, 'data-pqg-task-home-widget': true },
+              React.createElement(Group, { justify: 'space-between' },
+                React.createElement(Text, { fw: 600 }, 'Việc cần làm hôm nay'),
+                React.createElement(Badge, { variant: 'light' }, loaded ? String(dueToday.length) : '…'),
+              ),
+              loaded && dueToday.length === 0
+                ? React.createElement(Text, { c: 'dimmed', size: 'sm' }, 'Không có việc đến hạn hôm nay.')
+                : dueToday.slice(0, 3).map(task => React.createElement(Text, { key: task.id, size: 'sm' }, `• ${task.title}`)),
+            )
+          }
+          '''
+          new_task = '''function TaskHomeWidget({ navigate }: PropsRuntime<'pqg.shell.home.widget'>) {
+            const [tasks, setTasks] = React.useState<TaskRecord[]>([])
+            const [loaded, setLoaded] = React.useState(false)
+
+            React.useEffect(() => {
+              void loadTasks().then(
+                rows => {
+                  setTasks(rows)
+                  setLoaded(true)
+                },
+                () => setLoaded(true),
+              )
+            }, [])
+
+            const today = localDateKey()
+            const dueToday = tasks.filter(task => !task.completed && task.dueDate === today)
+            return React.createElement(
+              Paper,
+              {
+                withBorder: true,
+                radius: 'lg',
+                p: 'lg',
+                'data-pqg-task-home-card': true,
+              },
+              React.createElement(
+                Stack,
+                { gap: 'sm', 'data-pqg-task-home-widget': true },
+                React.createElement(
+                  Group,
+                  { justify: 'space-between', align: 'center' },
+                  React.createElement(Text, { fw: 700 }, 'Việc cần làm hôm nay'),
+                  React.createElement(Button, {
+                    variant: 'subtle',
+                    size: 'compact-sm',
+                    onClick: () => navigate(TASK_ID),
+                  }, 'Xem công việc'),
+                ),
+                React.createElement(Badge, { variant: 'light', w: 'fit-content' }, loaded ? `${dueToday.length} việc` : 'Đang tải…'),
+                loaded && dueToday.length === 0
+                  ? React.createElement(Text, { c: 'dimmed', size: 'sm' }, 'Không có việc đến hạn hôm nay.')
+                  : dueToday.slice(0, 4).map(task => React.createElement(
+                      Group,
+                      { key: task.id, gap: 'xs', wrap: 'nowrap' },
+                      React.createElement('span', { 'aria-hidden': true }, '•'),
+                      React.createElement(Text, { size: 'sm', lineClamp: 1 }, task.title),
+                    )),
+              ),
+            )
+          }
+          '''
+          if old_task not in source:
+              raise SystemExit('TaskHomeWidget source block changed unexpectedly')
+          task.write_text(source.replace(old_task, new_task))
+      - run: npm ci
+      - run: npm run prepare:dsh-web
+      - run: node --experimental-strip-types --test tests/application-shell-contract.test.ts tests/task-module.test.ts
+      - run: npm run typecheck
+      - name: Commit source and generated assets, remove temporary workflows
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -f .github/workflows/tmp-dashboard-red.yml .github/workflows/tmp-dashboard-green.yml
+          git add packages/application-shell packages/task-module public index.html tests
+          git commit -m "feat(shell): add dashboard visual baseline"
+          git push origin HEAD:feature/dashboard-visual-baseline
