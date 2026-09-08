@@ -1,0 +1,40 @@
+name: Task toggle bootstrap
+
+on:
+  push:
+    branches:
+      - fix/78-module-toggle-reload
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/78-module-toggle-reload
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Prepare generated DSH Web assets
+        run: npm run prepare:dsh-web
+      - name: Targeted Task verification
+        run: node --experimental-strip-types --test tests/task-module.test.ts
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Commit generated artifacts and remove temporary workflows
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/task-toggle-bootstrap.yml .github/workflows/task-toggle-targeted.yml
+          git add index.html public agents/api
+          git commit -m "chore(task): refresh module toggle artifacts"
+          git push origin HEAD:fix/78-module-toggle-reload
