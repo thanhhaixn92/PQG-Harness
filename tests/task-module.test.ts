@@ -1,10 +1,20 @@
 import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import test from 'node:test'
+import vm from 'node:vm'
 
+import * as cordisModule from '@deepseek-ai/cordis'
+import { Context } from '@deepseek-ai/cordis'
+import * as slotCoreModule from '@deepseek-ai/dsh-client-ui-slots'
+
+const require = createRequire(import.meta.url)
 const serviceUrl = new URL('../packages/task-module/src/service.ts', import.meta.url)
 const permissionUrl = new URL('../agents/_makers-mcp-permission.mjs', import.meta.url)
+const runtimeBundleUrl = new URL('../public/plugins/@deepseek-ai/dsh-client-runtime/client.js', import.meta.url)
+const shellBundleUrl = new URL('../public/plugins/@pqg/application-shell/client.js', import.meta.url)
+const taskBundleUrl = new URL('../public/plugins/@pqg/task-module/client.js', import.meta.url)
 
 type StoreMessage = {
   messageId: string
@@ -13,6 +23,61 @@ type StoreMessage = {
   metadata?: Record<string, unknown>
   createdAt: number
   updatedAt?: number
+}
+
+type PluginModule = {
+  inject: string[]
+  apply(ctx: Context): void | Promise<void>
+}
+
+type SlotRegistryFace = {
+  entries(key: string): readonly unknown[]
+}
+
+async function loadHandoff(
+  url: URL,
+  expectedId: string,
+  globals: Record<string, unknown> = {},
+) {
+  const source = await readFile(url, 'utf8')
+  const handoffs: Array<{ id: string; factory: (requireModule: (id: string) => unknown) => any }> = []
+  vm.runInNewContext(source, {
+    queueMicrotask,
+    ...globals,
+    window: {
+      __ModuleLoader__: {
+        load(handoff: { id: string; factory: (requireModule: (id: string) => unknown) => any }) {
+          handoffs.push(handoff)
+        },
+      },
+    },
+  }, { filename: url.pathname.split('/').at(-1) })
+  assert.equal(handoffs.length, 1)
+  assert.equal(handoffs[0]?.id, expectedId)
+  return handoffs[0]!
+}
+
+async function loadPlugin(
+  url: URL,
+  expectedId: string,
+  globals: Record<string, unknown> = {},
+): Promise<PluginModule> {
+  const handoff = await loadHandoff(url, expectedId, globals)
+  return handoff.factory((id: string) => {
+    if (id === 'react' || id === 'react/jsx-runtime' || id === 'react-dom' || id === 'react-dom/client') return require(id)
+    throw new Error(`unexpected external module in ${expectedId}: ${id}`)
+  }) as PluginModule
+}
+
+async function loadRuntimeSlotRegistry(): Promise<any> {
+  const handoff = await loadHandoff(runtimeBundleUrl, '@deepseek-ai/dsh-client-runtime')
+  const runtime = handoff.factory((id: string) => {
+    if (id === '@deepseek-ai/cordis') return cordisModule
+    if (id === '@deepseek-ai/dsh-client-ui-slots') return slotCoreModule
+    throw new Error(`unexpected external module in DSH runtime: ${id}`)
+  }) as { SlotRegistry?: unknown }
+  assert.equal(typeof runtime.SlotRegistry, 'function')
+  return runtime.SlotRegistry
 }
 
 function fakeContext() {
@@ -132,25 +197,53 @@ test('Task Home contribution is a dashboard card with real today tasks and a rou
   assert.doesNotMatch(widget, /\b5\b/)
 })
 
-test('Task client scopes module policy and CRUD requests to the current Makers conversation', async () => {
-  const source = await readFile(new URL('../packages/task-module/src/client.tsx', import.meta.url), 'utf8')
-  assert.match(source, /const inject = \['slots', 'pqgShell', 'sessions'\]/)
-  assert.match(source, /sessions\.list\.getSnapshot\(\)\.current/)
-  assert.match(source, /['"]makers-conversation-id['"]/)
-  assert.match(source, /sessions\.list\.subscribe/)
+test('prepared Task contribution activates on Home before a DSH session exists', async () => {
+  const SlotRegistry = await loadRuntimeSlotRegistry()
+  const shell = await loadPlugin(shellBundleUrl, '@pqg/application-shell')
+  const task = await loadPlugin(taskBundleUrl, '@pqg/task-module', {
+    fetch: async (input: string | URL | Request) => {
+      const url = String(input)
+      if (url.endsWith('/api/pqg.modules')) {
+        return {
+          ok: true,
+          json: async () => ({ modules: [{ id: 'task', label: 'Công việc', enabled: true }] }),
+        }
+      }
+      if (url.endsWith('/api/pqg.tasks')) {
+        return { ok: true, json: async () => ({ tasks: [] }) }
+      }
+      throw new Error(`unexpected Task request: ${url}`)
+    },
+  })
+  const sessions = {
+    list: {
+      getSnapshot: () => ({ current: undefined }),
+      subscribe: (_listener: () => void) => () => {},
+    },
+  }
+
+  const ctx = new Context()
+  await ctx.plugin(SlotRegistry).await()
+  ctx.provide('sessions', sessions as never)
+  const slots = ctx.get('slots') as unknown as SlotRegistryFace
+  const shellFiber = ctx.plugin({ inject: [...shell.inject], apply: shell.apply })
+  await shellFiber.await()
+  const taskFiber = ctx.plugin({ inject: [...task.inject], apply: task.apply })
+  await taskFiber.await()
+
+  assert.equal(slots.entries('pqg.shell.navigation').length, 1)
+  assert.equal(slots.entries('pqg.shell.workspace').length, 1)
+  assert.equal(slots.entries('pqg.shell.home.widget').length, 1)
+
+  await taskFiber.dispose()
+  await shellFiber.dispose()
 })
 
-test('Task client activates contributions at most once across session-list updates', async () => {
+test('Task client leaves Makers request routing to the page bootstrap instead of a DSH session id', async () => {
   const source = await readFile(new URL('../packages/task-module/src/client.tsx', import.meta.url), 'utf8')
-  const applyStart = source.indexOf('async function apply')
-  assert.ok(applyStart >= 0, 'Task client apply must exist')
-  const applyBlock = source.slice(applyStart)
-  assert.match(applyBlock, /let activated = false/)
-  assert.match(applyBlock, /let checking = false/)
-  assert.match(applyBlock, /if \(activated \|\| checking \|\| disposed\) return/)
-  const markActivated = applyBlock.indexOf('activated = true')
-  const register = applyBlock.indexOf('registerTaskContributions(client)')
-  assert.ok(markActivated >= 0 && register > markActivated, 'activation must be marked before contributions register')
+  assert.match(source, /const inject = \['slots', 'pqgShell'\]/)
+  assert.doesNotMatch(source, /makers-conversation-id/)
+  assert.doesNotMatch(source, /sessions\.list/)
 })
 
 test('module settings scopes module-state GET and PUT requests to the current Makers conversation', async () => {
