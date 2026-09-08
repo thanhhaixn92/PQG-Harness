@@ -126,6 +126,41 @@ test('PQG shell owns a readable light surface and hides placeholder utilities fr
   await shellFiber.dispose()
 })
 
+test('PQG Home renders the dashboard visual baseline from live shell state without fake business metrics', async () => {
+  const SlotRegistry = await loadRuntimeSlotRegistry()
+  const shell = await loadPlugin(shellBundleUrl, '@pqg/application-shell')
+  const ctx = new Context()
+  await ctx.plugin(SlotRegistry).await()
+  ctx.provide('sessions', {} as never)
+  const slots = ctx.get('slots') as unknown as SlotRegistryFace
+  const shellFiber = ctx.plugin({ inject: [...shell.inject], apply: shell.apply })
+  await shellFiber.await()
+
+  const root = slots.entries('root')[0]?.component
+  assert.equal(typeof root, 'function')
+  const React = require('react') as { createElement: (...args: any[]) => unknown }
+  const html = renderToStaticMarkup(React.createElement(root as any, {
+    renderSlot: (_name: string, _owner: unknown, options?: { fallback?: unknown }) => options?.fallback ?? null,
+    renderSlotChain: (_name: string, _owner: unknown, options?: { fallback?: unknown }) => options?.fallback ?? null,
+    useSessions: (selector: (state: { current?: string; byId: Record<string, any> }) => unknown) => selector({
+      current: 'session-1',
+      byId: {
+        'session-1': { pendingInteraction: 'approval', updatedAt: 1 },
+        'session-2': { updatedAt: 1 },
+      },
+    }),
+  }))
+
+  assert.match(html, /data-pqg-dashboard="true"/)
+  assert.match(html, />Bảng điều khiển</)
+  assert.match(html, />Không gian làm việc hôm nay</)
+  assert.equal((html.match(/data-pqg-dashboard-metric=/g) ?? []).length >= 3, true)
+  assert.match(html, />2</)
+  assert.doesNotMatch(html, />12</)
+
+  await shellFiber.dispose()
+})
+
 test('PQG shell keeps search non-visual and gates module contributions by enabled policy', async () => {
   const SlotRegistry = await loadRuntimeSlotRegistry()
   const shell = await loadPlugin(shellBundleUrl, '@pqg/application-shell')
