@@ -5,13 +5,7 @@
   "type": "module",
   "exports": {
     "./client": "./src/client.tsx",
-    "./makers": "./src/makers.ts",
-    "./service": "./src/service.ts"
-  },
-  "dependencies": {
-    "@mantine/core": "8.3.18",
-    "@pqg/application-shell": "file:../application-shell",
-    "zod": "4.4.3"
+    "./makers": "./src/makers.ts"
   },
   "pqg": {
     "module": {
