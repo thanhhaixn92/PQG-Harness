@@ -13,13 +13,20 @@ import {
 } from '../agents/_makers-mcp-permission.mjs'
 
 test('generated sidecar plugin is self-contained and importable', async () => {
-  const source = makersMcpPermissionSource()
+  const source = makersMcpPermissionSource({
+    pqg_task_list: 'read-only',
+    pqg_task_create: 'workspace-write',
+  })
   assert.doesNotMatch(source, /_makers-mcp-permission\.mjs/)
   const generated = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`)
   assert.equal(generated.name, 'makers-mcp-permission')
   assert.equal(generated.makersToolGate('read-only', 'workspace_write_file'), 'ask')
   assert.equal(generated.makersToolGate('danger-full-access', 'publish_preview'), 'allow')
   assert.equal(generated.makersToolGate(undefined, 'workspace_write_file'), 'ask')
+  assert.equal(generated.makersToolGate('read-only', 'pqg_task_list'), 'allow')
+  assert.equal(generated.makersToolGate('read-only', 'pqg_task_create'), 'ask')
+  assert.equal(generated.makersToolGate('workspace-write', 'pqg_task_create'), 'allow')
+  assert.equal(generated.makersToolGate('danger-full-access', 'pqg_unknown_action'), 'ask')
 })
 
 test('every Makers tool stays visible; permission only decides allow vs ask', () => {
