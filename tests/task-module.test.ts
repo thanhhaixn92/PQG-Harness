@@ -132,17 +132,46 @@ test('Task Home contribution is a dashboard card with real today tasks and a rou
   assert.doesNotMatch(widget, /\b5\b/)
 })
 
+test('Task client scopes module policy and CRUD requests to the current Makers conversation', async () => {
+  const source = await readFile(new URL('../packages/task-module/src/client.tsx', import.meta.url), 'utf8')
+  assert.match(source, /const inject = \['slots', 'pqgShell', 'sessions'\]/)
+  assert.match(source, /sessions\.list\.getSnapshot\(\)\.current/)
+  assert.match(source, /['"]makers-conversation-id['"]/)
+  assert.match(source, /sessions\.list\.subscribe/)
+})
+
+test('Task client activates contributions at most once across session-list updates', async () => {
+  const source = await readFile(new URL('../packages/task-module/src/client.tsx', import.meta.url), 'utf8')
+  const applyStart = source.indexOf('async function apply')
+  assert.ok(applyStart >= 0, 'Task client apply must exist')
+  const applyBlock = source.slice(applyStart)
+  assert.match(applyBlock, /let activated = false/)
+  assert.match(applyBlock, /let checking = false/)
+  assert.match(applyBlock, /if \(activated \|\| checking \|\| disposed\) return/)
+  const markActivated = applyBlock.indexOf('activated = true')
+  const register = applyBlock.indexOf('registerTaskContributions(client)')
+  assert.ok(markActivated >= 0 && register > markActivated, 'activation must be marked before contributions register')
+})
+
+test('module settings scopes module-state GET and PUT requests to the current Makers conversation', async () => {
+  const source = await readFile(new URL('../src/pqg-module-settings-client.ts', import.meta.url), 'utf8')
+  assert.match(source, /const inject = \['slots', 'sessions'\]/)
+  assert.match(source, /sessions\.list\.getSnapshot\(\)\.current/)
+  assert.match(source, /['"]makers-conversation-id['"]/)
+})
+
 test('module settings reload the shell after a successful toggle so Task navigation follows policy', async () => {
   const source = await readFile(new URL('../src/pqg-module-settings-client.ts', import.meta.url), 'utf8')
-  const successStart = source.indexOf('updated => {')
-  const failureStart = source.indexOf('},\n      () => {', successStart)
-  const toggleEnd = source.indexOf('\n  }\n\n  return createElement', failureStart)
-  assert.ok(successStart >= 0 && failureStart > successStart, 'module toggle success handler must exist')
-  assert.ok(toggleEnd > failureStart, 'module toggle failure handler must exist')
-  const successBlock = source.slice(successStart, failureStart)
-  const failureBlock = source.slice(failureStart, toggleEnd)
-  assert.match(successBlock, /window\.location\.reload\(\)/)
-  assert.doesNotMatch(failureBlock, /window\.location\.reload\(\)/)
+  const toggleStart = source.indexOf('const toggle =')
+  const toggleEnd = source.indexOf('\n  }\n\n  return createElement', toggleStart)
+  assert.ok(toggleStart >= 0 && toggleEnd > toggleStart, 'module toggle handler must exist')
+  const toggleBlock = source.slice(toggleStart, toggleEnd)
+  const successStart = toggleBlock.indexOf('updated => {')
+  const reloadStart = toggleBlock.indexOf('window.location.reload()')
+  const failureStart = toggleBlock.indexOf('cause => {', successStart)
+  assert.ok(successStart >= 0 && reloadStart > successStart, 'successful toggle must reload the shell')
+  assert.ok(failureStart > reloadStart, 'reload must happen before the failure handler')
+  assert.equal((toggleBlock.match(/window\.location\.reload\(\)/g) ?? []).length, 1)
 })
 
 test('prepared DSH Web boot graph includes the Task client contribution', async () => {

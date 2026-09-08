@@ -13,7 +13,14 @@ type ReactApi = {
   useState: <T>(initial: T) => [T, (value: T) => void]
 }
 
+type ClientSessions = {
+  list: {
+    getSnapshot(): { current?: string }
+  }
+}
+
 type ClientContext = {
+  sessions: ClientSessions
   slots: {
     inject(name: string, register: () => unknown): unknown
     register(
@@ -59,8 +66,20 @@ const buttonBaseStyle = {
   cursor: 'pointer',
 }
 
-async function loadModules(): Promise<ModuleState[]> {
-  const response = await fetch('/api/pqg.modules', { headers: { accept: 'application/json' } })
+function moduleRequestHeaders(sessions: ClientSessions, json = false): Record<string, string> {
+  const conversationId = sessions.list.getSnapshot().current
+  if (conversationId === undefined) {
+    throw new Error('Hãy mở một phiên làm việc để quản lý tiện ích.')
+  }
+  return {
+    accept: 'application/json',
+    'makers-conversation-id': conversationId,
+    ...(json ? { 'content-type': 'application/json' } : {}),
+  }
+}
+
+async function loadModules(sessions: ClientSessions): Promise<ModuleState[]> {
+  const response = await fetch('/api/pqg.modules', { headers: moduleRequestHeaders(sessions) })
   const body = await response.json() as { modules?: ModuleState[]; error?: { message?: string } }
   if (!response.ok || !Array.isArray(body.modules)) {
     throw new Error(body.error?.message || `HTTP ${String(response.status)}`)
@@ -68,10 +87,10 @@ async function loadModules(): Promise<ModuleState[]> {
   return body.modules
 }
 
-async function setEnabled(id: string, enabled: boolean): Promise<ModuleState> {
+async function setEnabled(sessions: ClientSessions, id: string, enabled: boolean): Promise<ModuleState> {
   const response = await fetch('/api/pqg.modules', {
     method: 'PUT',
-    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    headers: moduleRequestHeaders(sessions, true),
     body: JSON.stringify({ id, enabled }),
   })
   const body = await response.json() as { module?: ModuleState; error?: { message?: string } }
@@ -81,7 +100,7 @@ async function setEnabled(id: string, enabled: boolean): Promise<ModuleState> {
   return body.module
 }
 
-function ModuleSettingsSection(): unknown {
+function ModuleSettingsSection({ sessions }: { sessions: ClientSessions }): unknown {
   const [modules, setModules] = useState<ModuleState[]>([])
   const [loading, setLoading] = useState(true)
   const [savingId, setSavingId] = useState<string | null>(null)
@@ -91,13 +110,13 @@ function ModuleSettingsSection(): unknown {
   const reload = (): void => {
     setLoading(true)
     setError(null)
-    void loadModules().then(
+    void loadModules(sessions).then(
       value => {
         setModules(value)
         setLoading(false)
       },
-      () => {
-        setError('Không thể tải danh sách tiện ích.')
+      cause => {
+        setError(cause instanceof Error ? cause.message : 'Không thể tải danh sách tiện ích.')
         setLoading(false)
       },
     )
@@ -105,35 +124,35 @@ function ModuleSettingsSection(): unknown {
 
   useEffect(() => {
     let active = true
-    void loadModules().then(
+    void loadModules(sessions).then(
       value => {
         if (!active) return
         setModules(value)
         setLoading(false)
       },
-      () => {
+      cause => {
         if (!active) return
-        setError('Không thể tải danh sách tiện ích.')
+        setError(cause instanceof Error ? cause.message : 'Không thể tải danh sách tiện ích.')
         setLoading(false)
       },
     )
     return () => { active = false }
-  }, [])
+  }, [sessions])
 
   const toggle = (module: ModuleState): void => {
     if (savingRef.current || savingId !== null) return
     savingRef.current = true
     setSavingId(module.id)
     setError(null)
-    void setEnabled(module.id, !module.enabled).then(
+    void setEnabled(sessions, module.id, !module.enabled).then(
       updated => {
         setModules(modules.map(row => row.id === updated.id ? updated : row))
         savingRef.current = false
         setSavingId(null)
         window.location.reload()
       },
-      () => {
-        setError('Không thể cập nhật tiện ích. Vui lòng thử lại.')
+      cause => {
+        setError(cause instanceof Error ? cause.message : 'Không thể cập nhật tiện ích. Vui lòng thử lại.')
         savingRef.current = false
         setSavingId(null)
       },
@@ -181,15 +200,16 @@ function ModuleSettingsSection(): unknown {
   )
 }
 
-const inject = ['slots']
+const inject = ['slots', 'sessions']
 
 function apply(ctx: ClientContext): void {
+  const ModuleSettings = () => createElement(ModuleSettingsSection, { sessions: ctx.sessions })
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',
     id: 'pqg-modules',
     order: 18,
     label: () => 'Tiện ích',
-  }, ModuleSettingsSection))
+  }, ModuleSettings))
 }
 
 module.exports = { inject, apply }
