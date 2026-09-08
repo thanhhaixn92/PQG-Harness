@@ -65,6 +65,7 @@
     "@modelcontextprotocol/sdk": "1.29.0",
     "@pqg/application-shell": "file:packages/application-shell",
     "@pqg/reference-module": "file:packages/reference-module",
+    "@pqg/task-module": "file:packages/task-module",
     "@tabler/icons-react": "3.46.0",
     "ws": "8.21.3",
     "zod": "4.4.3"

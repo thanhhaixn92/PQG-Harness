@@ -5,7 +5,11 @@ import { createServer } from 'node:net'
 import { dirname, join } from 'node:path'
 import { startLocalGatewayProxy, type LocalGatewayProxy } from './_gateway-proxy.ts'
 import { makersMcpPermissionSource } from './_makers-mcp-permission.mjs'
-import { startLocalMcpBridge, type ModuleMcpBridge } from './_mcp-bridge.ts'
+import {
+  startLocalMcpBridge,
+  type MakersPermissionMode,
+  type ModuleMcpBridge,
+} from './_mcp-bridge.ts'
 import { applyInstalledMakersModules } from './_module-adapters.ts'
 import { applyModulePolicyToBridge } from './_module-state.ts'
 
@@ -286,7 +290,12 @@ function modelYaml(models: MakersModel[]): string[] {
 
 async function writeProfilePatch(
   home: string,
-  options: { mcpUrl: string; gatewayBaseUrl: string; defaultModel: string },
+  options: {
+    mcpUrl: string
+    gatewayBaseUrl: string
+    defaultModel: string
+    moduleToolPermissions: Record<string, MakersPermissionMode>
+  },
 ): Promise<void> {
   await mkdir(join(home, 'profiles', 'web'), { recursive: true })
   const presetRoot = join(home, '.agent-presets', 'makers')
@@ -299,7 +308,7 @@ async function writeProfilePatch(
   ].join('\n'))
   await writeFile(
     join(presetRoot, 'makers-mcp-permission.mjs'),
-    makersMcpPermissionSource(),
+    makersMcpPermissionSource(options.moduleToolPermissions),
   )
   await writeFile(join(presetRoot, 'agent.cordis.yml'), [
     '- id: persona',
@@ -463,6 +472,7 @@ async function startSidecarAttempt(context: any, conversationId: string): Promis
       mcpUrl: mcp.url,
       gatewayBaseUrl: gateway.baseUrl,
       defaultModel,
+      moduleToolPermissions: mcp.moduleToolPermissions?.() ?? {},
     })
 
     const dshBin = join(dirname(require.resolve('@deepseek-ai/dsh/package.json')), 'lib', 'bin.js')

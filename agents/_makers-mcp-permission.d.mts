@@ -1,3 +1,5 @@
+export type MakersPermissionMode = 'read-only' | 'workspace-write' | 'danger-full-access'
+
 export const name: string
 export const inject: readonly string[]
 export const MCP_SERVER_NAME: string
@@ -7,13 +9,13 @@ export const SAFE_FALLBACK_MAKERS_PERMISSION: string
 export const ALL_MAKERS_TOOLS: readonly string[]
 
 export function isMakersPermissionMode(value: unknown): boolean
-export function makersEffectivePermission(value: unknown): 'read-only' | 'workspace-write' | 'danger-full-access'
+export function makersEffectivePermission(value: unknown): MakersPermissionMode
 export function makersAutoAllowTools(mode: unknown): readonly string[]
 export function makersToolAllowed(mode: unknown, tool: string): boolean
-export function makersRequiredMode(tool: string): string
+export function makersRequiredMode(tool: string): MakersPermissionMode
 export function makersRequiredModeLabel(tool: string): string
 export function makersToolGate(mode: unknown, tool: string): 'allow' | 'ask'
 export function makersAskReason(mode: string, tool: string): string
 export function makersRawToolName(publicName: unknown): string | null
 export function apply(ctx: any): void
-export function makersMcpPermissionSource(): string
+export function makersMcpPermissionSource(moduleToolPermissions?: Record<string, MakersPermissionMode>): string

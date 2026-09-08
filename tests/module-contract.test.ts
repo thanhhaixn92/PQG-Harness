@@ -235,6 +235,26 @@ test('root installs a reference PQG module with both client and Makers adapters'
   })
 })
 
+test('root installs the default-enabled Task module with client and Makers adapters', async () => {
+  const rootPackage = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
+  assert.equal(
+    rootPackage.dependencies?.['@pqg/task-module'],
+    'file:packages/task-module',
+  )
+
+  const { discoverPqgModules } = await import(modulePath.href)
+  const root = new URL('../', import.meta.url).pathname
+  const task = (await discoverPqgModules(root)).find((module: { id: string }) => module.id === 'task')
+  assert.deepEqual(task, {
+    id: 'task',
+    label: 'Công việc',
+    packageName: '@pqg/task-module',
+    defaultEnabled: true,
+    client: true,
+    makers: true,
+  })
+})
+
 test('ignores missing runtime dependencies while discovering installed PQG modules', async () => {
   const { discoverPqgModules } = await import(modulePath.href)
   const root = await mkdtemp(join(tmpdir(), 'pqg-missing-runtime-dependency-'))

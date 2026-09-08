@@ -1,0 +1,22 @@
+{
+  "name": "@pqg/task-module",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./client": "./src/client.tsx",
+    "./makers": "./src/makers.ts"
+  },
+  "pqg": {
+    "module": {
+      "id": "task",
+      "label": "Công việc",
+      "defaultEnabled": true
+    }
+  },
+  "dsh": {
+    "client": {
+      "platform": "web"
+    }
+  }
+}

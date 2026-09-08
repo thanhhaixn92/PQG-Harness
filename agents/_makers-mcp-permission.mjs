@@ -28,6 +28,12 @@ const AUTO_ALLOW = Object.freeze({
   ]),
   'danger-full-access': ALL_MAKERS_TOOLS,
 })
+const MODE_RANK = Object.freeze({
+  'read-only': 0,
+  'workspace-write': 1,
+  'danger-full-access': 2,
+})
+const MODULE_TOOL_PERMISSIONS = Object.freeze({})
 
 /** @param {unknown} value */
 export function isMakersPermissionMode(value) {
@@ -45,15 +51,24 @@ export function makersAutoAllowTools(mode) {
 }
 
 export function makersToolAllowed(mode, tool) {
+  const required = MODULE_TOOL_PERMISSIONS[tool]
+  if (isMakersPermissionMode(required)) {
+    return MODE_RANK[makersEffectivePermission(mode)] >= MODE_RANK[required]
+  }
   return makersAutoAllowTools(mode).includes(tool)
 }
 
 export function makersRequiredMode(tool) {
+  const moduleMode = MODULE_TOOL_PERMISSIONS[tool]
+  if (isMakersPermissionMode(moduleMode)) return moduleMode
+  if (tool === 'makers_context_probe' || tool === 'workspace_list_files' || tool === 'workspace_read_file') return 'read-only'
   return tool === 'workspace_write_file' ? 'workspace-write' : 'danger-full-access'
 }
 
 export function makersRequiredModeLabel(tool) {
-  return makersRequiredMode(tool) === 'workspace-write' ? 'Workspace Write' : 'Full access'
+  const required = makersRequiredMode(tool)
+  if (required === 'read-only') return 'Read Only'
+  return required === 'workspace-write' ? 'Workspace Write' : 'Full access'
 }
 
 export function makersToolGate(mode, tool) {
@@ -86,7 +101,16 @@ export function apply(ctx) {
   })
 }
 
-export function makersMcpPermissionSource() {
+function normalizeModuleToolPermissions(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const normalized = {}
+  for (const [tool, mode] of Object.entries(value)) {
+    if (tool && isMakersPermissionMode(mode)) normalized[tool] = mode
+  }
+  return normalized
+}
+
+export function makersMcpPermissionSource(moduleToolPermissions = {}) {
   const declarations = [
     `export const name = ${JSON.stringify(name)}`,
     `export const inject = ${JSON.stringify(inject)}`,
@@ -96,6 +120,8 @@ export function makersMcpPermissionSource() {
     `export const SAFE_FALLBACK_MAKERS_PERMISSION = ${JSON.stringify(SAFE_FALLBACK_MAKERS_PERMISSION)}`,
     `export const ALL_MAKERS_TOOLS = Object.freeze(${JSON.stringify(ALL_MAKERS_TOOLS)})`,
     `const AUTO_ALLOW = Object.freeze(${JSON.stringify(AUTO_ALLOW)})`,
+    `const MODE_RANK = Object.freeze(${JSON.stringify(MODE_RANK)})`,
+    `const MODULE_TOOL_PERMISSIONS = Object.freeze(${JSON.stringify(normalizeModuleToolPermissions(moduleToolPermissions))})`,
   ]
   const functions = [
     isMakersPermissionMode,
