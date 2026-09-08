@@ -117,6 +117,7 @@ test('PQG shell owns a readable light surface and hides placeholder utilities fr
 
   const emptyStateStyle = html.match(/<section data-pqg-product-state="Chưa có nội dung" style="([^"]+)"/)?.[1] ?? ''
   assert.match(emptyStateStyle, /color:/)
+  assert.match(emptyStateStyle, /background/)
 
   assert.doesNotMatch(html, />Ghi chú nhanh</)
   assert.doesNotMatch(html, />Gần đây</)
