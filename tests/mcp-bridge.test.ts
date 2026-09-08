@@ -149,7 +149,11 @@ test('installed reference Makers adapter toggles one probe tool on the existing 
     const initial = (await client.listTools()).tools.map(tool => tool.name)
     assert.ok(initial.includes('makers_context_probe'))
     assert.equal(initial.includes('pqg_reference_probe'), false)
-    assert.deepEqual(bridge.moduleToolPermissions(), {})
+    assert.deepEqual(bridge.moduleToolPermissions(), {
+      pqg_task_list: 'read-only',
+      pqg_task_create: 'workspace-write',
+      pqg_task_update: 'workspace-write',
+    })
 
     bridge.setModuleEnabled('reference', true)
     const enabled = (await client.listTools()).tools.map(tool => tool.name)
