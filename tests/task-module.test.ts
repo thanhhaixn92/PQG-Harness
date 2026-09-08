@@ -98,3 +98,14 @@ test('generated Makers permission plugin honors module tool metadata and keeps u
   assert.equal(generated.makersToolGate('danger-full-access', 'pqg_task_update'), 'allow')
   assert.equal(generated.makersToolGate('danger-full-access', 'pqg_unknown_action'), 'ask')
 })
+
+test('Task module is wired through the existing PQG module, build and permission seams', async () => {
+  const taskPackageUrl = new URL('../packages/task-module/package.json', import.meta.url)
+  const clientUrl = new URL('../packages/task-module/src/client.tsx', import.meta.url)
+  const makersUrl = new URL('../packages/task-module/src/makers.ts', import.meta.url)
+  const apiUrl = new URL('../agents/api/pqg.tasks.ts', import.meta.url)
+  assert.equal(existsSync(taskPackageUrl), true, 'Task package manifest must be installed as a PQG module')
+  assert.equal(existsSync(clientUrl), true, 'Task client contribution must exist')
+  assert.equal(existsSync(makersUrl), true, 'Task Makers adapter must exist')
+  assert.equal(existsSync(apiUrl), true, 'Task HTTP adapter must exist')
+})
