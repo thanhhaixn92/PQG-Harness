@@ -8,6 +8,7 @@ import {
   MantineProvider,
   NavLink,
   Paper,
+  SimpleGrid,
   Stack,
   Text,
   Title,
@@ -286,23 +287,106 @@ function ApprovalView({
   )
 }
 
-function HomeView({ renderSlot }: Pick<RootProps, 'renderSlot'>) {
+function DashboardMetricCard({
+  label,
+  value,
+  description,
+}: {
+  label: string
+  value: string
+  description: string
+}) {
+  return React.createElement(
+    Paper,
+    {
+      withBorder: true,
+      radius: 'lg',
+      p: 'lg',
+      'data-pqg-dashboard-metric': label,
+      style: { background: pqgShellTokens.panelBackground, boxShadow: pqgShellTokens.cardShadow },
+    },
+    React.createElement(
+      Stack,
+      { gap: 6 },
+      React.createElement(Text, { c: 'dimmed', fw: 600, size: 'sm' }, label),
+      React.createElement(Text, { fw: 800, size: 'xl', lh: 1.15 }, value),
+      React.createElement(Text, { c: 'dimmed', size: 'xs' }, description),
+    ),
+  )
+}
+
+function HomeView({
+  navigate,
+  renderSlot,
+  sessions,
+}: Pick<RootProps, 'renderSlot'> & {
+  navigate(targetId: string): void
+  sessions: { current?: string; byId: Record<string, { pendingInteraction?: unknown }> }
+}) {
+  const sessionCount = Object.keys(sessions.byId).length
+  const currentSummary = sessions.current === undefined ? undefined : sessions.byId[sessions.current]
+  const approvalCount = currentSummary?.pendingInteraction == null ? '0' : '1'
+  const currentSession = sessions.current === undefined ? pqgCopy.dashboardClosed : pqgCopy.dashboardOpen
+  const today = new Intl.DateTimeFormat('vi-VN', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).format(new Date())
+
   return React.createElement(
     Stack,
-    { gap: 'lg' },
+    { gap: 'xl', 'data-pqg-dashboard': true },
     React.createElement(
-      'div',
-      null,
-      React.createElement(Title, { order: 2 }, pqgCopy.homeTitle),
-      React.createElement(Text, { c: 'dimmed', mt: 4 }, pqgCopy.homeDescription),
+      Group,
+      { justify: 'space-between', align: 'flex-start', gap: 'lg' },
+      React.createElement(
+        'div',
+        null,
+        React.createElement(Title, { order: 1, size: '2rem', lh: 1.15 }, pqgCopy.homeTitle),
+        React.createElement(Text, { c: 'dimmed', mt: 6 }, pqgCopy.homeDescription),
+      ),
+      React.createElement(Text, { c: 'dimmed', size: 'sm', visibleFrom: 'md' }, today),
     ),
     React.createElement(
-      Paper,
-      { withBorder: true, radius: 'lg', p: 'lg' },
-      React.createElement(Text, { fw: 600, mb: 'sm' }, pqgCopy.workspace),
-      renderSlot('pqg.shell.home.widget', {}, {
-        fallback: React.createElement(EmptyState, { description: pqgCopy.homeEmpty }),
+      SimpleGrid,
+      { cols: { base: 1, sm: 3 }, spacing: 'md' },
+      React.createElement(DashboardMetricCard, {
+        label: pqgCopy.dashboardSessions,
+        value: String(sessionCount),
+        description: 'Các phiên đang có trong không gian làm việc.',
       }),
+      React.createElement(DashboardMetricCard, {
+        label: pqgCopy.dashboardCurrentSession,
+        value: currentSession,
+        description: 'Trạng thái phiên làm việc hiện tại.',
+      }),
+      React.createElement(DashboardMetricCard, {
+        label: pqgCopy.dashboardApproval,
+        value: approvalCount,
+        description: 'Hành động đang chờ xác nhận của bạn.',
+      }),
+    ),
+    React.createElement(
+      Stack,
+      { gap: 'md' },
+      React.createElement(
+        'div',
+        null,
+        React.createElement(Title, { order: 2 }, pqgCopy.dashboardWorkspaceTitle),
+        React.createElement(Text, { c: 'dimmed', mt: 4 }, pqgCopy.dashboardWorkspaceDescription),
+      ),
+      React.createElement(
+        SimpleGrid,
+        { cols: { base: 1, md: 2 }, spacing: 'md', 'data-pqg-dashboard-widgets': true },
+        renderSlot('pqg.shell.home.widget', { activeId: 'home', navigate }, {
+          fallback: React.createElement(
+            Paper,
+            { withBorder: true, radius: 'lg', p: 'lg' },
+            React.createElement(EmptyState, { description: pqgCopy.homeEmpty }),
+          ),
+        }),
+      ),
     ),
   )
 }
@@ -353,7 +437,7 @@ function PqgApplicationShell({ renderSlot, renderSlotChain, services, useSession
     setMobileNavOpened(false)
   }
   const mainFallback = activeId === 'home'
-    ? React.createElement(HomeView, { renderSlot })
+    ? React.createElement(HomeView, { navigate, renderSlot, sessions })
     : activeId === 'approval'
       ? React.createElement(ApprovalView, { revision: approvalRevision, services })
       : React.createElement(UnavailableState, { description: pqgCopy.moduleUnavailable })
@@ -448,7 +532,8 @@ function PqgApplicationShell({ renderSlot, renderSlotChain, services, useSession
                 onClick: spotlight.open,
                 'aria-label': pqgCopy.search,
                 'data-pqg-search-toggle': true,
-              }, width < 640 ? null : pqgCopy.search),
+                style: width < 900 ? undefined : { minWidth: 340, justifyContent: 'flex-start' },
+              }, width < 640 ? null : pqgCopy.searchPlaceholder),
               React.createElement(Button, {
                 variant: supportState === 'collapsed' ? 'light' : 'filled',
                 size: 'compact-sm',
