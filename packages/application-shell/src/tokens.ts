@@ -1,9 +1,15 @@
 export const pqgShellTokens = Object.freeze({
-  headerHeight: 60,
+  headerHeight: 64,
   navbarWidth: 248,
   supportCompactWidth: 92,
   supportExpandedWidth: 320,
   tabletBreakpoint: 1200,
   mobileNavBreakpoint: 960,
   desktopSupportBreakpoint: 1440,
+  contentMaxWidth: 1180,
+  shellBackground: '#f5f7fb',
+  panelBackground: '#ffffff',
+  navigationBackground: '#fbfcfe',
+  textPrimary: '#172033',
+  borderColor: '#e4e9f0',
 })

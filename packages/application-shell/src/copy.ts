@@ -4,10 +4,6 @@ export const pqgCopy = {
   home: 'Trang chủ',
   approval: 'Phê duyệt',
   modules: 'Ứng dụng',
-  personal: 'Cá nhân',
-  quickNote: 'Ghi chú nhanh',
-  recent: 'Gần đây',
-  favorites: 'Mục yêu thích',
   search: 'Tìm kiếm',
   searchPlaceholder: 'Tìm trong các ứng dụng...',
   searchHint: 'Nhập từ khóa để tìm kiếm.',
@@ -35,5 +31,4 @@ export const pqgCopy = {
   approvalRejectedNotification: 'Đã từ chối hành động.',
   approvalErrorNotification: 'Không thể gửi quyết định phê duyệt.',
   moduleUnavailable: 'Mô-đun hiện không khả dụng.',
-  utilityUnavailable: 'Tiện ích này chưa được kích hoạt.',
 } as const
