@@ -149,15 +149,16 @@ test('module settings scopes module-state GET and PUT requests to the current Ma
 
 test('module settings reload the shell after a successful toggle so Task navigation follows policy', async () => {
   const source = await readFile(new URL('../src/pqg-module-settings-client.ts', import.meta.url), 'utf8')
-  const successStart = source.indexOf('updated => {')
-  const failureStart = source.indexOf('},\n      () => {', successStart)
-  const toggleEnd = source.indexOf('\n  }\n\n  return createElement', failureStart)
-  assert.ok(successStart >= 0 && failureStart > successStart, 'module toggle success handler must exist')
-  assert.ok(toggleEnd > failureStart, 'module toggle failure handler must exist')
-  const successBlock = source.slice(successStart, failureStart)
-  const failureBlock = source.slice(failureStart, toggleEnd)
-  assert.match(successBlock, /window\.location\.reload\(\)/)
-  assert.doesNotMatch(failureBlock, /window\.location\.reload\(\)/)
+  const toggleStart = source.indexOf('const toggle =')
+  const toggleEnd = source.indexOf('\n  }\n\n  return createElement', toggleStart)
+  assert.ok(toggleStart >= 0 && toggleEnd > toggleStart, 'module toggle handler must exist')
+  const toggleBlock = source.slice(toggleStart, toggleEnd)
+  const successStart = toggleBlock.indexOf('updated => {')
+  const reloadStart = toggleBlock.indexOf('window.location.reload()')
+  const failureStart = toggleBlock.indexOf('cause => {', successStart)
+  assert.ok(successStart >= 0 && reloadStart > successStart, 'successful toggle must reload the shell')
+  assert.ok(failureStart > reloadStart, 'reload must happen before the failure handler')
+  assert.equal((toggleBlock.match(/window\.location\.reload\(\)/g) ?? []).length, 1)
 })
 
 test('prepared DSH Web boot graph includes the Task client contribution', async () => {
