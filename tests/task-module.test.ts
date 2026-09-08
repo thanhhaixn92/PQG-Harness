@@ -230,8 +230,6 @@ test('prepared Task contribution activates on Home before a DSH session exists',
   await shellFiber.await()
   const taskFiber = ctx.plugin({ inject: [...task.inject], apply: task.apply })
   await taskFiber.await()
-  await Promise.resolve()
-  await Promise.resolve()
 
   assert.equal(slots.entries('pqg.shell.navigation').length, 1)
   assert.equal(slots.entries('pqg.shell.workspace').length, 1)
@@ -241,25 +239,11 @@ test('prepared Task contribution activates on Home before a DSH session exists',
   await shellFiber.dispose()
 })
 
-test('Task client scopes module policy and CRUD requests to the current Makers conversation', async () => {
+test('Task client leaves Makers request routing to the page bootstrap instead of a DSH session id', async () => {
   const source = await readFile(new URL('../packages/task-module/src/client.tsx', import.meta.url), 'utf8')
-  assert.match(source, /const inject = \['slots', 'pqgShell', 'sessions'\]/)
-  assert.match(source, /sessions\.list\.getSnapshot\(\)\.current/)
-  assert.match(source, /['"]makers-conversation-id['"]/)
-  assert.match(source, /sessions\.list\.subscribe/)
-})
-
-test('Task client activates contributions at most once across session-list updates', async () => {
-  const source = await readFile(new URL('../packages/task-module/src/client.tsx', import.meta.url), 'utf8')
-  const applyStart = source.indexOf('async function apply')
-  assert.ok(applyStart >= 0, 'Task client apply must exist')
-  const applyBlock = source.slice(applyStart)
-  assert.match(applyBlock, /let activated = false/)
-  assert.match(applyBlock, /let checking = false/)
-  assert.match(applyBlock, /if \(activated \|\| checking \|\| disposed\) return/)
-  const markActivated = applyBlock.indexOf('activated = true')
-  const register = applyBlock.indexOf('registerTaskContributions(client)')
-  assert.ok(markActivated >= 0 && register > markActivated, 'activation must be marked before contributions register')
+  assert.match(source, /const inject = \['slots', 'pqgShell'\]/)
+  assert.doesNotMatch(source, /makers-conversation-id/)
+  assert.doesNotMatch(source, /sessions\.list/)
 })
 
 test('module settings scopes module-state GET and PUT requests to the current Makers conversation', async () => {
