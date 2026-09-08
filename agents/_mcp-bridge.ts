@@ -58,7 +58,7 @@ type McpToolDefinition = {
 }
 
 export type MakersPermissionMode = 'read-only' | 'workspace-write' | 'danger-full-access'
-type ModuleMcpToolDefinition = McpToolDefinition & { permission: MakersPermissionMode }
+type ModuleMcpToolDefinition = McpToolDefinition & { permission?: MakersPermissionMode }
 
 export interface LocalMcpBridge {
   url: string
@@ -201,7 +201,7 @@ async function createMcpServer(
     const { permission, ...toolDefinition } = def
     const handle = register(name, toolDefinition, handler)
     modules.add(moduleId, handle)
-    permissions.set(name, permission)
+    if (permission !== undefined) permissions.set(name, permission)
     const names = moduleToolNames.get(moduleId) ?? new Set<string>()
     names.add(name)
     moduleToolNames.set(moduleId, names)
