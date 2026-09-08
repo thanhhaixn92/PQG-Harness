@@ -1,0 +1,250 @@
+name: task78-generate
+
+on:
+  push:
+    branches: [automation/78-task-generation]
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Apply approved Task wiring patches
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          import re
+
+          def replace_once(path, old, new):
+              file = Path(path)
+              text = file.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one match, found {count}: {old[:80]!r}')
+              file.write_text(text.replace(old, new, 1))
+
+          replace_once(
+              'agents/_mcp-bridge.ts',
+              "type ModuleMcpToolDefinition = McpToolDefinition & { permission: MakersPermissionMode }",
+              "type ModuleMcpToolDefinition = McpToolDefinition & { permission?: MakersPermissionMode }",
+          )
+          replace_once(
+              'agents/_mcp-bridge.ts',
+              "    permissions.set(name, permission)\n",
+              "    if (permission !== undefined) permissions.set(name, permission)\n",
+          )
+
+          replace_once(
+              'agents/_dsh-web-sidecar.ts',
+              "  options: { mcpUrl: string; gatewayBaseUrl: string; defaultModel: string },",
+              "  options: {\n    mcpUrl: string\n    gatewayBaseUrl: string\n    defaultModel: string\n    moduleToolPermissions: Record<string, 'read-only' | 'workspace-write' | 'danger-full-access'>\n  },",
+          )
+          replace_once(
+              'agents/_dsh-web-sidecar.ts',
+              "    makersMcpPermissionSource(),\n",
+              "    makersMcpPermissionSource(options.moduleToolPermissions),\n",
+          )
+          replace_once(
+              'agents/_dsh-web-sidecar.ts',
+              "    await writeProfilePatch(home, {\n      mcpUrl: mcp.url,\n      gatewayBaseUrl: gateway.baseUrl,\n      defaultModel,\n    })",
+              "    await writeProfilePatch(home, {\n      mcpUrl: mcp.url,\n      gatewayBaseUrl: gateway.baseUrl,\n      defaultModel,\n      moduleToolPermissions: mcp.moduleToolPermissions(),\n    })",
+          )
+
+          replace_once(
+              'scripts/prepare-dsh-web.mjs',
+              "const pqgReferenceModuleId = '@pqg/reference-module'\n",
+              "const pqgReferenceModuleId = '@pqg/reference-module'\nconst pqgTaskModuleId = '@pqg/task-module'\n",
+          )
+          prepare_path = Path('scripts/prepare-dsh-web.mjs')
+          prepare = prepare_path.read_text()
+          pattern = re.compile(
+              r"async function preparePqgReferenceModuleClient\(\) \{.*?\n\}\n\nasync function preparePqgApplicationShellClient",
+              re.S,
+          )
+          generic = """async function preparePqgModuleClient(moduleId, entry) {
+            const result = await build({
+              configFile: false,
+              root,
+              logLevel: 'silent',
+              define: {
+                'process.env.NODE_ENV': JSON.stringify('production'),
+              },
+              build: {
+                write: false,
+                target: 'es2022',
+                minify: 'esbuild',
+                lib: {
+                  entry,
+                  formats: ['cjs'],
+                  fileName: 'client',
+                },
+                rollupOptions: {
+                  external: id => reactPlatformExternals.has(id),
+                  output: { inlineDynamicImports: true },
+                },
+              },
+            })
+            const runs = Array.isArray(result) ? result : [result]
+            const outputs = runs.flatMap(run => Array.isArray(run?.output) ? run.output : [])
+            const chunk = outputs.find(output => output.type === 'chunk' && output.isEntry)
+            if (!chunk) throw new Error(`${moduleId} client bundle produced no entry chunk.`)
+
+            const bundled = [
+              `window.__ModuleLoader__.load({ id: ${JSON.stringify(moduleId)}, factory: (require) => { var module = { exports: {} }; var exports = module.exports;`,
+              chunk.code.trimEnd(),
+              'return module.exports; } });',
+              '',
+            ].join('\\n')
+            const target = join(publicDir, 'plugins', ...moduleId.split('/'), 'client.js')
+            await mkdir(dirname(target), { recursive: true })
+            await writeFile(target, bundled)
+            const rev = hash(bundled)
+            return {
+              id: moduleId,
+              url: `/plugins/${moduleId}/client.js?rev=${rev}`,
+              rev,
+              inject: [
+                '@deepseek-ai/dsh-client-runtime',
+                '@deepseek-ai/dsh-client-ui-slots',
+              ],
+            }
+          }
+
+          async function preparePqgApplicationShellClient"""
+          prepare, count = pattern.subn(generic, prepare, count=1)
+          if count != 1:
+              raise SystemExit(f'prepare-dsh-web.mjs: expected one reference-module prep function, found {count}')
+          prepare_path.write_text(prepare)
+          replace_once(
+              'scripts/prepare-dsh-web.mjs',
+              "const referenceModule = await preparePqgReferenceModuleClient()\n",
+              "const referenceModule = await preparePqgModuleClient(\n  pqgReferenceModuleId,\n  join(root, 'packages', 'reference-module', 'src', 'client.tsx'),\n)\nconst taskModule = await preparePqgModuleClient(\n  pqgTaskModuleId,\n  join(root, 'packages', 'task-module', 'src', 'client.tsx'),\n)\n",
+          )
+          replace_once(
+              'scripts/prepare-dsh-web.mjs',
+              "  referenceModule,\n  await preparePqgModuleSettingsClient(),",
+              "  referenceModule,\n  taskModule,\n  await preparePqgModuleSettingsClient(),",
+          )
+
+          module_contract = Path('tests/module-contract.test.ts')
+          text = module_contract.read_text()
+          marker = "test('ignores missing runtime dependencies while discovering installed PQG modules', async () => {"
+          if text.count(marker) != 1:
+              raise SystemExit('module-contract: insertion marker drifted')
+          task_test = """test('root installs the Task module with client and Makers adapters', async () => {
+            const rootPackage = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
+            assert.equal(rootPackage.dependencies?.['@pqg/task-module'], 'file:packages/task-module')
+
+            const { discoverPqgModules } = await import(modulePath.href)
+            const root = new URL('../', import.meta.url).pathname
+            const taskModule = (await discoverPqgModules(root)).find((module: { id: string }) => module.id === 'task')
+            assert.deepEqual(taskModule, {
+              id: 'task',
+              label: 'Công việc',
+              packageName: '@pqg/task-module',
+              defaultEnabled: true,
+              client: true,
+              makers: true,
+            })
+          })
+
+          """
+          module_contract.write_text(text.replace(marker, task_test + marker, 1))
+
+          permission_test = Path('tests/mcp-permission.test.ts')
+          text = permission_test.read_text()
+          marker = "test('every Makers tool stays visible; permission only decides allow vs ask', () => {"
+          if text.count(marker) != 1:
+              raise SystemExit('mcp-permission: insertion marker drifted')
+          module_permission_test = """test('generated sidecar permission metadata gives module tools minimum modes without opening unknown tools', async () => {
+            const source = makersMcpPermissionSource({
+              pqg_task_list: 'read-only',
+              pqg_task_create: 'workspace-write',
+              pqg_task_update: 'workspace-write',
+            })
+            const generated = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`)
+            assert.equal(generated.makersToolGate('read-only', 'pqg_task_list'), 'allow')
+            assert.equal(generated.makersToolGate('read-only', 'pqg_task_create'), 'ask')
+            assert.equal(generated.makersToolGate('workspace-write', 'pqg_task_create'), 'allow')
+            assert.equal(generated.makersToolGate('danger-full-access', 'pqg_task_update'), 'allow')
+            assert.equal(generated.makersToolGate('danger-full-access', 'pqg_unknown_action'), 'ask')
+          })
+
+          """
+          permission_test.write_text(text.replace(marker, module_permission_test + marker, 1))
+
+          bridge_test = Path('tests/mcp-bridge.test.ts')
+          text = bridge_test.read_text()
+          text = text.replace(
+              "def: { description: string; inputSchema?: Record<string, unknown> },",
+              "def: { description: string; inputSchema?: Record<string, unknown>; permission?: 'read-only' | 'workspace-write' | 'danger-full-access' },",
+          )
+          text = text.replace(
+              "    removeModule(moduleId: string): void\n",
+              "    moduleToolPermissions(): Record<string, 'read-only' | 'workspace-write' | 'danger-full-access'>\n    removeModule(moduleId: string): void\n",
+              1,
+          )
+          text = text.replace(
+              "{ description: 'Future PQG module probe', inputSchema: {} },",
+              "{ description: 'Future PQG module probe', inputSchema: {}, permission: 'read-only' },",
+              1,
+          )
+          text = text.replace(
+              "    const enabled = (await client.listTools()).tools.map(tool => tool.name)\n",
+              "    assert.equal(moduleBridge.moduleToolPermissions().future_probe, 'read-only')\n\n    const enabled = (await client.listTools()).tools.map(tool => tool.name)\n",
+              1,
+          )
+          text = text.replace(
+              "    assert.equal(removed.includes('future_probe'), false)\n    assert.ok(removed.includes('makers_context_probe'))",
+              "    assert.equal(removed.includes('future_probe'), false)\n    assert.ok(removed.includes('makers_context_probe'))\n    assert.equal(moduleBridge.moduleToolPermissions().future_probe, undefined)",
+              1,
+          )
+          text = text.replace(
+              "{ description: 'Failing future module probe', inputSchema: {} },",
+              "{ description: 'Failing future module probe', inputSchema: {}, permission: 'workspace-write' },",
+              1,
+          )
+          bridge_test.write_text(text)
+          PY
+
+      - name: Refresh package lock
+        run: npm install --package-lock-only --ignore-scripts
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare generated DSH web artifacts
+        run: npm run prepare:dsh-web
+
+      - name: Targeted Task and module verification
+        run: node --experimental-strip-types --test tests/task-module.test.ts tests/module-contract.test.ts tests/mcp-permission.test.ts tests/mcp-bridge.test.ts tests/application-shell-contract.test.ts tests/system-services.test.ts
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Commit deterministic outputs
+        shell: bash
+        run: |
+          git rm .github/workflows/task78-generate.yml
+          git add package-lock.json scripts/prepare-dsh-web.mjs agents/_dsh-web-sidecar.ts agents/_mcp-bridge.ts tests/module-contract.test.ts tests/mcp-permission.test.ts tests/mcp-bridge.test.ts index.html public agents/api
+          if git diff --cached --quiet; then
+            echo 'No generated changes to commit.'
+            exit 1
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'feat(task): wire Task module and refresh generated artifacts'
+          git push
