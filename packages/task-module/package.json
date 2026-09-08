@@ -1,0 +1,28 @@
+{
+  "name": "@pqg/task-module",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./client": "./src/client.tsx",
+    "./makers": "./src/makers.ts",
+    "./service": "./src/service.ts"
+  },
+  "dependencies": {
+    "@mantine/core": "8.3.18",
+    "@pqg/application-shell": "file:../application-shell",
+    "zod": "4.4.3"
+  },
+  "pqg": {
+    "module": {
+      "id": "task",
+      "label": "Công việc",
+      "defaultEnabled": true
+    }
+  },
+  "dsh": {
+    "client": {
+      "platform": "web"
+    }
+  }
+}
