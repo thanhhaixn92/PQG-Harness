@@ -127,6 +127,7 @@ test('Task Home contribution is a dashboard card with real today tasks and a rou
   assert.match(widget, /data-pqg-task-home-card/)
   assert.match(widget, /Việc cần làm hôm nay/)
   assert.match(widget, /Xem công việc/)
+  assert.match(widget, /onClick: \(\) => navigate\(TASK_ID\)/)
   assert.match(widget, /dueToday/)
   assert.doesNotMatch(widget, /\b5\b/)
 })
