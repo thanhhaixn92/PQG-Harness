@@ -26,20 +26,6 @@ type ModuleState = {
   enabled: boolean
 }
 
-type SessionList = {
-  getSnapshot(): { current?: string }
-  subscribe(listener: () => void): () => void
-}
-
-type ClientSessions = {
-  list: SessionList
-}
-
-type TaskClientContext = ClientContext & {
-  pqgShell: ShellSystemServices
-  sessions: ClientSessions
-}
-
 type ReactApi = {
   createElement: (...args: any[]) => any
   useEffect(effect: () => void | (() => void), deps: unknown[]): void
@@ -47,23 +33,12 @@ type ReactApi = {
 }
 
 const React = require('react') as ReactApi
-const inject = ['slots', 'pqgShell', 'sessions']
+const inject = ['slots', 'pqgShell']
 const TASK_ID = 'task'
 
-function currentConversationId(sessions: ClientSessions): string | undefined {
-  return sessions.list.getSnapshot().current
-}
-
-async function taskModuleEnabled(sessions: ClientSessions): Promise<boolean> {
-  const conversationId = currentConversationId(sessions)
-  if (conversationId === undefined) return false
+async function taskModuleEnabled(): Promise<boolean> {
   try {
-    const response = await fetch('/api/pqg.modules', {
-      headers: {
-        accept: 'application/json',
-        'makers-conversation-id': conversationId,
-      },
-    })
+    const response = await fetch('/api/pqg.modules', { headers: { accept: 'application/json' } })
     if (!response.ok) return false
     const body = await response.json() as { modules?: ModuleState[] }
     return Array.isArray(body.modules)
@@ -73,18 +48,11 @@ async function taskModuleEnabled(sessions: ClientSessions): Promise<boolean> {
   }
 }
 
-async function taskRequest<T>(
-  sessions: ClientSessions,
-  method: 'GET' | 'POST' | 'PATCH',
-  body?: unknown,
-): Promise<T> {
-  const conversationId = currentConversationId(sessions)
-  if (conversationId === undefined) throw new Error('Chưa có phiên làm việc hiện tại.')
+async function taskRequest<T>(method: 'GET' | 'POST' | 'PATCH', body?: unknown): Promise<T> {
   const response = await fetch('/api/pqg.tasks', {
     method,
     headers: {
       accept: 'application/json',
-      'makers-conversation-id': conversationId,
       ...(body === undefined ? {} : { 'content-type': 'application/json' }),
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -94,8 +62,8 @@ async function taskRequest<T>(
   return payload
 }
 
-async function loadTasks(sessions: ClientSessions): Promise<TaskRecord[]> {
-  const payload = await taskRequest<{ tasks?: TaskRecord[] }>(sessions, 'GET')
+async function loadTasks(): Promise<TaskRecord[]> {
+  const payload = await taskRequest<{ tasks?: TaskRecord[] }>('GET')
   return Array.isArray(payload.tasks) ? payload.tasks : []
 }
 
@@ -118,11 +86,9 @@ function TaskNavigation({ activeId, navigate }: PropsRuntime<'pqg.shell.navigati
 function TaskRow({
   task,
   onUpdated,
-  sessions,
 }: {
   task: TaskRecord
   onUpdated(task: TaskRecord): void
-  sessions: ClientSessions
 }) {
   const [title, setTitle] = React.useState(task.title)
   const [dueDate, setDueDate] = React.useState(task.dueDate ?? '')
@@ -140,7 +106,7 @@ function TaskRow({
     setBusy(true)
     setError(undefined)
     try {
-      const payload = await taskRequest<{ task: TaskRecord }>(sessions, 'PATCH', { id: task.id, ...patch })
+      const payload = await taskRequest<{ task: TaskRecord }>('PATCH', { id: task.id, ...patch })
       onUpdated(payload.task)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Không thể cập nhật công việc')
@@ -199,12 +165,7 @@ function TaskRow({
   )
 }
 
-function TaskWorkspace({
-  sessions,
-}: PropsRuntime<'pqg.shell.workspace'> & {
-  matched: { moduleId: string }
-  sessions: ClientSessions
-}) {
+function TaskWorkspace(_props: PropsRuntime<'pqg.shell.workspace'> & { matched: { moduleId: string } }) {
   const [tasks, setTasks] = React.useState<TaskRecord[]>([])
   const [title, setTitle] = React.useState('')
   const [dueDate, setDueDate] = React.useState('')
@@ -215,7 +176,7 @@ function TaskWorkspace({
   const refresh = () => {
     setLoading(true)
     setError(undefined)
-    void loadTasks(sessions).then(
+    void loadTasks().then(
       rows => {
         setTasks(rows)
         setLoading(false)
@@ -236,7 +197,7 @@ function TaskWorkspace({
     setBusy(true)
     setError(undefined)
     try {
-      const payload = await taskRequest<{ task: TaskRecord }>(sessions, 'POST', {
+      const payload = await taskRequest<{ task: TaskRecord }>('POST', {
         title,
         ...(dueDate === '' ? {} : { dueDate }),
       })
@@ -302,25 +263,17 @@ function TaskWorkspace({
         : React.createElement(
             Stack,
             { gap: 'sm' },
-            ...tasks.map(task => React.createElement(TaskRow, {
-              key: task.id,
-              task,
-              onUpdated: replaceTask,
-              sessions,
-            })),
+            ...tasks.map(task => React.createElement(TaskRow, { key: task.id, task, onUpdated: replaceTask })),
           ),
   )
 }
 
-function TaskHomeWidget({
-  navigate,
-  sessions,
-}: PropsRuntime<'pqg.shell.home.widget'> & { sessions: ClientSessions }) {
+function TaskHomeWidget({ navigate }: PropsRuntime<'pqg.shell.home.widget'>) {
   const [tasks, setTasks] = React.useState<TaskRecord[]>([])
   const [loaded, setLoaded] = React.useState(false)
 
   React.useEffect(() => {
-    void loadTasks(sessions).then(
+    void loadTasks().then(
       rows => {
         setTasks(rows)
         setLoaded(true)
@@ -365,16 +318,9 @@ function TaskHomeWidget({
   )
 }
 
-function registerTaskContributions(ctx: TaskClientContext): void {
-  const services = ctx.pqgShell
-  const TaskWorkspaceContribution = (props: PropsRuntime<'pqg.shell.workspace'> & { matched: { moduleId: string } }) => React.createElement(
-    TaskWorkspace,
-    { ...props, sessions: ctx.sessions },
-  )
-  const TaskHomeContribution = (props: PropsRuntime<'pqg.shell.home.widget'>) => React.createElement(
-    TaskHomeWidget,
-    { ...props, sessions: ctx.sessions },
-  )
+async function apply(ctx: ClientContext): Promise<void> {
+  if (!(await taskModuleEnabled())) return
+  const services = (ctx as ClientContext & { pqgShell: ShellSystemServices }).pqgShell
 
   ctx.effect(() => services.registerSearchProvider({
     id: TASK_ID,
@@ -382,7 +328,7 @@ function registerTaskContributions(ctx: TaskClientContext): void {
     async search(query) {
       const normalized = query.trim().toLocaleLowerCase('vi')
       if (!normalized) return []
-      const tasks = await loadTasks(ctx.sessions)
+      const tasks = await loadTasks()
       return tasks
         .filter(task => task.title.toLocaleLowerCase('vi').includes(normalized))
         .slice(0, 20)
@@ -425,45 +371,14 @@ function registerTaskContributions(ctx: TaskClientContext): void {
   ctx.slots.inject('pqg.shell.workspace', () => ctx.slots.register({
     name: 'pqg.shell.workspace',
     select: ({ activeId }) => activeId === TASK_ID ? { moduleId: TASK_ID } : null,
-  }, TaskWorkspaceContribution))
+  }, TaskWorkspace))
 
   ctx.slots.inject('pqg.shell.home.widget', () => ctx.slots.register({
     name: 'pqg.shell.home.widget',
     id: TASK_ID,
     order: 10,
     label: 'Công việc',
-  }, TaskHomeContribution))
-}
-
-async function apply(ctx: ClientContext): Promise<void> {
-  const client = ctx as TaskClientContext
-  let activated = false
-  let checking = false
-  let disposed = false
-
-  const activate = async (): Promise<void> => {
-    if (activated || checking || disposed) return
-    if (currentConversationId(client.sessions) === undefined) return
-    checking = true
-    try {
-      const enabled = await taskModuleEnabled(client.sessions)
-      if (!enabled || activated || disposed) return
-      if (currentConversationId(client.sessions) === undefined) return
-      activated = true
-      registerTaskContributions(client)
-    } finally {
-      checking = false
-    }
-  }
-
-  ctx.effect(() => {
-    const unsubscribe = client.sessions.list.subscribe(() => { void activate() })
-    void activate()
-    return () => {
-      disposed = true
-      unsubscribe()
-    }
-  })
+  }, TaskHomeWidget))
 }
 
 module.exports = { inject, apply }
