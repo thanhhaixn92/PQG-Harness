@@ -63,7 +63,7 @@ test('module tools toggle on the existing MCP bridge without affecting Makers co
     const initial = (await client.listTools()).tools.map(tool => tool.name)
     assert.ok(initial.includes('makers_context_probe'))
     assert.equal(initial.includes('future_probe'), false)
-    assert.deepEqual(bridge.moduleToolPermissions(), {})
+    assert.deepEqual(bridge.moduleToolPermissions?.() ?? {}, {})
 
     bridge.setModuleEnabled('future', true)
     bridge.registerModuleTool(
@@ -73,7 +73,7 @@ test('module tools toggle on the existing MCP bridge without affecting Makers co
       async () => ({ content: [{ type: 'text', text: 'ok' }] }),
     )
 
-    assert.deepEqual(bridge.moduleToolPermissions(), { future_probe: 'read-only' })
+    assert.deepEqual(bridge.moduleToolPermissions?.() ?? {}, { future_probe: 'read-only' })
     const enabled = (await client.listTools()).tools.map(tool => tool.name)
     assert.ok(enabled.includes('future_probe'))
     assert.ok(enabled.includes('makers_context_probe'))
@@ -87,7 +87,7 @@ test('module tools toggle on the existing MCP bridge without affecting Makers co
     assert.ok((await client.listTools()).tools.some(tool => tool.name === 'future_probe'))
 
     bridge.removeModule('future')
-    assert.deepEqual(bridge.moduleToolPermissions(), {})
+    assert.deepEqual(bridge.moduleToolPermissions?.() ?? {}, {})
     const removed = (await client.listTools()).tools.map(tool => tool.name)
     assert.equal(removed.includes('future_probe'), false)
     assert.ok(removed.includes('makers_context_probe'))
@@ -113,7 +113,7 @@ test('a failing module tool returns an MCP error without taking down Makers core
       { description: 'Failing future module probe', inputSchema: {} },
       async () => { throw new Error('reference module failure') },
     )
-    assert.deepEqual(bridge.moduleToolPermissions(), {})
+    assert.deepEqual(bridge.moduleToolPermissions?.() ?? {}, {})
 
     const failed = await client.callTool({ name: 'future_fail', arguments: {} }) as any
     assert.equal(failed.isError, true)
@@ -149,7 +149,7 @@ test('installed reference Makers adapter toggles one probe tool on the existing 
     const initial = (await client.listTools()).tools.map(tool => tool.name)
     assert.ok(initial.includes('makers_context_probe'))
     assert.equal(initial.includes('pqg_reference_probe'), false)
-    assert.deepEqual(bridge.moduleToolPermissions(), {
+    assert.deepEqual(bridge.moduleToolPermissions?.() ?? {}, {
       pqg_task_list: 'read-only',
       pqg_task_create: 'workspace-write',
       pqg_task_update: 'workspace-write',
