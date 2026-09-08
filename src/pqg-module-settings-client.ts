@@ -130,6 +130,7 @@ function ModuleSettingsSection(): unknown {
         setModules(modules.map(row => row.id === updated.id ? updated : row))
         savingRef.current = false
         setSavingId(null)
+        window.location.reload()
       },
       () => {
         setError('Không thể cập nhật tiện ích. Vui lòng thử lại.')

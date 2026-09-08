@@ -118,6 +118,19 @@ test('Task client keeps its own build producer without rewriting the Reference p
   assert.doesNotMatch(source, /async function preparePqgModuleClient\(id, entry, inject\)/)
 })
 
+test('module settings reload the shell after a successful toggle so Task navigation follows policy', async () => {
+  const source = await readFile(new URL('../src/pqg-module-settings-client.ts', import.meta.url), 'utf8')
+  const successStart = source.indexOf('updated => {')
+  const failureStart = source.indexOf('},\n      () => {', successStart)
+  const toggleEnd = source.indexOf('\n  }\n\n  return createElement', failureStart)
+  assert.ok(successStart >= 0 && failureStart > successStart, 'module toggle success handler must exist')
+  assert.ok(toggleEnd > failureStart, 'module toggle failure handler must exist')
+  const successBlock = source.slice(successStart, failureStart)
+  const failureBlock = source.slice(failureStart, toggleEnd)
+  assert.match(successBlock, /window\.location\.reload\(\)/)
+  assert.doesNotMatch(failureBlock, /window\.location\.reload\(\)/)
+})
+
 test('prepared DSH Web boot graph includes the Task client contribution', async () => {
   const preparedClient = new URL('../public/plugins/@pqg/task-module/client.js', import.meta.url)
   assert.equal(existsSync(preparedClient), true, 'prepare:dsh-web must emit the Task client bundle')
