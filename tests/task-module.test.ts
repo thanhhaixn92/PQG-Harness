@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
 const serviceUrl = new URL('../packages/task-module/src/service.ts', import.meta.url)
@@ -108,4 +109,11 @@ test('Task module is wired through the existing PQG module, build and permission
   assert.equal(existsSync(clientUrl), true, 'Task client contribution must exist')
   assert.equal(existsSync(makersUrl), true, 'Task Makers adapter must exist')
   assert.equal(existsSync(apiUrl), true, 'Task HTTP adapter must exist')
+})
+
+test('prepared DSH Web boot graph includes the Task client contribution', async () => {
+  const preparedClient = new URL('../public/plugins/@pqg/task-module/client.js', import.meta.url)
+  assert.equal(existsSync(preparedClient), true, 'prepare:dsh-web must emit the Task client bundle')
+  const html = await readFile(new URL('../index.html', import.meta.url), 'utf8')
+  assert.match(html, /@pqg\/task-module/)
 })
