@@ -23,6 +23,35 @@ jobs:
           node-version: 24
           cache: npm
 
+      - name: Keep module permission metadata fail-safe
+        shell: bash
+        run: |
+          node <<'NODE'
+          const { readFileSync, writeFileSync } = require('node:fs')
+
+          const bridgePath = 'agents/_mcp-bridge.ts'
+          let bridge = readFileSync(bridgePath, 'utf8')
+          bridge = bridge.replace(
+            '  moduleToolPermissions(): Record<string, MakersPermissionMode>\n  setModuleEnabled',
+            '  moduleToolPermissions?(): Record<string, MakersPermissionMode>\n  setModuleEnabled',
+          )
+          if (!bridge.includes('moduleToolPermissions?(): Record<string, MakersPermissionMode>')) {
+            throw new Error('Could not make module permission metadata optional at the bridge boundary')
+          }
+          writeFileSync(bridgePath, bridge)
+
+          const sidecarPath = 'agents/_dsh-web-sidecar.ts'
+          let sidecar = readFileSync(sidecarPath, 'utf8')
+          sidecar = sidecar.replace(
+            '      moduleToolPermissions: mcp.moduleToolPermissions(),',
+            '      moduleToolPermissions: mcp.moduleToolPermissions?.() ?? {},',
+          )
+          if (!sidecar.includes('moduleToolPermissions: mcp.moduleToolPermissions?.() ?? {}')) {
+            throw new Error('Could not apply fail-safe module permission fallback in sidecar')
+          }
+          writeFileSync(sidecarPath, sidecar)
+          NODE
+
       - name: Wire Task client producer
         shell: bash
         run: |
@@ -155,6 +184,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git rm .github/workflows/task-module-bootstrap.yml
-          git add package-lock.json scripts/prepare-dsh-web.mjs index.html public agents/api
+          git add package-lock.json scripts/prepare-dsh-web.mjs index.html public agents/api agents/_mcp-bridge.ts agents/_dsh-web-sidecar.ts
           git commit -m "feat(task): wire Task module generated artifacts"
           git push origin HEAD:feature/78-task-module
