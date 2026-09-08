@@ -53,7 +53,7 @@ type ReactApi = {
 
 const React = require('react') as ReactApi
 const inject = ['slots', 'sessions']
-const utilityIds = new Set(['quick-note', 'recent', 'favorites'])
+const shellFontFamily = 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif'
 
 function shellRoot(): HTMLElement | undefined {
   if (typeof document === 'undefined') return undefined
@@ -356,9 +356,7 @@ function PqgApplicationShell({ renderSlot, renderSlotChain, services, useSession
     ? React.createElement(HomeView, { renderSlot })
     : activeId === 'approval'
       ? React.createElement(ApprovalView, { revision: approvalRevision, services })
-      : utilityIds.has(activeId)
-        ? React.createElement(UnavailableState, { description: pqgCopy.utilityUnavailable })
-        : React.createElement(UnavailableState, { description: pqgCopy.moduleUnavailable })
+      : React.createElement(UnavailableState, { description: pqgCopy.moduleUnavailable })
 
   const supportContent = React.createElement(SupportContent, {
     activeId,
@@ -370,7 +368,16 @@ function PqgApplicationShell({ renderSlot, renderSlotChain, services, useSession
 
   return React.createElement(
     'div',
-    { id: 'pqg-application-shell', 'data-pqg-active': activeId, style: { minHeight: '100vh' } },
+    {
+      id: 'pqg-application-shell',
+      'data-pqg-active': activeId,
+      style: {
+        minHeight: '100vh',
+        background: pqgShellTokens.shellBackground,
+        color: pqgShellTokens.textPrimary,
+        colorScheme: 'light',
+      },
+    },
     React.createElement(
       MantineProvider,
       {
@@ -379,13 +386,19 @@ function PqgApplicationShell({ renderSlot, renderSlotChain, services, useSession
         forceColorScheme: 'light',
         getRootElement: shellRoot,
         withGlobalClasses: false,
+        theme: {
+          primaryColor: 'blue',
+          defaultRadius: 'md',
+          fontFamily: shellFontFamily,
+          headings: { fontFamily: shellFontFamily },
+        },
       },
       React.createElement(Notifications, { position: 'top-right', limit: 4 }),
       React.createElement(SearchSurface, { navigate, revision: serviceRevision, services }),
       React.createElement(
         AppShell,
         {
-          padding: 'md',
+          padding: mobileNav ? 'sm' : 'lg',
           header: { height: pqgShellTokens.headerHeight },
           navbar: {
             width: pqgShellTokens.navbarWidth,
@@ -400,7 +413,14 @@ function PqgApplicationShell({ renderSlot, renderSlotChain, services, useSession
         },
         React.createElement(
           AppShell.Header,
-          { px: 'md' },
+          {
+            px: mobileNav ? 'sm' : 'lg',
+            style: {
+              background: pqgShellTokens.panelBackground,
+              borderBottom: `1px solid ${pqgShellTokens.borderColor}`,
+              color: pqgShellTokens.textPrimary,
+            },
+          },
           React.createElement(
             Group,
             { h: '100%', justify: 'space-between', wrap: 'nowrap' },
@@ -440,7 +460,14 @@ function PqgApplicationShell({ renderSlot, renderSlotChain, services, useSession
         ),
         React.createElement(
           AppShell.Navbar,
-          { p: 'sm' },
+          {
+            p: 'md',
+            style: {
+              background: pqgShellTokens.navigationBackground,
+              borderRight: `1px solid ${pqgShellTokens.borderColor}`,
+              color: pqgShellTokens.textPrimary,
+            },
+          },
           React.createElement(
             AppShell.Section,
             { grow: true, component: 'nav', 'aria-label': 'Điều hướng chính' },
@@ -451,19 +478,25 @@ function PqgApplicationShell({ renderSlot, renderSlotChain, services, useSession
               React.createElement(Text, { c: 'dimmed', fw: 700, px: 'sm', pt: 'sm', size: 'xs', tt: 'uppercase' }, pqgCopy.modules),
               renderSlot('pqg.shell.navigation', { activeId, navigate }, { fallback: null }),
               React.createElement(NavLink, { label: pqgCopy.approval, leftSection: React.createElement(IconCheck, { size: 18, stroke: 1.8, 'aria-hidden': true }), active: activeId === 'approval', onClick: () => navigate('approval') }),
-              React.createElement(Text, { c: 'dimmed', fw: 700, px: 'sm', pt: 'md', size: 'xs', tt: 'uppercase' }, pqgCopy.personal),
-              React.createElement(NavLink, { label: pqgCopy.quickNote, active: activeId === 'quick-note', onClick: () => navigate('quick-note') }),
-              React.createElement(NavLink, { label: pqgCopy.recent, active: activeId === 'recent', onClick: () => navigate('recent') }),
-              React.createElement(NavLink, { label: pqgCopy.favorites, active: activeId === 'favorites', onClick: () => navigate('favorites') }),
             ),
           ),
         ),
         React.createElement(
           AppShell.Main,
-          null,
-          renderSlotChain('pqg.shell.workspace', { activeId }, { fallback: mainFallback }),
+          { style: { background: pqgShellTokens.shellBackground } },
+          React.createElement(
+            'div',
+            { style: { width: '100%', maxWidth: pqgShellTokens.contentMaxWidth, margin: '0 auto' } },
+            renderSlotChain('pqg.shell.workspace', { activeId }, { fallback: mainFallback }),
+          ),
         ),
-        React.createElement(AppShell.Aside, null, !narrow && supportState !== 'collapsed' ? supportContent : null),
+        React.createElement(AppShell.Aside, {
+          style: {
+            background: pqgShellTokens.panelBackground,
+            borderLeft: `1px solid ${pqgShellTokens.borderColor}`,
+            color: pqgShellTokens.textPrimary,
+          },
+        }, !narrow && supportState !== 'collapsed' ? supportContent : null),
         React.createElement(
           Drawer,
           {

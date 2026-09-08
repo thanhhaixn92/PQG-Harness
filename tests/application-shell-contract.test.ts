@@ -9,6 +9,7 @@ import { Context } from '@deepseek-ai/cordis'
 import * as slotCoreModule from '@deepseek-ai/dsh-client-ui-slots'
 
 const require = createRequire(import.meta.url)
+const { renderToStaticMarkup } = require('react-dom/server') as { renderToStaticMarkup(node: unknown): string }
 const runtimeBundleUrl = new URL('../public/plugins/@deepseek-ai/dsh-client-runtime/client.js', import.meta.url)
 const shellBundleUrl = new URL('../public/plugins/@pqg/application-shell/client.js', import.meta.url)
 const referenceBundleUrl = new URL('../public/plugins/@pqg/reference-module/client.js', import.meta.url)
@@ -88,6 +89,41 @@ test('Makers layout compatibility patch removes the shipped root owner as one un
   assert.doesNotMatch(source, /ui-layout: service \+ root registration/)
   assert.match(source, /ui-layout: theme presenter/)
   assert.match(source, /new ThemePresenter\(\)/)
+})
+
+test('PQG shell owns a readable light surface and hides placeholder utilities from navigation', async () => {
+  const SlotRegistry = await loadRuntimeSlotRegistry()
+  const shell = await loadPlugin(shellBundleUrl, '@pqg/application-shell')
+  const ctx = new Context()
+  await ctx.plugin(SlotRegistry).await()
+  ctx.provide('sessions', {} as never)
+  const slots = ctx.get('slots') as unknown as SlotRegistryFace
+  const shellFiber = ctx.plugin({ inject: [...shell.inject], apply: shell.apply })
+  await shellFiber.await()
+
+  const root = slots.entries('root')[0]?.component
+  assert.equal(typeof root, 'function')
+  const React = require('react') as { createElement: (...args: any[]) => unknown }
+  const html = renderToStaticMarkup(React.createElement(root as any, {
+    renderSlot: (_name: string, _owner: unknown, options?: { fallback?: unknown }) => options?.fallback ?? null,
+    renderSlotChain: (_name: string, _owner: unknown, options?: { fallback?: unknown }) => options?.fallback ?? null,
+    useSessions: (selector: (state: { current?: string; byId: Record<string, unknown> }) => unknown) => selector({ current: undefined, byId: {} }),
+  }))
+
+  const rootStyle = html.match(/<div id="pqg-application-shell"[^>]*style="([^"]+)"/)?.[1] ?? ''
+  assert.match(rootStyle, /background/)
+  assert.match(rootStyle, /color:/)
+  assert.match(rootStyle, /color-scheme:light/)
+
+  const emptyStateStyle = html.match(/<section data-pqg-product-state="Chưa có nội dung" style="([^"]+)"/)?.[1] ?? ''
+  assert.match(emptyStateStyle, /color:/)
+  assert.match(emptyStateStyle, /background/)
+
+  assert.doesNotMatch(html, />Ghi chú nhanh</)
+  assert.doesNotMatch(html, />Gần đây</)
+  assert.doesNotMatch(html, />Mục yêu thích</)
+
+  await shellFiber.dispose()
 })
 
 test('PQG shell keeps search non-visual and gates module contributions by enabled policy', async () => {
