@@ -72,7 +72,7 @@ export function createShellSystemServices(sessions: ISessions): ShellSystemServi
   }
 
   const supportSession = () => {
-    const id = sessions.list.getSnapshot().current
+    const id = (sessions as Partial<ISessions>).list?.getSnapshot().current
     return id === undefined ? undefined : sessions.binding(id)?.session
   }
 

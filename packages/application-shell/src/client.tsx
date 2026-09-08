@@ -11,7 +11,6 @@ import {
   SimpleGrid,
   Stack,
   Text,
-  Textarea,
   Title,
 } from '@mantine/core'
 import { Notifications, notifications } from '@mantine/notifications'
@@ -185,7 +184,7 @@ function SupportContent({
       messages.length === 0 ? React.createElement(Text, { c: 'dimmed', size: 'sm' }, pqgCopy.supportEmpty) : messages.map(message => React.createElement(Paper, { key: message.id, withBorder: true, radius: 'md', p: 'xs', bg: message.role === 'user' ? 'blue.0' : undefined }, React.createElement(Text, { size: 'sm' }, message.text))),
       snapshot?.runningCalls.length ? React.createElement(Text, { c: 'dimmed', size: 'xs' }, pqgCopy.supportWorking) : null,
       error === undefined ? null : React.createElement(Text, { c: 'red', size: 'xs' }, error),
-      React.createElement(Textarea, { value: draft, onChange: (event: { currentTarget: { value: string } }) => setDraft(event.currentTarget.value), placeholder: pqgCopy.supportPlaceholder, minRows: 2, disabled: snapshot === undefined || busy, 'data-pqg-support-composer': true }),
+      React.createElement('textarea', { value: draft, onChange: (event: { currentTarget: { value: string } }) => setDraft(event.currentTarget.value), placeholder: pqgCopy.supportPlaceholder, rows: 2, disabled: snapshot === undefined || busy, 'data-pqg-support-composer': true }),
       React.createElement(Group, { justify: 'flex-end' },
         snapshot?.running ? React.createElement(Button, { size: 'compact-sm', variant: 'light', color: 'red', loading: busy, onClick: () => void stop(), 'data-pqg-support-stop': true }, pqgCopy.supportStop) : null,
         React.createElement(Button, { size: 'compact-sm', loading: busy, disabled: snapshot === undefined || !draft.trim(), onClick: () => void send(), 'data-pqg-support-send': true }, pqgCopy.supportSend),
