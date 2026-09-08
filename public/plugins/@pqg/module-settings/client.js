@@ -48,18 +48,29 @@ const buttonBaseStyle = {
   fontWeight: 600,
   cursor: "pointer"
 };
-async function loadModules() {
-  const response = await fetch("/api/pqg.modules", { headers: { accept: "application/json" } });
+function moduleRequestHeaders(sessions, json = false) {
+  const conversationId = sessions.list.getSnapshot().current;
+  if (conversationId === void 0) {
+    throw new Error("Hãy mở một phiên làm việc để quản lý tiện ích.");
+  }
+  return {
+    accept: "application/json",
+    "makers-conversation-id": conversationId,
+    ...json ? { "content-type": "application/json" } : {}
+  };
+}
+async function loadModules(sessions) {
+  const response = await fetch("/api/pqg.modules", { headers: moduleRequestHeaders(sessions) });
   const body = await response.json();
   if (!response.ok || !Array.isArray(body.modules)) {
     throw new Error(body.error?.message || `HTTP ${String(response.status)}`);
   }
   return body.modules;
 }
-async function setEnabled(id, enabled) {
+async function setEnabled(sessions, id, enabled) {
   const response = await fetch("/api/pqg.modules", {
     method: "PUT",
-    headers: { "content-type": "application/json", accept: "application/json" },
+    headers: moduleRequestHeaders(sessions, true),
     body: JSON.stringify({ id, enabled })
   });
   const body = await response.json();
@@ -68,7 +79,7 @@ async function setEnabled(id, enabled) {
   }
   return body.module;
 }
-function ModuleSettingsSection() {
+function ModuleSettingsSection({ sessions }) {
   const [modules, setModules] = useState([]);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState(null);
@@ -77,49 +88,49 @@ function ModuleSettingsSection() {
   const reload = () => {
     setLoading(true);
     setError(null);
-    void loadModules().then(
+    void loadModules(sessions).then(
       (value) => {
         setModules(value);
         setLoading(false);
       },
-      () => {
-        setError("Không thể tải danh sách tiện ích.");
+      (cause) => {
+        setError(cause instanceof Error ? cause.message : "Không thể tải danh sách tiện ích.");
         setLoading(false);
       }
     );
   };
   useEffect(() => {
     let active = true;
-    void loadModules().then(
+    void loadModules(sessions).then(
       (value) => {
         if (!active) return;
         setModules(value);
         setLoading(false);
       },
-      () => {
+      (cause) => {
         if (!active) return;
-        setError("Không thể tải danh sách tiện ích.");
+        setError(cause instanceof Error ? cause.message : "Không thể tải danh sách tiện ích.");
         setLoading(false);
       }
     );
     return () => {
       active = false;
     };
-  }, []);
+  }, [sessions]);
   const toggle = (module2) => {
     if (savingRef.current || savingId !== null) return;
     savingRef.current = true;
     setSavingId(module2.id);
     setError(null);
-    void setEnabled(module2.id, !module2.enabled).then(
+    void setEnabled(sessions, module2.id, !module2.enabled).then(
       (updated) => {
         setModules(modules.map((row) => row.id === updated.id ? updated : row));
         savingRef.current = false;
         setSavingId(null);
         window.location.reload();
       },
-      () => {
-        setError("Không thể cập nhật tiện ích. Vui lòng thử lại.");
+      (cause) => {
+        setError(cause instanceof Error ? cause.message : "Không thể cập nhật tiện ích. Vui lòng thử lại.");
         savingRef.current = false;
         setSavingId(null);
       }
@@ -169,14 +180,15 @@ function ModuleSettingsSection() {
     })) : null
   );
 }
-const inject = ["slots"];
+const inject = ["slots", "sessions"];
 function apply(ctx) {
+  const ModuleSettings = () => createElement(ModuleSettingsSection, { sessions: ctx.sessions });
   ctx.slots.inject("settings.section", () => ctx.slots.register({
     name: "settings.section",
     id: "pqg-modules",
     order: 18,
     label: () => "Tiện ích"
-  }, ModuleSettingsSection));
+  }, ModuleSettings));
 }
 module.exports = { inject, apply };
 return module.exports; } });
