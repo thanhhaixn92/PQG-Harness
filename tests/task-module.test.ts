@@ -118,6 +118,19 @@ test('Task client keeps its own build producer without rewriting the Reference p
   assert.doesNotMatch(source, /async function preparePqgModuleClient\(id, entry, inject\)/)
 })
 
+test('Task Home contribution is a dashboard card with real today tasks and a route affordance', async () => {
+  const source = await readFile(new URL('../packages/task-module/src/client.tsx', import.meta.url), 'utf8')
+  const start = source.indexOf('function TaskHomeWidget')
+  const end = source.indexOf('\nasync function apply', start)
+  assert.ok(start >= 0 && end > start, 'TaskHomeWidget must exist')
+  const widget = source.slice(start, end)
+  assert.match(widget, /data-pqg-task-home-card/)
+  assert.match(widget, /Việc cần làm hôm nay/)
+  assert.match(widget, /Xem công việc/)
+  assert.match(widget, /dueToday/)
+  assert.doesNotMatch(widget, /\b5\b/)
+})
+
 test('module settings reload the shell after a successful toggle so Task navigation follows policy', async () => {
   const source = await readFile(new URL('../src/pqg-module-settings-client.ts', import.meta.url), 'utf8')
   const successStart = source.indexOf('updated => {')
