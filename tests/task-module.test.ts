@@ -132,6 +132,21 @@ test('Task Home contribution is a dashboard card with real today tasks and a rou
   assert.doesNotMatch(widget, /\b5\b/)
 })
 
+test('Task client scopes module policy and CRUD requests to the current Makers conversation', async () => {
+  const source = await readFile(new URL('../packages/task-module/src/client.tsx', import.meta.url), 'utf8')
+  assert.match(source, /const inject = \['slots', 'pqgShell', 'sessions'\]/)
+  assert.match(source, /sessions\.list\.getSnapshot\(\)\.current/)
+  assert.match(source, /['"]makers-conversation-id['"]/)
+  assert.match(source, /sessions\.list\.subscribe/)
+})
+
+test('module settings scopes module-state GET and PUT requests to the current Makers conversation', async () => {
+  const source = await readFile(new URL('../src/pqg-module-settings-client.ts', import.meta.url), 'utf8')
+  assert.match(source, /const inject = \['slots', 'sessions'\]/)
+  assert.match(source, /sessions\.list\.getSnapshot\(\)\.current/)
+  assert.match(source, /['"]makers-conversation-id['"]/)
+})
+
 test('module settings reload the shell after a successful toggle so Task navigation follows policy', async () => {
   const source = await readFile(new URL('../src/pqg-module-settings-client.ts', import.meta.url), 'utf8')
   const successStart = source.indexOf('updated => {')
