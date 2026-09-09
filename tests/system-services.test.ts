@@ -45,12 +45,20 @@ function fakeSessions() {
     approvalResult: () => approvalResult,
     prompts: () => prompts,
     cancelled: () => cancelled,
+    workspaces: {
+      list: {
+        getSnapshot: () => ({ items: [{ workspaceId: 'workspace-1', sessionIds: ['session-1'] }] }),
+      },
+      async connectWorkspace() {
+        return 'session-1'
+      },
+    },
   }
 }
 
 test('system services aggregate deterministic search/support providers and dispose cleanly', async () => {
   const fixture = fakeSessions()
-  const services = createShellSystemServices(fixture.sessions as never)
+  const services = createShellSystemServices(fixture.sessions as never, fixture.workspaces as never)
 
   const disposeA = services.registerSearchProvider({
     id: 'alpha',
@@ -97,7 +105,7 @@ test('system services aggregate deterministic search/support providers and dispo
 
 test('support adapter sends text through the current DSH session and can stop it', async () => {
   const fixture = fakeSessions()
-  const services = createShellSystemServices(fixture.sessions as never)
+  const services = createShellSystemServices(fixture.sessions as never, fixture.workspaces as never)
 
   await services.promptSupport('Tóm tắt việc hôm nay', {
     title: 'Trợ lý công việc',
@@ -118,9 +126,51 @@ test('support adapter sends text through the current DSH session and can stop it
   assert.equal(fixture.cancelled(), 1)
 })
 
+test('support adapter replaces a missing active session and retries the prompt once', async () => {
+  let current = 'stale-session'
+  const prompts: string[] = []
+  let connected = 0
+  const replacement = {
+    getSnapshot: () => ({ pending: [] }),
+    async prompt(content: Array<{ text: string }>) {
+      prompts.push(content[0]?.text ?? '')
+      return { ok: true, value: { accepted: true } }
+    },
+  }
+  const services = createShellSystemServices({
+    list: { getSnapshot: () => ({ current }) },
+    open(id: string) { current = id },
+    binding(id: string) {
+      if (id === 'stale-session') return {
+        session: {
+          getSnapshot: () => ({ pending: [] }),
+          async prompt() {
+            return { ok: false, error: { message: 'session "stale-session" not found' } }
+          },
+        },
+      }
+      return id === 'fresh-session' ? { session: replacement } : undefined
+    },
+  } as never, {
+    list: {
+      getSnapshot: () => ({ items: [{ workspaceId: 'workspace-1', sessionIds: ['stale-session'] }] }),
+    },
+    async connectWorkspace() {
+      connected++
+      return 'fresh-session'
+    },
+  } as never)
+
+  await services.promptSupport('Chào bạn')
+
+  assert.equal(connected, 1)
+  assert.equal(current, 'fresh-session')
+  assert.deepEqual(prompts, ['Chào bạn'])
+})
+
 test('search keeps healthy results when a provider throws before returning a promise', async () => {
   const fixture = fakeSessions()
-  const services = createShellSystemServices(fixture.sessions as never)
+  const services = createShellSystemServices(fixture.sessions as never, fixture.workspaces as never)
 
   services.registerSearchProvider({
     id: 'broken',
@@ -145,7 +195,7 @@ test('search keeps healthy results when a provider throws before returning a pro
 
 test('notification surface and approval adapter reuse the canonical DSH pending carrier', async () => {
   const fixture = fakeSessions()
-  const services = createShellSystemServices(fixture.sessions as never)
+  const services = createShellSystemServices(fixture.sessions as never, fixture.workspaces as never)
   const notifications: string[] = []
   const disposeNotifications = services.subscribeNotifications(notification => {
     notifications.push(notification.message)

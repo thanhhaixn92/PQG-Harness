@@ -97,6 +97,7 @@ test('PQG shell owns a readable light surface and hides placeholder utilities fr
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
   ctx.provide('sessions', {} as never)
+  ctx.provide('workspaces', {} as never)
   const slots = ctx.get('slots') as unknown as SlotRegistryFace
   const shellFiber = ctx.plugin({ inject: [...shell.inject], apply: shell.apply })
   await shellFiber.await()
@@ -132,6 +133,7 @@ test('PQG Home renders the dashboard visual baseline from live shell state witho
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
   ctx.provide('sessions', {} as never)
+  ctx.provide('workspaces', {} as never)
   const slots = ctx.get('slots') as unknown as SlotRegistryFace
   const shellFiber = ctx.plugin({ inject: [...shell.inject], apply: shell.apply })
   await shellFiber.await()
@@ -177,6 +179,7 @@ test('PQG shell keeps search non-visual and gates module contributions by enable
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
   ctx.provide('sessions', {} as never)
+  ctx.provide('workspaces', {} as never)
   const slots = ctx.get('slots') as unknown as SlotRegistryFace
 
   const disabledReference = ctx.plugin({ inject: [...reference.inject], apply: reference.apply })
@@ -246,5 +249,6 @@ test('Support panel exposes an interactive agent composer and stop control contr
   assert.match(source, /data-pqg-support-send/)
   assert.match(source, /data-pqg-support-stop/)
   assert.match(source, /onClick: \(\) => void send\(suggestion\.prompt\)/)
+  assert.match(source, /snapshot\?\.chat\.legacy\.nodes/)
   assert.match(source, /snapshot\?\.queue/)
 })

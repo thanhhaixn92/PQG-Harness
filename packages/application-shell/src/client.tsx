@@ -53,7 +53,7 @@ type ReactApi = {
 }
 
 const React = require('react') as ReactApi
-const inject = ['slots', 'sessions']
+const inject = ['slots', 'sessions', 'workspaces']
 const shellFontFamily = 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif'
 
 function shellRoot(): HTMLElement | undefined {
@@ -100,7 +100,7 @@ function SupportContent({
   const support = services.supportFor(activeId)
   const suggestions = state === 'expanded' ? support?.suggestions ?? [] : []
   const snapshot = services.supportSnapshot()
-  const messages = (snapshot?.nodes ?? []).flatMap<{ id: string | number, role: 'assistant' | 'user', text: string }>(node => {
+  const messages = (snapshot?.chat.legacy.nodes ?? []).flatMap<{ id: string | number, role: 'assistant' | 'user', text: string }>(node => {
     if (node.kind === 'assistant') {
       const text = node.blocks.filter(block => block.kind === 'text').map(block => block.text).join('')
       return text ? [{ id: node.seq, role: 'assistant', text }] : []
@@ -673,7 +673,7 @@ function PqgApplicationShell({ renderSlot, renderSlotChain, services, useSession
 }
 
 function apply(ctx: ClientContext): void {
-  const services = createShellSystemServices(ctx.sessions)
+  const services = createShellSystemServices(ctx.sessions, ctx.workspaces)
 
   function ApplicationShellRoot(props: RootProps) {
     return React.createElement(PqgApplicationShell, { ...props, services })

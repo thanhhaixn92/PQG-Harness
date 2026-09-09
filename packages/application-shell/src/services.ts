@@ -1,4 +1,4 @@
-import type { ConversationSnapshot, ISessions, PendingInteraction, PendingWait, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ConversationSnapshot, ISessions, IWorkspaces, PendingInteraction, PendingWait, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
   ShellApprovalOutcome,
   ShellApprovalRequest,
@@ -16,7 +16,7 @@ function removeExact<T>(map: Map<string, T>, id: string, value: T, changed: () =
   changed()
 }
 
-export function createShellSystemServices(sessions: ISessions): ShellSystemServices {
+export function createShellSystemServices(sessions: ISessions, workspaces: IWorkspaces): ShellSystemServices {
   const searchProviders = new Map<string, ShellSearchProvider>()
   const supportProviders = new Map<string, ShellSupportProvider>()
   const listeners = new Set<() => void>()
@@ -76,6 +76,14 @@ export function createShellSystemServices(sessions: ISessions): ShellSystemServi
     return id === undefined ? undefined : sessions.binding(id)?.session
   }
 
+  const recoverSupportSession = async (sessionId: SessionId) => {
+    const workspace = workspaces.list.getSnapshot().items.find(item => item.sessionIds.includes(sessionId))
+    if (workspace === undefined) return undefined
+    const replacementId = await workspaces.connectWorkspace(workspace.workspaceId)
+    sessions.open(replacementId)
+    return sessions.binding(replacementId)?.session
+  }
+
   const supportSnapshot = (): ConversationSnapshot | undefined => supportSession()?.getSnapshot()
 
   const subscribeSupport = (listener: () => void): (() => void) => {
@@ -107,8 +115,16 @@ export function createShellSystemServices(sessions: ISessions): ShellSystemServi
           'Khi yêu cầu cần thao tác dữ liệu, hãy dùng capability của mô-đun; nếu thiếu thông tin để tạo hoặc cập nhật, hãy hỏi lại ngắn gọn.',
           `Yêu cầu của người dùng: ${text}`,
         ].filter((part): part is string => part !== undefined).join('\n\n')
-    const receipt = await session.prompt([{ type: 'text', text: contextText }], 'queue')
-    if (!receipt.ok) throw new Error(receipt.error.message)
+    const content = [{ type: 'text' as const, text: contextText }]
+    const receipt = await session.prompt(content, 'queue')
+    if (receipt.ok) return
+    if (!receipt.error.message.includes('not found')) throw new Error(receipt.error.message)
+    const currentId = sessions.list.getSnapshot().current
+    if (currentId === undefined) throw new Error(receipt.error.message)
+    const replacement = await recoverSupportSession(currentId)
+    if (replacement === undefined) throw new Error(receipt.error.message)
+    const retried = await replacement.prompt(content, 'queue')
+    if (!retried.ok) throw new Error(retried.error.message)
   }
 
   const stopSupport = async (): Promise<void> => {
