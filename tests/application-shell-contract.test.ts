@@ -246,4 +246,5 @@ test('Support panel exposes an interactive agent composer and stop control contr
   assert.match(source, /data-pqg-support-send/)
   assert.match(source, /data-pqg-support-stop/)
   assert.match(source, /onClick: \(\) => void send\(suggestion\.prompt\)/)
+  assert.match(source, /snapshot\?\.queue/)
 })
