@@ -100,7 +100,7 @@ function SupportContent({
   const support = services.supportFor(activeId)
   const suggestions = state === 'expanded' ? support?.suggestions ?? [] : []
   const snapshot = services.supportSnapshot()
-  const messages = (snapshot?.nodes ?? []).flatMap<{ id: string | number, role: 'assistant' | 'user', text: string }>(node => {
+  const messages = (snapshot?.chat.legacy.nodes ?? []).flatMap<{ id: string | number, role: 'assistant' | 'user', text: string }>(node => {
     if (node.kind === 'assistant') {
       const text = node.blocks.filter(block => block.kind === 'text').map(block => block.text).join('')
       return text ? [{ id: node.seq, role: 'assistant', text }] : []
