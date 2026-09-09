@@ -5,6 +5,8 @@ import { createShellSystemServices } from '../packages/application-shell/src/ser
 
 function fakeSessions() {
   let approvalResult: unknown
+  const prompts: unknown[] = []
+  let cancelled = 0
   const wait = {
     kind: 'approval' as const,
     key: 'a:1',
@@ -28,11 +30,21 @@ function fakeSessions() {
         ? {
             session: {
               getSnapshot: () => ({ pending: [wait] }),
+              async prompt(content: unknown, mode: unknown) {
+                prompts.push({ content, mode })
+                return { ok: true, value: { accepted: true } }
+              },
+              async cancel() {
+                cancelled++
+                return { ok: true, value: { accepted: true } }
+              },
             },
           }
         : undefined,
     },
     approvalResult: () => approvalResult,
+    prompts: () => prompts,
+    cancelled: () => cancelled,
   }
 }
 
@@ -81,6 +93,29 @@ test('system services aggregate deterministic search/support providers and dispo
   disposeSupport()
   assert.deepEqual((await services.search('pqg')).map(item => item.providerId), ['beta'])
   assert.equal(services.supportFor('alpha'), undefined)
+})
+
+test('support adapter sends text through the current DSH session and can stop it', async () => {
+  const fixture = fakeSessions()
+  const services = createShellSystemServices(fixture.sessions as never)
+
+  await services.promptSupport('Tóm tắt việc hôm nay', {
+    title: 'Trợ lý công việc',
+    summary: 'Xem, tạo và cập nhật công việc.',
+  })
+  await services.stopSupport()
+
+  assert.deepEqual(fixture.prompts(), [{
+    content: [{ type: 'text', text: [
+      'Bạn là Trợ lý hỗ trợ của PQG Harness. Hãy trả lời bằng tiếng Việt.',
+      'Ngữ cảnh mô-đun: Trợ lý công việc',
+      'Khả năng hiện có: Xem, tạo và cập nhật công việc.',
+      'Khi yêu cầu cần thao tác dữ liệu, hãy dùng capability của mô-đun; nếu thiếu thông tin để tạo hoặc cập nhật, hãy hỏi lại ngắn gọn.',
+      'Yêu cầu của người dùng: Tóm tắt việc hôm nay',
+    ].join('\n\n') }],
+    mode: 'queue',
+  }])
+  assert.equal(fixture.cancelled(), 1)
 })
 
 test('search keeps healthy results when a provider throws before returning a promise', async () => {

@@ -1,4 +1,5 @@
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ConversationSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
 
 export type SupportPanelState = 'collapsed' | 'compact' | 'expanded'
 
@@ -76,6 +77,10 @@ export interface ShellSystemServices {
   search(query: string): Promise<readonly ShellSearchMatch[]>
   registerSupportProvider(provider: ShellSupportProvider): () => void
   supportFor(activeId: string): ShellSupportContext | undefined
+  supportSnapshot(): ConversationSnapshot | undefined
+  subscribeSupport(listener: () => void): () => void
+  promptSupport(text: string, context?: ShellSupportContext): Promise<void>
+  stopSupport(): Promise<void>
   subscribe(listener: () => void): () => void
   notify(notification: ShellNotification): void
   subscribeNotifications(listener: (notification: ShellNotification) => void): () => void
