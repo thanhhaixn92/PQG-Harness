@@ -1,291 +1,226 @@
-# Audit Chatbox Agent + module Công việc — vòng 2 — 2026-09-09
+# Audit Chatbox Agent + module Công việc — vòng 3 — 2026-09-09
 
-## 1. Phạm vi và nguyên tắc
+Tracking: #110. Baseline: `main` sau PR #103/#104.
 
-Baseline: `main` sau PR #103/#104. Tracking: #110.
+## 1. Nguyên tắc audit
 
-Audit áp dụng các nguyên tắc bắt buộc:
+- Research/reuse trước khi đề xuất code mới.
+- Ưu tiên seam hiện có của DSH/Cordis/Makers/Store.
+- YAGNI/KISS; không gold-plating.
+- Chỉ coi là lỗi khi có bằng chứng từ source/spec/contract hoặc reproduction rõ ràng.
+- Rủi ro chưa chứng minh được xếp `verify-only`/deferred, không mặc định code.
+- Chỉ test regression trực tiếp; required GitHub `quality` là merge gate cuối.
+- Không code runtime trước khi plan từng task được `APPROVED/OK`.
+- Production chỉ PASS khi có live build identity + smoke evidence; hiện chưa thể xác nhận live từ môi trường audit.
 
-- research upstream/related implementation trước khi đề xuất;
-- reuse primitive đang có, hạn chế tối đa code mới;
-- YAGNI/KISS, không gold-plating;
-- chỉ test đúng regression cần chứng minh;
-- không code trước khi plan được `APPROVED/OK`;
-- phân biệt rõ `confirmed`, `verify-only`, `ruled-out`;
-- không dùng CI/source green để suy diễn Production PASS.
+Phạm vi đã rà:
 
-Các vùng đã rà:
-
-- `packages/application-shell/src/{client,services,contracts,copy,tokens}.tsx/.ts`
+- `packages/application-shell/src/{client,services,contracts,copy,tokens}.ts/.tsx`
 - `packages/task-module/src/{client,service,makers}.ts/.tsx`
-- `agents/api/pqg.tasks.ts`
-- `agents/{_dsh-web-sidecar,_mcp-bridge,_makers-mcp-permission,_module-policy,_module-state}.ts/.mjs`
+- `agents/api/{pqg.tasks,pqg.modules}.ts`
+- `agents/{_dsh-web-sidecar,_mcp-bridge,_makers-mcp-permission,_module-policy,_module-state,_sandbox-abort}.ts/.mjs`
+- `src/pqg-module-settings-client.ts`
 - `middleware.ts`, `scripts/prepare-dsh-web.mjs`
 - focused tests hiện có
 - Support Agent v1 spec
-- pinned/generated DSH rc.6 conversation UI
-- upstream DSH `ui-conversation`, `ui-tool`, tools/approval, `dsh-tool-todo`, `dsh-time-context`, Cordis lifecycle.
-
-Production live chưa được xác nhận từ môi trường audit này.
+- generated/pinned DSH `0.1.0-rc.6`
+- upstream DSH `ui-conversation`, `ui-tool`, `ui-user-questions`, system prompt, time-context, tool todo và Cordis lifecycle.
 
 ---
 
 ## 2. Kết luận ưu tiên
 
-### P0 — phải xử lý trước MVP
+### P0 — blocker cho Support Agent/Task MVP
 
-| ID | Vấn đề | Evidence chính | Tracking |
-|---|---|---|---|
-| F-01 | Support tự ghép transcript từ `nodes + queue + partial` | `application-shell/src/client.tsx` | #111 |
-| F-02 | Tool call/result/Markdown/non-text bị bỏ khỏi custom chat | `application-shell/src/client.tsx` | #111 |
-| F-03 | Persona/module context bị serialize vào user-role text | `application-shell/src/services.ts::promptSupport()` | #112 |
-| F-04 | Preset vẫn là coding agent, không phải PQG work assistant | `agents/_dsh-web-sidecar.ts` | #112 |
-| F-05 | `dsh-tool-todo` checklist nội bộ collision với business `pqg_task_*` | sidecar preset + upstream todo contract | #112 |
-| F-06 | Không có authoritative runtime clock cho prompt “hôm nay/ngày mai” | current composition + upstream time-context | #112 |
-| F-07 | Task create/update bypass Approval ở default `workspace-write` | `makers.ts`, `_makers-mcp-permission.mjs`, tests | #113 |
-| F-08 | Support không dẫn user tới Approval; Approval lộ tool/reason kỹ thuật | `application-shell/src/client.tsx` + spec | #113 |
-| F-09 | Agent write không refresh Task UI đang mount | `task-module/src/client.tsx` | #113 |
+| ID | Vấn đề | Tracking |
+|---|---|---|
+| F-01 | Support tự ghép `nodes + queue + partial`, sai ownership conversation lifecycle | #111 |
+| F-02 | Support dùng custom textarea, không mount DSH `conversation.composer`; pending user-question có thể không có đường trả lời | #111 |
+| F-03 | Tool call/result/non-text bị mất khỏi custom Support transcript | #111 |
+| F-04 | Persona/module context bị nối vào chính user-role text | #112 |
+| F-05 | Preset hiện là coding agent; `todo_write` có semantic overlap với business `pqg_task_*` | #112 |
+| F-06 | Prompt “hôm nay/ngày mai” thiếu authoritative runtime time context | #112 |
+| F-07 | `pqg_task_create/update` auto-allow ở default `workspace-write`, trái Support v1 Approval acceptance | #113 |
+| F-08 | Approval primary UI có thể lộ raw tool name/reason kỹ thuật | #113 |
+| F-09 | Agent write thành công nhưng Task Workspace/Home đang mount không được refresh | #113 |
 
-### P1 — correctness / truthfulness
+### P1 — data correctness / UI truthfulness
 
-| ID | Vấn đề | Evidence chính | Tracking |
-|---|---|---|---|
-| F-10 | hard ceiling 100 Task | `task-module/src/service.ts` | #114 |
-| F-11 | `dueDate` không enforce/describe ngày thật `YYYY-MM-DD` | service/Makers/API | #114 |
-| F-12 | Task GET lỗi nhưng UI vẫn báo empty/0 | Workspace/Home client state | #114 |
-| F-13 | fallback lỗi GET/POST/PATCH đều nói “Không thể cập nhật” | `taskRequest()` | #114 |
-| F-14 | localization MutationObserver có thể dịch/ẩn user-authored text | `middleware.ts` | #114 |
+| ID | Vấn đề | Tracking |
+|---|---|---|
+| F-10 | Task service chỉ đọc tối đa 100 record | #114 |
+| F-11 | `dueDate` write không enforce ngày thật `YYYY-MM-DD`; legacy malformed data cần đọc an toàn | #114 |
+| F-12 | Task load failure bị trình bày như empty/0 task | #114 |
+| F-13 | `taskRequest()` fallback lỗi không đúng thao tác GET/POST/PATCH | #114 |
+| F-14 | Module policy fetch transient có thể làm Task client contribution không mount trong page lifetime | #114 |
+| F-15 | Module toggle persist policy trước rồi propagate nhiều live sidecar; propagation partial có thể trả 503 dù state đã đổi một phần | #114 |
+| F-16 | Global localization MutationObserver có thể dịch/ẩn user-authored PQG text như `Plan`/`Preview` | #114 |
 
-### Verify-only — không mặc định code
+### Verify-only / deferred
 
 | ID | Rủi ro | Quyết định |
 |---|---|---|
-| V-01 | policy fetch fail-close có thể làm Task không mount / chậm bootstrap | chỉ sửa khi reproduction |
-| V-02 | generic MCP wrapper dùng sandbox-kill cancellation cả cho Store-only module tools | chỉ sửa khi reproduction |
-| V-03 | Home “hôm nay” không tự rerender qua nửa đêm | defer theo YAGNI |
-| V-04 | đổi desktop/Drawer có thể remount custom Support draft | kỳ vọng #111 tự giải quyết bằng DSH draft |
-| V-05 | MutationObserver toàn DOM có thể tạo perf cost | chỉ profile nếu live vẫn chậm |
-| V-06 | read-modify-write concurrent Task có thể lost update | #116 đóng `not_planned` đến khi có reproduction |
+| V-01 | Store-only module tool vẫn đi qua sandbox cancellation wrapper | verify Stop-during-write; chỉ sửa khi reproduction |
+| V-02 | Home không tự đổi “hôm nay” qua nửa đêm nếu page mở xuyên ngày | defer YAGNI |
+| V-03 | MutationObserver có thể gây perf cost | profile chỉ nếu live còn chậm |
+| V-04 | Nhiều approval đồng thời | chỉ mở scope nếu reproduction |
+| V-05 | UI + Agent concurrent Task update có thể lost write | #116 closed `not_planned` đến khi có evidence |
+| V-06 | DSH version mới hơn có thể chứa cải tiến | không package-wave upgrade trong remediation này |
 
 ---
 
 ## 3. Findings chi tiết
 
-### F-01/F-02 — custom conversation renderer đang làm sai ownership
+### F-01/F-03 — Support đang làm lại việc của DSH conversation
 
-`SupportContent` hiện tự:
-
-1. đọc durable `snapshot.nodes`;
-2. append `snapshot.queue` như user rows;
-3. append `snapshot.partial` như assistant row;
-4. chỉ lấy text user/assistant.
+`SupportContent` hiện đọc durable `snapshot.nodes`, append `snapshot.queue` thành user rows, rồi append `snapshot.partial`. Renderer chỉ lấy text user/assistant.
 
 Hậu quả:
 
-- queue transient bị trộn vào durable transcript;
-- queue item có thể duplicate khi được claim thành durable node;
-- tool-call/result/running state biến mất;
-- Markdown/non-text/historical attachment content bị mất hoặc giảm cấp;
-- product Shell phải tự xử lý lifecycle mà DSH đã xử lý.
+- queue transient bị trộn với durable history;
+- queue item có thể duplicate/race khi được admitted;
+- partial có thể đặt sai ngữ cảnh turn;
+- tool call/result/running/interrupted state không có presentation chuẩn;
+- non-text/Markdown/attachment semantics bị giảm cấp;
+- Shell phải tự xử lý lifecycle mà DSH đã có.
 
-**Research/reuse:** pinned bundle `public/plugins/@deepseek-ai/dsh-client-ui-conversation/client.js` đã có per-session chat store, persisted draft, queue read face, `ConversationController.send()`, `cancel()`, `loadOlder()`; upstream `ui-tool` sở hữu call/result pairing.
+**Reuse evidence:** pinned rc.6 `ui-conversation` đã có per-session draft store, queue projection, `ConversationController.send()`, `cancel()`, `loadOlder()`; `ui-tool` sở hữu call/result pairing và lifecycle.
 
-**Kết luận:** #111 phải reuse DSH surface/projection. Không viết conversation assembler thứ hai.
+**Decision:** #111 phải reuse native conversation target/input/queue/tool path; không viết transcript assembler khác.
 
-### F-03 — injected context đang mang role người dùng
+### F-02 — Agent follow-up có thể bị kẹt vì Support không dùng native composer takeover
 
-`promptSupport()` gói persona, module summary/instruction và user text vào một text block rồi `session.prompt(..., 'queue')`.
+Prepared app đã có `@deepseek-ai/dsh-client-ui-user-questions`. DSH thiết kế pending user question bằng cách takeover `conversation.composer`, giữ request/draft theo Session và trả structured response cho wait đang chờ.
 
-Hậu quả:
+PQG Support hiện dùng custom `<textarea>` và `session.prompt()` mới, không phải question response surface. Vì Support v1 yêu cầu Agent hỏi lại khi thiếu thông tin tạo/cập nhật Task, đây là architecture mismatch trực tiếp: một pending structured question có thể tồn tại nhưng Support không đưa ra UI trả lời tương ứng.
 
-- transcript không còn nguyên văn;
-- queue preview có thể lộ context nội bộ;
-- product/system policy nằm sai role;
-- khó scope/dispose module context đúng session/module.
+**Decision:** #111 reuse `conversation.composer`/`ui-user-questions`; tuyệt đối không viết custom question framework.
 
-**Kết luận:** raw user text giữ nguyên; persona/context đi qua preset/system-prompt seam của rc.6.
+### F-04 — authored prompt không còn nguyên văn
 
-### F-04 — persona hiện tại sai sản phẩm
+`promptSupport()` hiện ghép persona, module title/summary/instruction và `Yêu cầu của người dùng: ...` vào cùng một text block gửi bằng `session.prompt()`.
 
-Sidecar preset hiện dùng thông điệp “coding agent running on EdgeOne Makers”. Support v1 lại là trợ lý công việc PQG tiếng Việt.
+Hậu quả: durable transcript/queue preview không còn nguyên văn authored text và product context nằm sai ownership.
 
-Đây không phải lỗi wording thuần túy: persona coding làm tăng xác suất model ưu tiên workspace/coding tools thay vì Task business tools.
+**Decision:** authored text đi qua native DSH send path nguyên văn. Persona dùng preset/system-prompt seam. Dynamic module context dùng official system-prompt/context seam của pinned rc.6; không concatenate vào authored message.
 
-### F-05 — `todo_write` và `pqg_task_*` là hai domain khác nhau nhưng cùng model-visible
+### F-05 — persona và tool-domain ambiguity
 
-Preset hiện mount `@deepseek-ai/dsh-tool-todo`.
+Sidecar preset hiện ghi “coding agent running on EdgeOne Makers” và mount `@deepseek-ai/dsh-tool-todo`. DSH `todo_write` là checklist nội bộ của Agent trong session; PQG Task là business data Store-backed có id/dueDate/completed.
 
-Upstream xác định `todo_write` là whole-list checklist để **Agent tự lập kế hoạch trong một session**, không phải danh sách công việc nghiệp vụ của người dùng. PQG Task là Store-backed business data có id/dueDate/completed.
+Hai domain gần nghĩa có thể làm model chọn nhầm tool khi user nói “tạo việc”, nhưng chưa có reproduction chứng minh phải xóa `tool-todo`.
 
-**Rủi ro:** user nói “tạo việc/đánh dấu việc xong”, model có hai tool domain gần nghĩa; `todo_write` thành công nhưng PQG Task UI không đổi.
+**Decision:** #112 trước hết sửa persona/tool guidance và scope preset đúng seam. Không gỡ `tool-todo` nếu preset còn phục vụ coding workflow hoặc chưa có evidence cần thiết.
 
-**YAGNI decision:** nếu Support v1 không có consumer rõ ràng cho agent-internal todo, bỏ tool khỏi Support preset. Không viết router/classifier mới.
+### F-06 — thiếu authoritative time context
 
-### F-06 — “hôm nay/ngày mai” thiếu clock context
+Task suggestion dùng “hôm nay”, user có thể nói “ngày mai”, nhưng current sidecar không mount time context. Model không nên tự đoán ngày hoặc timezone.
 
-Task Support có suggestion `Tóm tắt các công việc cần làm hôm nay.` nhưng current composition không có `dsh-time-context`/clock section.
+**Reuse:** `@deepseek-ai/dsh-time-context` tồn tại trong cùng family; implementation phải inspect exact `0.1.0-rc.6` API trước. Nếu compatible, dùng đúng package rc.6. Không hardcode ngày hiện tại vào persona.
 
-Upstream `@deepseek-ai/dsh-time-context` tồn tại để giải đúng bài toán current zoned time; npm có version `0.1.0-rc.6`, cùng version family repo đang pin.
+### F-07 — Task write bypass Approval
 
-**Decision:** inspect API rc.6 trước. Nếu tương thích, mount đúng package rc.6; không hard-code ngày hiện tại vào persona và không nâng package wave.
+Task Makers metadata hiện:
 
-### F-07 — Task write hiện không bắt Approval ở default
+- `pqg_task_list` → `read-only`;
+- `pqg_task_create/update` → `workspace-write`.
 
-Task Makers adapters:
+Permission plugin default là `workspace-write` và auto-allows tool khi current rank >= required rank. Test hiện còn khóa `makersToolGate('workspace-write', 'pqg_task_create') === 'allow'`.
 
-- list → `read-only`;
-- create/update → `workspace-write`.
+Support v1 spec lại yêu cầu write đi qua existing Approval và deny giữ dữ liệu nguyên vẹn.
 
-Permission plugin:
+**Decision:** #113 reuse existing `tools/pre-execute → ask → Approval` seam. Cần một rule/metadata tối thiểu để Task create/update luôn ask theo v1; không tạo approval subsystem mới.
 
-- default mode = `workspace-write`;
-- required rank <= current rank → `allow`.
+### F-08 — Approval presentation lộ infrastructure vocabulary
 
-Test hiện còn khẳng định `makersToolGate('workspace-write', 'pqg_task_create') === 'allow'`.
+`ApprovalView` render trực tiếp `approval.toolName` và `approval.reason`. Với MCP tools, primary UI có thể hiện wire name/permission jargon, trái spec “không trình bày Makers/MCP/runtime/plugin terminology trong primary UI”.
 
-Trong khi Support v1 spec yêu cầu write request đi qua existing Approval và reject phải giữ data unchanged.
+**Decision:** business action/reason phải có Vietnamese presentation. Không duplicate decision controls trong Support; vẫn dùng một Approval decision surface.
 
-**Kết luận:** đây là P0 contract violation. Reuse DSH `tools/pre-execute → {kind:'ask'} → approval`; không tạo approval subsystem mới.
+### F-09 — Agent write không đồng bộ mounted Task UI
 
-### F-08 — Approval flow chưa đúng UX spec
+Workspace/Home fetch khi mount; direct UI mutations tự patch local state. Agent mutation qua Makers không có client invalidation signal.
 
-Support panel hiện không có pending-approval callout/CTA dẫn tới trang `Phê duyệt`.
+**KISS:** Task sở hữu một invalidation source nhỏ. Mounted surfaces subscribe và gọi lại existing load/refresh. Chỉ successful settled Task write phát invalidation một lần. Không tạo shared cache/store mới nếu chưa cần.
 
-Approval page hiển thị trực tiếp:
+### F-10 — hard ceiling 100
 
-- `approval.toolName`;
-- `approval.reason`.
+`TASK_PAGE_LIMIT = 100`; service chỉ gọi `getMessages()` một lần. `updateTask()` cũng tìm trong page này.
 
-Task approval có thể vì vậy lộ `pqg_task_create`, `pqg_task_update`, `Makers`, permission labels tiếng Anh.
+Store contract/fake test đã có cursor `after`. Minimal proof chỉ cần 101 records.
 
-**KISS fix:** chỉ map Task write action/reason sang copy tiếng Việt và dẫn sang existing Approval page. Không duplicate allow/reject buttons trong Support.
+**Decision:** page `order:'asc', limit:100`, tiếp tục bằng `after:lastMessageId`; guard repeated cursor. `updateTask(id)` dừng ngay khi tìm thấy target.
 
-### F-09 — Agent write và Task UI không đồng bộ
+### F-11 — dueDate write/read contract
 
-Task Workspace/Home load qua HTTP khi mount; direct UI mutation tự patch local state. Agent mutation chạy server-side qua Makers, không phát signal cho mounted Task UI.
+Service chỉ trim dueDate; HTTP chỉ type-check; Makers Zod chỉ string. UI lại dùng native date và Home exact-compare ISO key.
 
-**Plan cũ quá nặng:** shared cache/store + custom tool view ngay từ đầu là không cần thiết.
+**Decision:** một validator nhỏ nếu thực sự reuse ở >=2 boundary; write chỉ nhận valid calendar `YYYY-MM-DD`/null/undefined. Legacy malformed stored value không được làm list fail; Task vẫn visible để user sửa/clear. Không migration framework.
 
-**KISS direction:** sau Agent turn có khả năng mutate Task kết thúc, trigger một refresh tối thiểu của mounted Task surfaces bằng lifecycle/session signal sẵn có. Chỉ thêm shared cache nếu duplicate fetch/thrashing thực sự xuất hiện.
+### F-12/F-13 — error bị giả thành empty và copy sai operation
 
-### F-10 — 100 Task boundary
+Workspace GET fail để `tasks=[]`, nên có thể vừa hiện lỗi vừa “Chưa có công việc nào”. Home fail chỉ set loaded và để tasks rỗng, nên hiển thị `0 việc`/“Không có việc”. `taskRequest()` còn dùng cùng fallback “Không thể cập nhật công việc” cho mọi method.
 
-`TASK_PAGE_LIMIT = 100` và service chỉ gọi `getMessages()` một lần. `updateTask()` cũng chỉ tìm trong page này.
+**Decision:** error/empty mutually exclusive; copy theo thao tác.
 
-**Minimal regression:** 101 records là đủ chứng minh boundary; test 205 records trong plan cũ là thừa.
+### F-14 — Task activation fail-silent
 
-### F-11 — dueDate contract chưa khép kín
+`taskModuleEnabled()` trả false cho exception/non-OK; `async apply()` return. Một transient bootstrap failure vì vậy có thể bị hiểu như explicit disabled trong page lifetime.
 
-UI dùng native date và Home compare exact `YYYY-MM-DD`, nhưng:
+Đây là deterministic source behavior; implementation vẫn phải bắt đầu bằng focused RED test. Nếu current Cordis lifecycle cho phép re-evaluate đơn giản, reuse nó; không polling framework.
 
-- service chỉ trim string;
-- HTTP chỉ type-check;
-- MCP Zod chỉ `string`;
-- tool schema không nói model phải gửi ISO calendar date.
+### F-15 — module toggle có partial-commit semantics
 
-**Fix:** một validator/helper nhỏ dùng tại ≥2 boundary; Makers schema phải mô tả/enforce format. Reject ngày không tồn tại như `2026-02-31`.
+`PUT /api/pqg.modules` persist policy trước, sau đó gọi `applyModuleEnabledToLiveSidecars()`. Ready sidecars được propagate song song bằng `Promise.all`. Một sidecar fail có thể làm API trả 503 dù policy đã persist và các sidecar khác đã đổi.
 
-### F-12/F-13 — lỗi bị trình bày thành “không có dữ liệu” và message sai thao tác
+**Decision:** persisted policy là source of truth. Response/UI phải nói đúng “đã lưu nhưng runtime chưa đồng bộ hoàn toàn” hoặc reconcile bằng seam hiện có. Không rollback giả transaction sau partial propagation.
 
-Workspace khi GET fail:
+### F-16 — global localization có thể sửa nội dung do người dùng tạo
 
-- set error;
-- `tasks` vẫn `[]`;
-- sau loading có thể vẫn render `Chưa có công việc nào.`
+`middleware.ts` dùng MutationObserver + exact text replacement/hide trên DOM. Exclusion hiện tập trung vào DSH message/markdown/input selectors, chưa bao phủ chắc chắn PQG Task/Search/custom Support content.
 
-Home khi GET fail:
+Một Task/title/user text exact `Plan`, `Save`, `Stop`, `Preview` có thể bị dịch hoặc `Preview` bị ẩn.
 
-- chỉ `setLoaded(true)`;
-- render `0 việc` + `Không có việc đến hạn hôm nay.`
-
-Ngoài ra `taskRequest()` fallback mọi method bằng `Không thể cập nhật công việc`.
-
-**Impact:** UI khẳng định sai trạng thái dữ liệu.
-
-**Fix:** error/empty mutually exclusive; fallback theo operation.
-
-### F-14 — localization layer đụng user-authored content
-
-`middleware.ts` cài MutationObserver + global text replacement. Exclusion hiện tập trung vào DSH message/markdown/input selectors, không bao phủ đầy đủ PQG Task/Home/Search/custom Support output.
-
-Các exact labels như `Plan`, `Preview`, `Save`, `Stop` có thể bị dịch; `hideExactLabel('Preview')` còn có thể ẩn element.
-
-**KISS fix:** thêm exclusion nhỏ cho vùng user-authored PQG content. Không rewrite i18n system trong workstream này.
+**Decision:** thêm exclusion nhỏ cho user-authored PQG regions cần bảo vệ; không rewrite i18n system trong workstream này.
 
 ---
 
-## 4. Verify-only findings
+## 4. Những giả thuyết đã loại bỏ / chưa được phép sửa
 
-### V-01 — Task policy bootstrap
-
-`taskModuleEnabled()` trả false cho network/non-OK và `apply()` return luôn. Đây là source risk, nhưng chưa cần retry framework.
-
-**Rule:** chỉ sửa khi focused/live reproduction chứng minh module mất sau transient error hoặc startup bị block đáng kể.
-
-### V-02 — cancellation scope của module tools
-
-`register()` trong MCP bridge áp `runWithSandboxCancellationScope()` cho mọi handler; module Task cũng đi qua wrapper này dù chỉ dùng Store. On abort, wrapper có thể `sandbox.kill()`; Store promise không tự bị Promise.race cancel.
-
-**Rule:** verify Stop-during-Task-write. Chỉ tách wrapper nếu có ảnh hưởng thực tế; không hứa rollback side effect đã commit.
-
-### V-03 — midnight freshness
-
-Home widget tính `localDateKey()` trên render nhưng không có timer đến nửa đêm. Defer theo YAGNI trừ khi app thực tế cần page mở xuyên ngày.
-
-### V-04 — responsive remount/draft
-
-Custom Support element đổi từ Aside sang Drawer theo breakpoint. DSH per-session draft ở #111 có thể tự loại bỏ vấn đề; không viết thêm draft map trước.
-
-### V-05 — MutationObserver performance
-
-Global DOM walk có thể tốn chi phí nhưng chưa có profile. Không optimize bằng suy đoán.
-
-### V-06 — concurrent Task write
-
-Rủi ro read-modify-write đã biết nhưng chưa tái hiện. #116 đóng `not_planned` theo YAGNI.
+- Send while running: DSH hỗ trợ queue; không disable queue để che bug.
+- Current Support IME Enter-submit: textarea hiện không bind Enter-to-send; không có bug đó ở code hiện tại.
+- Draft mất khi prompt admission fail: current code chỉ clear draft sau successful receipt.
+- Browser local-date là UTC bug: `localDateKey()` dùng local `getFullYear/getMonth/getDate`.
+- Task client thiếu Makers conversation header: existing design/test cố ý để page bootstrap routing xử lý; chưa có evidence lỗi.
+- Direct `/api/pqg.tasks` khi module disabled: chưa có product policy chứng minh phải block.
+- Nâng DSH để chữa chung: không cần; reuse pinned rc.6 trước.
+- Concurrent lost-update: #116 closed `not_planned` theo YAGNI.
 
 ---
 
-## 5. Những giả thuyết đã loại bỏ
+## 5. Canonical remediation order
 
-- **Send while running:** không phải bug; DSH hỗ trợ queue.
-- **IME Enter-submit:** current Support textarea không bind Enter-to-send, nên không có bug này hiện tại.
-- **Draft mất khi prompt submit fail:** current code chỉ clear draft sau successful receipt.
-- **Browser local date = UTC bug:** `localDateKey()` dùng local `getFullYear/getMonth/getDate`, không phải UTC.
-- **Thiếu Makers conversation header ở Task client:** existing design/test cố ý để page bootstrap routing xử lý; chưa có bằng chứng lỗi.
-- **Direct `/api/pqg.tasks` khi module disabled:** chưa có product policy chứng minh API phải bị khóa; không tự thay.
-- **Nâng DSH để chữa chung:** không cần; reuse rc.6 trước.
-- **Concurrency fix:** chưa cần đến khi có reproduction.
+1. **#111** — native DSH conversation/composer/queue/tool + user-question lifecycle.
+2. **#112** — raw authored prompt + scoped PQG persona/module/time/tool-domain guidance.
+3. **#113** — Task write Approval invariant + human presentation + minimal Task invalidation.
+4. **#114** — pagination/date/error/localization + module activation/reconcile correctness.
+5. **#115** — focused cross-seam verification + Production desktop/iPad smoke.
+
+#116 đã đóng `not_planned`; không nằm trong active MVP path.
+
+Lý do #111 đứng trước #112: native DSH composer/send path đã sở hữu raw authored message. Sửa `promptSupport()` trước rồi thay bằng native path ở PR kế tiếp sẽ tạo code tạm và vi phạm YAGNI.
 
 ---
 
-## 6. Kế hoạch đã được tinh giản
+## 6. Testing policy
 
-Thứ tự:
+Mỗi implementation PR:
 
-1. #112 — raw prompt + PQG persona + temporal context + loại tool collision nếu không có consumer.
-2. #111 — reuse DSH conversation/queue/tool lifecycle.
-3. #113 — enforce existing Approval + minimal Task refresh.
-4. #114 — Task pagination/date/error truthfulness/localization exclusion.
-5. #115 — focused Production smoke; chỉ mở code cho verify-only failure.
+1. viết một RED reproduction đúng lỗi của PR;
+2. chỉ chạy focused test files liên quan;
+3. typecheck khi TypeScript contract đổi;
+4. `prepare:dsh-web`/generated verification chỉ khi client graph/producer đổi;
+5. `build:makers` chỉ khi sidecar/Makers/server path đổi;
+6. required GitHub `quality` phải green trước merge.
 
-Đã loại khỏi active MVP plan:
-
-- shared Task cache/store mặc định;
-- custom Task tool views mặc định;
-- broad lifecycle/E2E suite;
-- auto-scroll polish;
-- proactive concurrency/CAS/lock;
-- retry framework cho policy bootstrap khi chưa reproduce.
-
-## 7. Testing rule
-
-Mỗi implementation PR chỉ thêm/run regression test trực tiếp cho lỗi nó sửa, cộng typecheck/build path bắt buộc khi file server/Makers/generated graph bị đổi. Không mặc định chạy/viết full suite ngoài required GitHub `quality` gate.
-
-## 8. Plan-first gate
-
-Trước mỗi issue phải gửi plan ngắn theo đúng cấu trúc:
-
-`Files cần sửa/tạo | Hàm/phương thức mới | Logic chính | Rủi ro/phụ thuộc`
-
-Chỉ code sau khi user trả `APPROVED` hoặc `OK`. Nếu implementation buộc vượt file/scope đã duyệt: dừng và xin điều chỉnh plan.
+Không thêm broad E2E framework, shared state framework, migration framework, distributed transaction hay DSH package-wave nếu task hiện tại không bắt buộc.
