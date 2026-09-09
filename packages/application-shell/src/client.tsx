@@ -111,6 +111,10 @@ function SupportContent({
     }
     return []
   })
+  for (const item of snapshot?.queue ?? []) {
+    const text = item.text ?? item.preview
+    if (text) messages.push({ id: `queue-${item.id}`, role: 'user', text })
+  }
   const partialText = snapshot?.partial?.blocks
     .filter(block => block.kind === 'text')
     .map(block => block.text)
