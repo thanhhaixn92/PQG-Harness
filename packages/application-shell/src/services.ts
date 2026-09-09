@@ -93,12 +93,21 @@ export function createShellSystemServices(sessions: ISessions): ShellSystemServi
     }
   }
 
-  const promptSupport = async (value: string): Promise<void> => {
+  const promptSupport = async (value: string, context?: ShellSupportContext): Promise<void> => {
     const text = value.trim()
     if (!text) throw new Error('Support prompt is required')
     const session = supportSession()
     if (session === undefined) throw new Error('No active session is available')
-    const receipt = await session.prompt([{ type: 'text', text }], 'queue')
+    const contextText = context === undefined
+      ? text
+      : [
+          'Bạn là Trợ lý hỗ trợ của PQG Harness. Hãy trả lời bằng tiếng Việt.',
+          context.title === undefined ? undefined : `Ngữ cảnh mô-đun: ${context.title}`,
+          context.summary === undefined ? undefined : `Khả năng hiện có: ${context.summary}`,
+          'Khi yêu cầu cần thao tác dữ liệu, hãy dùng capability của mô-đun; nếu thiếu thông tin để tạo hoặc cập nhật, hãy hỏi lại ngắn gọn.',
+          `Yêu cầu của người dùng: ${text}`,
+        ].filter((part): part is string => part !== undefined).join('\n\n')
+    const receipt = await session.prompt([{ type: 'text', text: contextText }], 'queue')
     if (!receipt.ok) throw new Error(receipt.error.message)
   }
 

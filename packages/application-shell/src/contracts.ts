@@ -79,7 +79,7 @@ export interface ShellSystemServices {
   supportFor(activeId: string): ShellSupportContext | undefined
   supportSnapshot(): ConversationSnapshot | undefined
   subscribeSupport(listener: () => void): () => void
-  promptSupport(text: string): Promise<void>
+  promptSupport(text: string, context?: ShellSupportContext): Promise<void>
   stopSupport(): Promise<void>
   subscribe(listener: () => void): () => void
   notify(notification: ShellNotification): void
