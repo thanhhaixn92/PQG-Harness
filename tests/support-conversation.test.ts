@@ -35,3 +35,18 @@ test('Support delegates transcript, queue, partial, composer and Stop to DSH con
   assert.doesNotMatch(source, /<textarea/)
   assert.match(source, /renderSlot\(['\"]conversation['\"]/)
 })
+
+test('Approval decisions are owned by the native DSH composer only', async () => {
+  const source = await readFile(clientSourceUrl, 'utf8')
+
+  assert.doesNotMatch(source, /data-pqg-approval-allow/)
+  assert.doesNotMatch(source, /data-pqg-approval-reject/)
+  assert.doesNotMatch(source, /shellServices\.answerApproval\(/)
+})
+
+test('a pending interaction reveals Support so the native composer takeover is reachable', async () => {
+  const source = await readFile(clientSourceUrl, 'utf8')
+
+  assert.match(source, /currentSummary\?\.pendingInteraction/)
+  assert.match(source, /setSupportState\(['\"]expanded['\"]\)/)
+})
