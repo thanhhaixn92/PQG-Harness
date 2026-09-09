@@ -42,14 +42,53 @@ type ShellSeat =
   | 'pqg.shell.home.widget'
   | 'pqg.shell.support.context'
   | 'pqg.shell.support.suggestion'
+  | 'sidebar'
+  | 'conversation'
+  | 'details'
+  | 'shell.overlay'
 
 type RootProps = PropsRuntime<'root'> & PropsRenderSlots<ShellSeat>
-type ApplicationShellProps = RootProps & { services: ShellSystemServices }
+type ApplicationShellProps = RootProps & { services: ShellSystemServices, layout: PqgLayoutBridge }
 
 type ReactApi = {
   createElement: (...args: any[]) => any
   useEffect(effect: () => void | (() => void), deps: unknown[]): void
   useState<T>(initial: T | (() => T)): [T, (value: T | ((current: T) => T)) => void]
+}
+
+type LayoutPanelActions = {
+  toggleSidebar(): void
+  openDetails(): void
+  closeDetails(): void
+}
+
+class PqgLayoutBridge {
+  private panels: LayoutPanelActions | undefined
+
+  attachPanels(actions: LayoutPanelActions): void {
+    this.panels = actions
+  }
+
+  detachPanels(actions: LayoutPanelActions): void {
+    if (this.panels === actions) this.panels = undefined
+  }
+
+  toggleSidebar(): void {
+    this.requirePanels().toggleSidebar()
+  }
+
+  openDetails(): void {
+    this.requirePanels().openDetails()
+  }
+
+  closeDetails(): void {
+    this.requirePanels().closeDetails()
+  }
+
+  private requirePanels(): LayoutPanelActions {
+    if (this.panels === undefined) throw new Error('layout: panel actions not wired (PQG root not mounted)')
+    return this.panels
+  }
 }
 
 const React = require('react') as ReactApi
@@ -92,7 +131,6 @@ function SupportContent({
   services: ShellSystemServices
   setState(state: SupportPanelState): void
 }) {
-  const [draft, setDraft] = React.useState('')
   const [busy, setBusy] = React.useState(false)
   const [error, setError] = React.useState<string | undefined>(undefined)
   const [, setRevision] = React.useState(0)
@@ -100,56 +138,25 @@ function SupportContent({
   const support = services.supportFor(activeId)
   const suggestions = state === 'expanded' ? support?.suggestions ?? [] : []
   const snapshot = services.supportSnapshot()
-  const messages = (snapshot?.nodes ?? []).flatMap<{ id: string | number, role: 'assistant' | 'user', text: string }>(node => {
-    if (node.kind === 'assistant') {
-      const text = node.blocks.filter(block => block.kind === 'text').map(block => block.text).join('')
-      return text ? [{ id: node.seq, role: 'assistant', text }] : []
-    }
-    if (node.kind === 'user') {
-      const text = node.content.filter((block: any) => block.type === 'text').map((block: any) => block.text).join('')
-      return text ? [{ id: node.seq, role: 'user', text }] : []
-    }
-    return []
-  })
-  for (const item of snapshot?.queue ?? []) {
-    const text = item.text ?? item.preview
-    if (text) messages.push({ id: `queue-${item.id}`, role: 'user', text })
-  }
-  const partialText = snapshot?.partial?.blocks
-    .filter(block => block.kind === 'text')
-    .map(block => block.text)
-    .join('')
-  if (partialText) messages.push({ id: `partial-${snapshot?.partial?.turn}-${snapshot?.partial?.step}`, role: 'assistant', text: partialText })
-  const unavailable = snapshot === undefined || snapshot.removed || snapshot.subagent?.address.mode === 'one-shot'
-  const sessionError = snapshot?.promptError?.error.message ?? snapshot?.lastAgentError ?? snapshot?.openError?.message
-  const send = async (value = draft): Promise<void> => {
-    if (!value.trim() || busy) return
+  const unavailable = snapshot === undefined
+    || snapshot.removed
+    || snapshot.subagent?.address.mode === 'one-shot'
+    || (snapshot.pending?.length ?? 0) > 0
+
+  const sendSuggestion = async (value: string): Promise<void> => {
+    if (!value.trim() || busy || unavailable) return
     setBusy(true)
     setError(undefined)
     try {
       await services.promptSupport(value, support)
-      setDraft('')
-    } catch (cause) {
-      const message = cause instanceof Error ? cause.message : pqgCopy.supportSendError
-      setError(message)
-      services.notify({ kind: 'error', title: pqgCopy.supportTitle, message })
+    } catch {
+      setError(pqgCopy.supportSendError)
+      services.notify({ kind: 'error', title: pqgCopy.supportTitle, message: pqgCopy.supportSendError })
     } finally {
       setBusy(false)
     }
   }
-  const stop = async (): Promise<void> => {
-    setBusy(true)
-    setError(undefined)
-    try {
-      await services.stopSupport()
-    } catch (cause) {
-      const message = cause instanceof Error ? cause.message : pqgCopy.supportStopError
-      setError(message)
-      services.notify({ kind: 'error', title: pqgCopy.supportTitle, message })
-    } finally {
-      setBusy(false)
-    }
-  }
+
   const structuredSupport = support === undefined
     ? null
     : React.createElement(
@@ -165,7 +172,15 @@ function SupportContent({
               React.createElement(Text, { c: 'dimmed', fw: 600, size: 'xs', tt: 'uppercase' }, pqgCopy.supportSuggestions),
               ...suggestions.map(suggestion => React.createElement(
                 Button,
-                { key: suggestion.id, size: 'compact-sm', variant: 'light', justify: 'flex-start', disabled: !suggestion.prompt || snapshot === undefined || busy, onClick: () => void send(suggestion.prompt), 'data-pqg-support-suggestion': suggestion.id },
+                {
+                  key: suggestion.id,
+                  size: 'compact-sm',
+                  variant: 'light',
+                  justify: 'flex-start',
+                  disabled: !suggestion.prompt || unavailable || busy,
+                  onClick: () => suggestion.prompt === undefined ? undefined : void sendSuggestion(suggestion.prompt),
+                  'data-pqg-support-suggestion': suggestion.id,
+                },
                 suggestion.label,
               )),
             ),
@@ -189,21 +204,13 @@ function SupportContent({
     state === 'compact' ? null : React.createElement(Text, { c: 'dimmed', size: 'sm' }, pqgCopy.supportDescription),
     structuredSupport ?? renderSlot('pqg.shell.support.context', { activeId }, { fallback: null }),
     structuredSupport === null ? renderSlot('pqg.shell.support.suggestion', { activeId }, { fallback: null }) : null,
+    error === undefined ? null : React.createElement(Text, { c: 'red', size: 'xs' }, error),
     state === 'compact' ? null : React.createElement(
-      Stack,
-      { gap: 'xs', style: { flex: 1, minHeight: 0 }, 'data-pqg-support-chat': true },
-      React.createElement(
-        Stack,
-        { gap: 'xs', style: { flex: 1, minHeight: 0, overflowY: 'auto' } },
-        messages.length === 0 ? React.createElement(Text, { c: 'dimmed', size: 'sm' }, pqgCopy.supportEmpty) : messages.map(message => React.createElement(Paper, { key: message.id, withBorder: true, radius: 'md', p: 'xs', bg: message.role === 'user' ? 'blue.0' : undefined }, React.createElement(Text, { size: 'sm' }, message.text))),
-      ),
-      snapshot?.running ? React.createElement(Text, { c: 'dimmed', size: 'xs' }, pqgCopy.supportWorking) : null,
-      error ?? sessionError ? React.createElement(Text, { c: 'red', size: 'xs' }, error ?? sessionError) : null,
-      React.createElement('textarea', { value: draft, onChange: (event: { currentTarget: { value: string } }) => setDraft(event.currentTarget.value), placeholder: pqgCopy.supportPlaceholder, rows: 2, disabled: unavailable || busy, 'data-pqg-support-composer': true }),
-      React.createElement(Group, { justify: 'flex-end' },
-        snapshot?.running && !unavailable ? React.createElement(Button, { size: 'compact-sm', variant: 'light', color: 'red', loading: busy, onClick: () => void stop(), 'data-pqg-support-stop': true }, pqgCopy.supportStop) : null,
-        React.createElement(Button, { size: 'compact-sm', loading: busy, disabled: unavailable || !draft.trim(), onClick: () => void send(), 'data-pqg-support-send': true }, pqgCopy.supportSend),
-      ),
+      'div',
+      { style: { flex: 1, minHeight: 0, overflow: 'hidden' }, 'data-pqg-support-chat': true },
+      renderSlot('conversation', {}, {
+        fallback: React.createElement(Text, { c: 'dimmed', size: 'sm' }, pqgCopy.supportEmpty),
+      }),
     ),
   )
 }
@@ -463,9 +470,11 @@ function HomeView({
   )
 }
 
-function PqgApplicationShell({ renderSlot, renderSlotChain, services, useSessions }: ApplicationShellProps) {
+function PqgApplicationShell({ renderSlot, renderSlotChain, services, layout, useSessions }: ApplicationShellProps) {
   const [activeId, setActiveId] = React.useState('home')
   const [mobileNavOpened, setMobileNavOpened] = React.useState(false)
+  const [sessionSidebarOpened, setSessionSidebarOpened] = React.useState(false)
+  const [detailsOpened, setDetailsOpened] = React.useState(false)
   const [supportState, setSupportState] = React.useState<SupportPanelState>(initialSupportState)
   const [width, setWidth] = React.useState(viewportWidth)
   const [serviceRevision, setServiceRevision] = React.useState(0)
@@ -485,6 +494,16 @@ function PqgApplicationShell({ renderSlot, renderSlotChain, services, useSession
       color: notificationColor(notification.kind),
     })
   }), [services])
+
+  React.useEffect(() => {
+    const actions: LayoutPanelActions = {
+      toggleSidebar: () => setSessionSidebarOpened(opened => !opened),
+      openDetails: () => setDetailsOpened(true),
+      closeDetails: () => setDetailsOpened(false),
+    }
+    layout.attachPanels(actions)
+    return () => layout.detachPanels(actions)
+  }, [layout])
 
   React.useEffect(() => {
     const onResize = () => setWidth(window.innerWidth)
@@ -551,6 +570,7 @@ function PqgApplicationShell({ renderSlot, renderSlotChain, services, useSession
       },
       React.createElement(Notifications, { position: 'top-right', limit: 4 }),
       React.createElement(SearchSurface, { navigate, revision: serviceRevision, services }),
+      renderSlot('shell.overlay', {}, { fallback: null }),
       React.createElement(
         AppShell,
         {
@@ -597,6 +617,12 @@ function PqgApplicationShell({ renderSlot, renderSlotChain, services, useSession
             React.createElement(
               Group,
               { gap: 'xs', wrap: 'nowrap' },
+              React.createElement(Button, {
+                variant: 'default',
+                size: 'compact-sm',
+                onClick: () => setSessionSidebarOpened(true),
+                'data-pqg-session-toggle': true,
+              }, 'Phiên'),
               React.createElement(Button, {
                 variant: 'default',
                 size: 'compact-sm',
@@ -667,6 +693,36 @@ function PqgApplicationShell({ renderSlot, renderSlotChain, services, useSession
           },
           narrow ? supportContent : null,
         ),
+        React.createElement(
+          Drawer,
+          {
+            opened: sessionSidebarOpened,
+            onClose: () => setSessionSidebarOpened(false),
+            title: 'Phiên làm việc',
+            position: 'left',
+            size: 320,
+            withinPortal: false,
+            'data-pqg-session-drawer': true,
+          },
+          React.createElement(
+            'div',
+            { style: { height: '100%', minHeight: 0, overflow: 'hidden' } },
+            renderSlot('sidebar', { collapsed: false, width: 280 }, { fallback: null }),
+          ),
+        ),
+        React.createElement(
+          Drawer,
+          {
+            opened: detailsOpened && sessions.current !== undefined,
+            onClose: () => setDetailsOpened(false),
+            title: 'Chi tiết',
+            position: 'right',
+            size: width < 768 ? '100%' : 420,
+            withinPortal: false,
+            'data-pqg-details-drawer': true,
+          },
+          renderSlot('details', {}, { fallback: null }),
+        ),
       ),
     ),
   )
@@ -674,16 +730,22 @@ function PqgApplicationShell({ renderSlot, renderSlotChain, services, useSession
 
 function apply(ctx: ClientContext): void {
   const services = createShellSystemServices(ctx.sessions)
+  const layout = new PqgLayoutBridge()
 
   function ApplicationShellRoot(props: RootProps) {
-    return React.createElement(PqgApplicationShell, { ...props, services })
+    return React.createElement(PqgApplicationShell, { ...props, services, layout })
   }
 
   ctx.effect(() => {
+    const disposeLayout = ctx.reflect.provide('layout', layout)
     const disposeService = ctx.reflect.provide('pqgShell', services)
     const disposeRegistration = ctx.slots.register({
       name: 'root',
       children: {
+        'sidebar': { kind: 'single', scope: 'root' },
+        'conversation': { kind: 'single', scope: 'session-maybe' },
+        'details': { kind: 'single', scope: 'session' },
+        'shell.overlay': { kind: 'list', scope: 'root' },
         'pqg.shell.navigation': { kind: 'list', scope: 'root' },
         'pqg.shell.workspace': { kind: 'chain', scope: 'root' },
         'pqg.shell.home.widget': { kind: 'list', scope: 'root' },
@@ -694,8 +756,9 @@ function apply(ctx: ClientContext): void {
     return () => {
       disposeRegistration()
       void disposeService()
+      void disposeLayout()
     }
-  }, 'pqg-shell: system services + root registration')
+  }, 'pqg-shell: DSH layout bridge + system services + root registration')
 }
 
 module.exports = { inject, apply }

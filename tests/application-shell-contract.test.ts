@@ -21,6 +21,12 @@ const visualSeats = [
   'pqg.shell.support.context',
   'pqg.shell.support.suggestion',
 ] as const
+const nativeSeatSpecs = {
+  sidebar: { kind: 'single', scope: 'root' },
+  conversation: { kind: 'single', scope: 'session-maybe' },
+  details: { kind: 'single', scope: 'session' },
+  'shell.overlay': { kind: 'list', scope: 'root' },
+} as const
 
 interface PluginModule {
   inject: string[]
@@ -186,6 +192,9 @@ test('PQG shell keeps search non-visual and gates module contributions by enable
   await disabledReference.await()
   assert.equal(slots.entries('root').length, 1, 'PQG must remain the only root registration')
   assert.equal(slots.spec('pqg.shell.search.provider'), undefined, 'search provider must not be a rendered slot')
+  for (const [seat, expected] of Object.entries(nativeSeatSpecs)) {
+    assert.deepEqual(slots.spec(seat), expected, `${seat} native DSH seat spec`)
+  }
   for (const seat of visualSeats) {
     assert.equal(slots.entries(seat).length, 0, `${seat} must stay empty while module is disabled`)
   }
@@ -238,13 +247,17 @@ test('PQG shell keeps search non-visual and gates module contributions by enable
   await shellFiber.dispose()
 })
 
-test('Support panel exposes an interactive agent composer and stop control contract', async () => {
+test('Support panel delegates chat lifecycle to the native DSH conversation seat', async () => {
   const source = await readFile(new URL('../packages/application-shell/src/client.tsx', import.meta.url), 'utf8')
 
   assert.match(source, /data-pqg-support-chat/)
-  assert.match(source, /data-pqg-support-composer/)
-  assert.match(source, /data-pqg-support-send/)
-  assert.match(source, /data-pqg-support-stop/)
-  assert.match(source, /onClick: \(\) => void send\(suggestion\.prompt\)/)
-  assert.match(source, /snapshot\?\.queue/)
+  assert.match(source, /renderSlot\('conversation'/)
+  assert.match(source, /renderSlot\('sidebar'/)
+  assert.match(source, /renderSlot\('details'/)
+  assert.match(source, /renderSlot\('shell\.overlay'/)
+  assert.doesNotMatch(source, /data-pqg-support-composer/)
+  assert.doesNotMatch(source, /data-pqg-support-send/)
+  assert.doesNotMatch(source, /data-pqg-support-stop/)
+  assert.doesNotMatch(source, /snapshot\?\.queue/)
+  assert.doesNotMatch(source, /snapshot\?\.partial/)
 })
